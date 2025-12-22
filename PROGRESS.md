@@ -8,11 +8,6 @@
 - [x] Add initial `README.md`
 
 ### 2. Core Library Implementation
-	- [ ] `client.py` (client factory, retry/backoff)
-	- [ ] `mappings.py` (index templates/mappings)
-	- [ ] `indexing.py` (write log/operation docs)
-	- [ ] `queries.py` (search APIs)
-### 2. Core Library Implementation
 - [x] Implement `config.py` (env/config loading)
 - [x] Implement `context.py` (contextvars, context manager, helpers)
 - [x] Implement `handler.py` (OpenSearchHandler)
@@ -25,9 +20,8 @@
 - [x] Implement `scrub.py` (delete/prune old DEBUG entries)
 
 ### 3. CLI & Shell Wrapper
-- [ ] Implement `cli.py` (Typer/Click CLI entrypoint)
- - 2025-12-22: Stubbed and scaffolded all core library modules for config, context, handler, and OpenSearch submodules.
-- [ ] Implement Linux shell wrapper script (`devlogs.sh`)
+- [x] Implement `cli.py` (Typer/Click CLI entrypoint)
+- [x] Implement Linux shell wrapper script (`devlogs.sh`)
 
 ### 4. Docker/OpenSearch Scripts
 - [ ] Implement `opensearch_up.sh` (docker compose/run)
@@ -57,3 +51,4 @@
 - 2025-12-22: Created PROGRESS.md and initialized progress tracking.
 - 2025-12-22: Added detailed implementation steps based on PROMPT.md requirements.
  - 2025-12-22: Completed project structure and initial stubs for all required modules and scripts.
+ - 2025-12-22: Implemented Typer CLI entrypoint and Linux shell wrapper script for devlogs CLI.
