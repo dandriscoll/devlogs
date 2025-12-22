@@ -36,7 +36,7 @@ A developer-focused logging library for Python with OpenSearch integration.
 	```sh
 	python -m devlogs.cli tail --area web --follow
 	# or
-	./scripts/devlogs.sh tail --area web --follow
+	./devlogs tail --area web --follow
 	```
 
 5. **Search logs from CLI:**
