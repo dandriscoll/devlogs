@@ -24,10 +24,10 @@
 - [x] Implement Linux shell wrapper script (`devlogs.sh`)
 
 ### 4. Docker/OpenSearch Scripts
-- [ ] Implement `opensearch_up.sh` (docker compose/run)
-- [ ] Implement `opensearch_down.sh`
-- [ ] Implement `opensearch_init.sh` (index setup)
-- [ ] Optionally add `docker-compose.yml`
+- [x] Implement `opensearch_up.sh` (docker compose/run)
+- [x] Implement `opensearch_down.sh`
+- [x] Implement `opensearch_init.sh` (index setup)
+- [x] Optionally add `docker-compose.yml`
 
 ### 5. Web UI
 - [ ] Implement `web/server.py` (FastAPI/Flask API endpoints)
@@ -50,5 +50,6 @@
 **Progress Log:**
 - 2025-12-22: Created PROGRESS.md and initialized progress tracking.
 - 2025-12-22: Added detailed implementation steps based on PROMPT.md requirements.
- - 2025-12-22: Completed project structure and initial stubs for all required modules and scripts.
- - 2025-12-22: Implemented Typer CLI entrypoint and Linux shell wrapper script for devlogs CLI.
+- 2025-12-22: Completed project structure and initial stubs for all required modules and scripts.
+- 2025-12-22: Implemented Typer CLI entrypoint and Linux shell wrapper script for devlogs CLI.
+- 2025-12-22: Implemented Docker/OpenSearch scripts and docker-compose.yml for local OpenSearch setup.
