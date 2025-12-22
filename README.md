@@ -56,6 +56,29 @@ A developer-focused logging library for Python with OpenSearch integration.
 	# Then open http://localhost:8088/ui/
 	```
 
+## Using devlogs in another project
+
+1. **Install devlogs from this repo:**
+	```sh
+	pip install -e /path/to/devlogs
+	```
+
+2. **Add the diagnostics handler:**
+	```python
+	import logging
+	from devlogs.handler import DiagnosticsHandler
+	from devlogs.opensearch.client import get_opensearch_client
+	from devlogs.context import operation
+
+	client = get_opensearch_client()
+	handler = DiagnosticsHandler(opensearch_client=client, index_name="devlogs-logs-0001")
+	logging.getLogger().addHandler(handler)
+	logging.getLogger().setLevel(logging.DEBUG)
+
+	with operation(area="web"):
+		 logging.info("request started")
+	```
+
 ## Features
 
 - Standard `logging.Handler` for OpenSearch

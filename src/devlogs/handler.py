@@ -1,6 +1,7 @@
 # OpenSearchHandler implementation
 
 import logging
+import uuid
 from .context import get_area, get_operation_id
 
 class OpenSearchHandler(logging.Handler):
@@ -38,3 +39,39 @@ class OpenSearchHandler(logging.Handler):
 			"area": get_area(),
 			"operation_id": get_operation_id(),
 		}
+
+
+class DiagnosticsHandler(OpenSearchHandler):
+	"""Diagnostics handler that always accepts DEBUG and routes parent/child docs."""
+	def __init__(self, opensearch_client=None, index_name=None):
+		super().__init__(level=logging.DEBUG, opensearch_client=opensearch_client, index_name=index_name)
+
+	def emit(self, record):
+		doc = self.format_record(record)
+		operation_id = doc.get("operation_id")
+		if not operation_id:
+			operation_id = str(uuid.uuid4())
+			doc["operation_id"] = operation_id
+
+		if operation_id and (get_operation_id() or getattr(record, "operation_id", None)):
+			doc["doc_type"] = {"name": "log_entry", "parent": operation_id}
+			routing = operation_id
+		else:
+			doc["doc_type"] = "operation"
+			routing = operation_id
+
+		try:
+			if self.client:
+				self.client.index(index=self.index_name, body=doc, routing=routing)
+		except Exception as e:
+			print(f"[devlogs] Failed to index log: {e}")
+
+	def format_record(self, record):
+		doc = super().format_record(record)
+		extra_area = getattr(record, "area", None)
+		extra_operation = getattr(record, "operation_id", None)
+		if extra_area:
+			doc["area"] = extra_area
+		if extra_operation:
+			doc["operation_id"] = extra_operation
+		return doc
