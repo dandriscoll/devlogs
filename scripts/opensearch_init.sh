@@ -8,9 +8,7 @@ PASS=${OPENSEARCH_PASS:-admin}
 
 echo "Creating index templates..."
 curl -u "$USER:$PASS" -XPUT "http://$HOST:$PORT/_index_template/devlogs-logs-template" -H 'Content-Type: application/json' --data-binary @"$(dirname "$0")/../devlogs/opensearch/mappings.py"
-curl -u "$USER:$PASS" -XPUT "http://$HOST:$PORT/_index_template/devlogs-ops-template" -H 'Content-Type: application/json' --data-binary @"$(dirname "$0")/../devlogs/opensearch/mappings.py"
 
 echo "Creating initial indices..."
 curl -u "$USER:$PASS" -XPUT "http://$HOST:$PORT/devlogs-logs-0001"
-curl -u "$USER:$PASS" -XPUT "http://$HOST:$PORT/devlogs-ops-0001"
 echo "Done."

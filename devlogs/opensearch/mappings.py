@@ -5,23 +5,18 @@ LOG_INDEX_TEMPLATE = {
 	"settings": {"number_of_shards": 1},
 	"mappings": {
 		"properties": {
+			"doc_type": {
+				"type": "join",
+				"relations": {
+					"operation": "log_entry"
+				}
+			},
 			"timestamp": {"type": "date"},
 			"level": {"type": "keyword"},
 			"logger_name": {"type": "keyword"},
 			"message": {"type": "text"},
 			"area": {"type": "keyword"},
 			"operation_id": {"type": "keyword"},
-		}
-	}
-}
-
-OP_INDEX_TEMPLATE = {
-	"index_patterns": ["devlogs-ops-*"],
-	"settings": {"number_of_shards": 1},
-	"mappings": {
-		"properties": {
-			"operation_id": {"type": "keyword"},
-			"area": {"type": "keyword"},
 			"start_time": {"type": "date"},
 			"end_time": {"type": "date"},
 			"counts_by_level": {"type": "object"},
@@ -30,3 +25,4 @@ OP_INDEX_TEMPLATE = {
 		}
 	}
 }
+
