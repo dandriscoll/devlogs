@@ -15,7 +15,7 @@ def init():
 	cfg = load_config()
 	client = get_opensearch_client()
 	# Create or update index templates
-	client.indices.put_index_template(name="devlogs-logs-template", body=LOG_INDEX_TEMPLATE)
+	client.indices.put_index_template(name="devlogs-template", body=LOG_INDEX_TEMPLATE)
 	# Create initial indices if not exist
 	if not client.indices.exists(index=cfg.index_logs):
 		client.indices.create(index=cfg.index_logs)

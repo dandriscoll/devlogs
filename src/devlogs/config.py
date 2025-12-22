@@ -10,7 +10,7 @@ class DevlogsConfig:
 		self.opensearch_port = int(os.getenv("OPENSEARCH_PORT", "9200"))
 		self.opensearch_user = os.getenv("OPENSEARCH_USER", "admin")
 		self.opensearch_pass = os.getenv("OPENSEARCH_PASS", "admin")
-		self.index_logs = os.getenv("DEVLOGS_INDEX_LOGS", "devlogs-logs-0001")
+		self.index_logs = os.getenv("DEVLOGS_INDEX_LOGS", "devlogs-0001")
 		self.retention_debug_hours = int(os.getenv("DEVLOGS_RETENTION_DEBUG_HOURS", "24"))
 		self.area_default = os.getenv("DEVLOGS_AREA_DEFAULT", "general")
 

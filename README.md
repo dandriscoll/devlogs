@@ -71,7 +71,7 @@ A developer-focused logging library for Python with OpenSearch integration.
 	from devlogs.context import operation
 
 	client = get_opensearch_client()
-	handler = DiagnosticsHandler(opensearch_client=client, index_name="devlogs-logs-0001")
+	handler = DiagnosticsHandler(opensearch_client=client, index_name="devlogs-0001")
 	logging.getLogger().addHandler(handler)
 	logging.getLogger().setLevel(logging.DEBUG)
 

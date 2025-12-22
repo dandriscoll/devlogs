@@ -100,9 +100,7 @@ Library behavior details
   - Must be resilient: failures to index should not crash app; implement bounded retry/backoff and a fallback (e.g., drop with internal warning).
 
 OpenSearch design
-- Implement index templates and mappings for:
-  - `devlogs-logs-*` (log entry docs)
-  - `devlogs-ops-*` (operation parent docs) OR a single index with join field if you choose.
+- Implement index templates and mappings for `devlogs-*`
 - If using join field:
   - parent type: `operation`
   - child type: `log_entry`
