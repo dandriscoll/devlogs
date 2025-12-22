@@ -1,5 +1,9 @@
 #!/bin/bash
 # Linux shell wrapper for devlogs CLI
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -z "$VIRTUAL_ENV" ] && [ -f "$SCRIPT_DIR/.venv/bin/activate" ]; then
+	# Prefer project-local virtualenv when available.
+	. "$SCRIPT_DIR/.venv/bin/activate"
+fi
 export PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}"
 python3 -m devlogs.cli "$@"

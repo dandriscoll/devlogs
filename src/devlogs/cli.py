@@ -1,8 +1,10 @@
+import time
 import typer
 
 from .config import load_config
 from .opensearch.client import get_opensearch_client
 from .opensearch.mappings import LOG_INDEX_TEMPLATE
+from .opensearch.queries import tail_logs
 
 app = typer.Typer()
 
@@ -21,9 +23,39 @@ def init():
 
 
 @app.command()
-def tail(area: str = "web", follow: bool = False):
-	"""Tail logs for a given area (stub)."""
-	typer.echo(f"[stub] Tailing logs for area: {area}, follow={follow}")
+def tail(
+	operation_id: str = typer.Option(None, "--operation", "-o"),
+	area: str = typer.Option(None, "--area"),
+	level: str = typer.Option(None, "--level"),
+	since: str = typer.Option(None, "--since"),
+	limit: int = typer.Option(20, "--limit"),
+	follow: bool = typer.Option(False, "--follow"),
+):
+	"""Tail logs for a given area/operation."""
+	cfg = load_config()
+	client = get_opensearch_client()
+	search_after = None
+	while True:
+		docs, search_after = tail_logs(
+			client,
+			cfg.index_logs,
+			operation_id=operation_id,
+			area=area,
+			level=level,
+			since=since,
+			limit=limit,
+			search_after=search_after,
+		)
+		for doc in docs:
+			timestamp = doc.get("timestamp") or ""
+			entry_level = doc.get("level") or ""
+			entry_area = doc.get("area") or ""
+			entry_operation = doc.get("operation_id") or ""
+			message = doc.get("message") or ""
+			typer.echo(f"{timestamp} {entry_level} {entry_area} {entry_operation} {message}")
+		if not follow:
+			break
+		time.sleep(2)
 
 
 @app.command()

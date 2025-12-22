@@ -39,6 +39,12 @@ A developer-focused logging library for Python with OpenSearch integration.
 	./devlogs tail --area web --follow
 	```
 
+	Optional install (enables `devlogs` without the wrapper):
+	```sh
+	pip install -e .
+	devlogs tail --area web --follow
+	```
+
 5. **Search logs from CLI:**
 	```sh
 	python -m devlogs.cli search --q "error" --area web
