@@ -30,11 +30,11 @@
 - [x] Optionally add `docker-compose.yml`
 
 ### 5. Web UI
-### 5. Web UI
 - [x] Implement `web/server.py` (FastAPI/Flask API endpoints)
 - [x] Implement static UI bundle (`web/static/index.html`, `devlogs.js`, CSS)
 
 ### 6. MCP Server
+- [x] Implement `mcp/server.py` (stdio MCP server, tool APIs)
 
 ### 7. Testing
 
@@ -42,4 +42,5 @@
 
 
 **Progress Log:**
- - 2025-12-22: Implemented FastAPI web server and minimal static UI bundle for web log viewer.
+- 2025-12-22: Implemented FastAPI web server and minimal static UI bundle for web log viewer.
+- 2025-12-22: Implemented MCP stdio server with tool command structure.
