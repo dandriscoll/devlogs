@@ -37,9 +37,13 @@
 - [x] Implement `mcp/server.py` (stdio MCP server, tool APIs)
 
 ### 7. Testing
+- [ ] Add unit tests (context, handler, config, etc.)
+- [ ] Add CLI tests (command invocation, output)
+- [ ] Add integration tests (OpenSearch, end-to-end)
+- [ ] Add web tests (API endpoints, static assets)
 
 ### 8. Documentation & Examples
-
+- [ ] Complete `README.md` with quickstart, usage, CLI/web examples
 
 **Progress Log:**
 - 2025-12-22: Implemented FastAPI web server and minimal static UI bundle for web log viewer.
