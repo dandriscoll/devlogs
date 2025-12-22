@@ -1,1 +1,4 @@
 /* Minimal CSS for devlogs UI */
+#app { max-width: 600px; margin: 2em auto; font-family: sans-serif; }
+.log-entry { background: #f5f5f5; margin: 0.5em 0; padding: 0.5em; border-radius: 4px; }
+#search { width: 100%; padding: 0.5em; margin-bottom: 1em; }

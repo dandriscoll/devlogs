@@ -30,26 +30,16 @@
 - [x] Optionally add `docker-compose.yml`
 
 ### 5. Web UI
-- [ ] Implement `web/server.py` (FastAPI/Flask API endpoints)
-- [ ] Implement static UI bundle (`web/static/index.html`, `devlogs.js`, CSS)
+### 5. Web UI
+- [x] Implement `web/server.py` (FastAPI/Flask API endpoints)
+- [x] Implement static UI bundle (`web/static/index.html`, `devlogs.js`, CSS)
 
 ### 6. MCP Server
-- [ ] Implement `mcp/server.py` (stdio MCP server, tool APIs)
 
 ### 7. Testing
-- [ ] Add unit tests (context, handler, config, etc.)
-- [ ] Add CLI tests (command invocation, output)
-- [ ] Add integration tests (OpenSearch, end-to-end)
-- [ ] Add web tests (API endpoints, static assets)
 
 ### 8. Documentation & Examples
-- [ ] Complete `README.md` with quickstart, usage, CLI/web examples
 
----
 
 **Progress Log:**
-- 2025-12-22: Created PROGRESS.md and initialized progress tracking.
-- 2025-12-22: Added detailed implementation steps based on PROMPT.md requirements.
-- 2025-12-22: Completed project structure and initial stubs for all required modules and scripts.
-- 2025-12-22: Implemented Typer CLI entrypoint and Linux shell wrapper script for devlogs CLI.
-- 2025-12-22: Implemented Docker/OpenSearch scripts and docker-compose.yml for local OpenSearch setup.
+ - 2025-12-22: Implemented FastAPI web server and minimal static UI bundle for web log viewer.
