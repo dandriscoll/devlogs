@@ -56,7 +56,6 @@ A developer-focused logging library for Python with OpenSearch integration.
 - Context manager for operation_id/area
 - CLI and Linux shell wrapper
 - Minimal embeddable web UI
-- Docker-based OpenSearch setup scripts
 - Robust tests (pytest)
 
 ## Configuration
@@ -70,7 +69,6 @@ Environment variables:
 - `devlogs/` - Python library
 - `scripts/` - Shell scripts for OpenSearch and CLI
 - `tests/` - Pytest-based tests
-- `docker-compose.yml` - Optional Docker Compose for OpenSearch
 
 ## See Also
 
