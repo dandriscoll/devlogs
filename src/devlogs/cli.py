@@ -69,7 +69,10 @@ def main():
 		# No arguments: show help
 		typer.echo(app.get_help(), err=True)
 		raise typer.Exit(0)
-	app()
+	try:
+		app()
+	except KeyboardInterrupt:
+		raise typer.Exit(130)
 
 if __name__ == "__main__":
 	main()
