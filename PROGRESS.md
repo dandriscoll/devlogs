@@ -8,19 +8,25 @@
 - [x] Add initial `README.md`
 
 ### 2. Core Library Implementation
-- [ ] Implement `config.py` (env/config loading)
-- [ ] Implement `context.py` (contextvars, context manager, helpers)
-- [ ] Implement `handler.py` (OpenSearchHandler)
-- [ ] Implement OpenSearch submodules:
 	- [ ] `client.py` (client factory, retry/backoff)
 	- [ ] `mappings.py` (index templates/mappings)
 	- [ ] `indexing.py` (write log/operation docs)
 	- [ ] `queries.py` (search APIs)
-- [ ] Implement `rollup.py` (aggregation job)
-- [ ] Implement `scrub.py` (delete/prune old DEBUG entries)
+### 2. Core Library Implementation
+- [x] Implement `config.py` (env/config loading)
+- [x] Implement `context.py` (contextvars, context manager, helpers)
+- [x] Implement `handler.py` (OpenSearchHandler)
+- [x] Implement OpenSearch submodules:
+	- [x] `client.py` (client factory, retry/backoff)
+	- [x] `mappings.py` (index templates/mappings)
+	- [x] `indexing.py` (write log/operation docs)
+	- [x] `queries.py` (search APIs)
+- [x] Implement `rollup.py` (aggregation job)
+- [x] Implement `scrub.py` (delete/prune old DEBUG entries)
 
 ### 3. CLI & Shell Wrapper
 - [ ] Implement `cli.py` (Typer/Click CLI entrypoint)
+ - 2025-12-22: Stubbed and scaffolded all core library modules for config, context, handler, and OpenSearch submodules.
 - [ ] Implement Linux shell wrapper script (`devlogs.sh`)
 
 ### 4. Docker/OpenSearch Scripts
