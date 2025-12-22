@@ -43,9 +43,9 @@
 - [x] Add web tests (API endpoints, static assets)
 
 ### 8. Documentation & Examples
-- [ ] Complete `README.md` with quickstart, usage, CLI/web examples
+- [x] Complete `README.md` with quickstart, usage, CLI/web examples
 
 **Progress Log:**
 - 2025-12-22: Implemented FastAPI web server and minimal static UI bundle for web log viewer.
-- 2025-12-22: Implemented MCP stdio server with tool command structure.
+ - 2025-12-22: Added README.md with quickstart, usage, CLI/web examples, and project overview.
  - 2025-12-22: Added unit, CLI, and web tests for core modules and endpoints.
