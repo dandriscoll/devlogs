@@ -1,3 +1,9 @@
+import signal
+import sys
+
+# Handle Ctrl+C gracefully before any other imports
+signal.signal(signal.SIGINT, lambda *_: sys.exit(130))
+
 import time
 import typer
 
@@ -64,15 +70,11 @@ def search(q: str = "", area: str = "web"):
 	typer.echo(f"[stub] Searching logs for area: {area}, query='{q}'")
 
 def main():
-	import sys
 	if len(sys.argv) == 1:
 		# No arguments: show help
 		typer.echo(app.get_help(), err=True)
 		raise typer.Exit(0)
-	try:
-		app()
-	except KeyboardInterrupt:
-		raise typer.Exit(130)
+	app()
 
 if __name__ == "__main__":
 	main()
