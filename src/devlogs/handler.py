@@ -18,7 +18,13 @@ class OpenSearchHandler(logging.Handler):
 		# Index document (stub)
 		try:
 			if self.client:
-				self.client.index(index=self.index_name, body=doc)
+				operation_id = doc.get("operation_id")
+				if operation_id:
+					doc["doc_type"] = {"name": "log_entry", "parent": operation_id}
+					self.client.index(index=self.index_name, body=doc, routing=operation_id)
+				else:
+					doc["doc_type"] = "operation"
+					self.client.index(index=self.index_name, body=doc)
 		except Exception as e:
 			# Fallback: print warning, do not crash
 			print(f"[devlogs] Failed to index log: {e}")

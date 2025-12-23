@@ -2,7 +2,7 @@ import logging
 import time
 
 from devlogs.context import operation
-from devlogs.handler import DiagnosticsHandler
+from devlogs.handler import DiagnosticsHandler, OpenSearchHandler
 from devlogs.opensearch.queries import search_logs, tail_logs
 
 
@@ -136,3 +136,16 @@ def test_tail_logs_pagination(opensearch_client, test_index):
 
 	messages = [doc["message"] for doc in page1 + page2 + page3]
 	assert messages[:5] == [f"msg {i}" for i in range(5)]
+
+
+def test_tail_logs_finds_opensearch_handler_entries(opensearch_client, test_index):
+	handler = OpenSearchHandler(opensearch_client=opensearch_client, index_name=test_index)
+	handler.setFormatter(logging.Formatter("%(message)s"))
+	logger = _get_logger("devlogs-tail-basic", handler)
+
+	with operation(operation_id="op-basic", area="web"):
+		logger.info("basic message")
+
+	opensearch_client.indices.refresh(index=test_index)
+	results, _ = tail_logs(opensearch_client, test_index, operation_id="op-basic", limit=5)
+	assert any(doc["message"] == "basic message" for doc in results)

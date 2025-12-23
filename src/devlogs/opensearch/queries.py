@@ -4,7 +4,17 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 
 def _build_log_query(query=None, area=None, operation_id=None, level=None, since=None):
-	filters = [{"term": {"doc_type": "log_entry"}}]
+	filters = [
+		{
+			"bool": {
+				"should": [
+					{"term": {"doc_type": "log_entry"}},
+					{"bool": {"must_not": {"exists": {"field": "doc_type"}}}},
+				],
+				"minimum_should_match": 1,
+			}
+		}
+	]
 	if area:
 		filters.append({"term": {"area": area}})
 	if operation_id:
