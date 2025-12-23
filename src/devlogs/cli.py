@@ -12,23 +12,42 @@ import typer
 from .config import load_config
 from .context import operation, set_area
 from .handler import OpenSearchHandler
-from .opensearch.client import get_opensearch_client
+from .opensearch.client import (
+	get_opensearch_client,
+	check_connection,
+	check_index,
+	OpenSearchError,
+)
 from .opensearch.mappings import LOG_INDEX_TEMPLATE
 from .opensearch.queries import tail_logs
 
 app = typer.Typer()
 
 
+def require_opensearch(check_idx=True):
+	"""Get client and verify OpenSearch is accessible. Optionally check index exists."""
+	cfg = load_config()
+	client = get_opensearch_client()
+	try:
+		check_connection(client)
+		if check_idx:
+			check_index(client, cfg.index_logs)
+	except OpenSearchError as e:
+		typer.echo(typer.style(f"Error: {e}", fg=typer.colors.RED), err=True)
+		raise typer.Exit(1)
+	return client, cfg
+
+
 @app.command()
 def init():
 	"""Initialize OpenSearch indices and templates (idempotent)."""
-	cfg = load_config()
-	client = get_opensearch_client()
+	client, cfg = require_opensearch(check_idx=False)
 	# Create or update index templates
 	client.indices.put_index_template(name="devlogs-template", body=LOG_INDEX_TEMPLATE)
 	# Create initial indices if not exist
 	if not client.indices.exists(index=cfg.index_logs):
 		client.indices.create(index=cfg.index_logs)
+		typer.echo(f"Created index '{cfg.index_logs}'.")
 	typer.echo("OpenSearch indices and templates initialized.")
 
 
@@ -42,8 +61,7 @@ def tail(
 	follow: bool = typer.Option(False, "--follow"),
 ):
 	"""Tail logs for a given area/operation."""
-	cfg = load_config()
-	client = get_opensearch_client()
+	client, cfg = require_opensearch()
 	search_after = None
 	while True:
 		docs, search_after = tail_logs(
@@ -94,8 +112,8 @@ def demo(
 	typer.echo(f"  DEVLOGS_RETENTION_DEBUG_HOURS: {cfg.retention_debug_hours}")
 	typer.echo("")
 
-	# Set up logging with OpenSearch handler
-	client = get_opensearch_client()
+	# Check OpenSearch connection and index
+	client, cfg = require_opensearch()
 	handler = OpenSearchHandler(
 		level=logging.DEBUG,
 		opensearch_client=client,
