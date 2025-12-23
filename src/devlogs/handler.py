@@ -2,6 +2,7 @@
 
 import logging
 import uuid
+from datetime import datetime, timezone
 from .context import get_area, get_operation_id
 
 class OpenSearchHandler(logging.Handler):
@@ -24,8 +25,11 @@ class OpenSearchHandler(logging.Handler):
 
 	def format_record(self, record):
 		# Compose log document with context
+		timestamp = None
+		if getattr(record, "created", None) is not None:
+			timestamp = datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat().replace("+00:00", "Z")
 		return {
-			"timestamp": getattr(record, "created", None),
+			"timestamp": timestamp,
 			"level": record.levelname,
 			"levelno": record.levelno,
 			"logger_name": record.name,

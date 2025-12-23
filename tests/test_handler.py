@@ -1,17 +1,21 @@
 import logging
-from devlogs.handler import OpenSearchHandler
 
-class DummyClient:
-    def __init__(self):
-        self.indexed = []
-    def index(self, index, body):
-        self.indexed.append((index, body))
+from devlogs.context import operation
+from devlogs.handler import DiagnosticsHandler
 
-def test_handler_emits_and_indexes(monkeypatch):
-    dummy = DummyClient()
-    handler = OpenSearchHandler(opensearch_client=dummy, index_name="test-index")
+
+def test_handler_emits_and_indexes(opensearch_client, test_index):
+    handler = DiagnosticsHandler(opensearch_client=opensearch_client, index_name=test_index)
     logger = logging.getLogger("devlogs-test")
     logger.setLevel(logging.DEBUG)
     logger.handlers = [handler]
-    logger.debug("hello world")
-    assert dummy.indexed
+    logger.propagate = False
+    with operation("op-test", "web"):
+        logger.debug("hello world")
+    opensearch_client.indices.refresh(index=test_index)
+    resp = opensearch_client.search(
+        index=test_index,
+        body={"query": {"term": {"operation_id": "op-test"}}},
+    )
+    hits = resp.get("hits", {}).get("hits", [])
+    assert hits
