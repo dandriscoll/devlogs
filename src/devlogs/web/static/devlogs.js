@@ -7,6 +7,7 @@ const elements = {
 	limit: document.getElementById('limit'),
 	refresh: document.getElementById('refresh'),
 	clear: document.getElementById('clear'),
+	order: document.getElementById('order'),
 	follow: document.getElementById('follow'),
 	results: document.getElementById('results'),
 	status: document.getElementById('status'),
@@ -18,7 +19,11 @@ const state = {
 	seen: new Set(),
 	lastTimestamp: null,
 	followTimer: null,
+	newestFirst: false,
+	renderedOnce: false,
 };
+
+state.newestFirst = elements.order.checked;
 
 function escapeHtml(value) {
 	return String(value || '')
@@ -52,22 +57,55 @@ function entryKey(entry) {
 	return `${entry.timestamp || ''}|${entry.level || ''}|${entry.operation_id || ''}|${entry.message || ''}`;
 }
 
-function renderEntries(entries) {
+function latestTimestamp(entries) {
+	let latest = null;
+	for (const entry of entries) {
+		const timestamp = entry.timestamp || '';
+		if (!timestamp) continue;
+		if (!latest || timestamp.localeCompare(latest) > 0) {
+			latest = timestamp;
+		}
+	}
+	return latest;
+}
+
+function sortEntries(entries) {
+	const direction = state.newestFirst ? -1 : 1;
+	entries.sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || '') * direction);
+}
+
+function orderedKeys(entries) {
+	return entries.map(entryKey);
+}
+
+function keysMatch(a, b) {
+	if (a.length !== b.length) return false;
+	for (let i = 0; i < a.length; i += 1) {
+		if (a[i] !== b[i]) return false;
+	}
+	return true;
+}
+
+function renderEntries(entries, { highlightKeys } = {}) {
 	if (!entries.length) {
 		elements.results.innerHTML = "<div class='empty'>No log entries yet.</div>";
 		elements.count.textContent = '0 entries';
+		state.renderedOnce = true;
 		return;
 	}
 	const html = entries.map((entry) => {
 		const level = (entry.level || 'INFO').toUpperCase();
 		const levelClass = `level-${level}`;
+		const key = entryKey(entry);
+		const isNew = highlightKeys && highlightKeys.has(key);
+		const entryClass = isNew ? 'entry is-new' : 'entry';
 		const message = escapeHtml(entry.message || '');
 		const loggerName = escapeHtml(entry.logger_name || 'unknown');
 		const area = escapeHtml(entry.area || 'general');
 		const operationId = escapeHtml(entry.operation_id || 'n/a');
 		const timestamp = formatTimestamp(entry.timestamp);
 		return `
-			<article class="entry ${levelClass}">
+			<article class="${entryClass} ${levelClass}">
 				<div class="entry-meta">
 					<span class="entry-time">${timestamp}</span>
 					<span class="entry-level">${level}</span>
@@ -83,6 +121,7 @@ function renderEntries(entries) {
 	}).join('');
 	elements.results.innerHTML = html;
 	elements.count.textContent = `${entries.length} entries`;
+	state.renderedOnce = true;
 }
 
 async function fetchLogs({ append = false } = {}) {
@@ -96,12 +135,15 @@ async function fetchLogs({ append = false } = {}) {
 	if (append && state.lastTimestamp) params.set('since', state.lastTimestamp);
 
 	const endpoint = append ? '/api/tail' : '/api/search';
+	const previousKeys = orderedKeys(state.entries);
+	const previousKeySet = new Set(previousKeys);
 
 	elements.status.textContent = append ? 'Following...' : 'Refreshing...';
 	try {
 		const resp = await fetch(`${endpoint}?${params.toString()}`);
 		const data = await resp.json();
 		const results = data.results || [];
+		let added = false;
 		if (!append) {
 			state.entries = results;
 			state.seen = new Set(results.map(entryKey));
@@ -111,14 +153,29 @@ async function fetchLogs({ append = false } = {}) {
 				if (!state.seen.has(key)) {
 					state.seen.add(key);
 					state.entries.push(entry);
+					added = true;
 				}
 			}
 		}
 		if (state.entries.length) {
-			state.entries.sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
-			state.lastTimestamp = state.entries[state.entries.length - 1].timestamp || state.lastTimestamp;
+			const latest = latestTimestamp(state.entries);
+			if (latest) {
+				state.lastTimestamp = latest;
+			}
+			sortEntries(state.entries);
 		}
-		renderEntries(state.entries);
+		const nextKeys = orderedKeys(state.entries);
+		const newKeySet = new Set();
+		for (const key of nextKeys) {
+			if (!previousKeySet.has(key)) {
+				newKeySet.add(key);
+			}
+		}
+		const shouldRender = !state.renderedOnce || (append ? added : !keysMatch(previousKeys, nextKeys));
+		if (shouldRender) {
+			const highlightKeys = state.renderedOnce && newKeySet.size ? newKeySet : null;
+			renderEntries(state.entries, { highlightKeys });
+		}
 		elements.status.textContent = data.error ? `Offline: ${data.error}` : 'Ready';
 	} catch (err) {
 		elements.status.textContent = 'Offline: failed to reach API';
@@ -132,12 +189,22 @@ function resetView() {
 	renderEntries([]);
 }
 
+function setSortOrder({ newestFirst }) {
+	state.newestFirst = newestFirst;
+	elements.order.checked = newestFirst;
+	if (state.entries.length) {
+		sortEntries(state.entries);
+		renderEntries(state.entries);
+	}
+}
+
 function setFollow(enabled) {
 	if (state.followTimer) {
 		clearInterval(state.followTimer);
 		state.followTimer = null;
 	}
 	if (enabled) {
+		setSortOrder({ newestFirst: true });
 		state.followTimer = setInterval(() => fetchLogs({ append: true }), 2000);
 	}
 }
@@ -149,6 +216,7 @@ elements.level.addEventListener('change', () => fetchLogs());
 elements.limit.addEventListener('change', () => fetchLogs());
 elements.refresh.addEventListener('click', () => fetchLogs());
 elements.clear.addEventListener('click', () => resetView());
+elements.order.addEventListener('change', (event) => setSortOrder({ newestFirst: event.target.checked }));
 elements.follow.addEventListener('change', (event) => setFollow(event.target.checked));
 
 fetchLogs();
