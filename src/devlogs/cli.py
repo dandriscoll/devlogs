@@ -229,18 +229,19 @@ def rollup(
 ):
 	"""Roll up any dangling child logs into their parent operations."""
 	client, cfg = require_opensearch()
-	rollup_operations(client, cfg.index_logs, since=since)
-	typer.echo("Rollup complete.")
+	child_total, parent_total = rollup_operations(client, cfg.index_logs, since=since)
+	typer.echo(f"Rollup complete: {child_total} children into {parent_total} parents.")
 
 
 @app.command()
 def demo(
 	duration: int = typer.Option(10, "--duration", "-t", help="Duration in seconds"),
 	count: int = typer.Option(50, "--count", "-n", help="Number of log entries to generate"),
+	defer_rollup: bool = typer.Option(False, "--defer-rollup", help="Defer rollup until you run devlogs rollup"),
 ):
 	"""Generate demo logs to illustrate devlogs capabilities."""
 	from .demo import run_demo
-	run_demo(duration, count, require_opensearch)
+	run_demo(duration, count, require_opensearch, defer_rollup)
 
 
 @app.command()

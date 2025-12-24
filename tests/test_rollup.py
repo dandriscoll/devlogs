@@ -60,7 +60,7 @@ def test_rollup_operation_creates_parent_and_deletes_children(opensearch_client,
 	opensearch_client.indices.refresh(index=test_index)
 	assert _count_children(opensearch_client, test_index, "op-rollup") == 2
 
-	assert rollup_operation(opensearch_client, test_index, "op-rollup") is True
+	assert rollup_operation(opensearch_client, test_index, "op-rollup") == 2
 	opensearch_client.indices.refresh(index=test_index)
 
 	parent = _get_parent_doc(opensearch_client, test_index, "op-rollup")
@@ -90,7 +90,9 @@ def test_rollup_operations_handles_multiple_operations(opensearch_client, test_i
 	assert _count_children(opensearch_client, test_index, "op-a") == 1
 	assert _count_children(opensearch_client, test_index, "op-b") == 1
 
-	rollup_operations(opensearch_client, test_index)
+	child_total, parent_total = rollup_operations(opensearch_client, test_index)
+	assert child_total == 2
+	assert parent_total == 2
 	opensearch_client.indices.refresh(index=test_index)
 
 	parent_a = _get_parent_doc(opensearch_client, test_index, "op-a")

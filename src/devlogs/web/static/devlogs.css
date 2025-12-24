@@ -175,12 +175,68 @@ button.ghost {
 	gap: 12px;
 }
 
-.entry {
+.entry-group {
 	background: var(--panel);
 	border: 1px solid var(--border);
 	border-radius: 14px;
-	padding: 14px 16px;
+	padding: 12px 0 4px;
 	box-shadow: 0 10px 26px rgba(28, 26, 23, 0.08);
+}
+
+.entry-group-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 12px;
+	padding: 8px 16px 12px;
+	border-bottom: 1px solid var(--border);
+}
+
+.entry-group-main {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	flex-wrap: wrap;
+}
+
+.entry-group-title {
+	font-weight: 700;
+	font-size: 14px;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+}
+
+.entry-group-area {
+	padding: 4px 10px;
+	border-radius: 999px;
+	background: rgba(30, 111, 92, 0.16);
+	color: #0f3b2f;
+	font-size: 12px;
+	font-weight: 600;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+
+.entry-group-count {
+	color: var(--muted);
+	font-size: 12px;
+}
+
+.entry-rows {
+	display: grid;
+}
+
+.entry-row {
+	padding: 12px 16px;
+}
+
+.entry-row + .entry-row {
+	border-top: 1px solid var(--border);
+}
+
+.entry-row.is-child {
+	background: rgba(255, 248, 239, 0.6);
+	padding: 8px 16px 8px 28px;
 }
 
 .entry-meta {
@@ -198,6 +254,13 @@ button.ghost {
 	font-size: 15px;
 	font-family: "JetBrains Mono", "Courier New", monospace;
 	white-space: pre-wrap;
+}
+
+.entry-line {
+	font-size: 13px;
+	font-family: "JetBrains Mono", "Courier New", monospace;
+	white-space: pre-wrap;
+	color: var(--ink);
 }
 
 .entry-extra {
@@ -229,11 +292,16 @@ button.ghost {
 	font-family: "JetBrains Mono", "Courier New", monospace;
 }
 
-.level-DEBUG { border-left: 4px solid #9aa0a6; }
-.level-INFO { border-left: 4px solid #1e6f5c; }
-.level-WARNING { border-left: 4px solid #ffb347; }
-.level-ERROR { border-left: 4px solid #f04f45; }
-.level-CRITICAL { border-left: 4px solid #b31237; }
+.entry-child {
+	font-family: "JetBrains Mono", "Courier New", monospace;
+	color: var(--accent-2);
+}
+
+.entry-row.level-DEBUG { border-left: 4px solid #9aa0a6; }
+.entry-row.level-INFO { border-left: 4px solid #1e6f5c; }
+.entry-row.level-WARNING { border-left: 4px solid #ffb347; }
+.entry-row.level-ERROR { border-left: 4px solid #f04f45; }
+.entry-row.level-CRITICAL { border-left: 4px solid #b31237; }
 
 .empty {
 	padding: 24px;
@@ -244,7 +312,7 @@ button.ghost {
 	background: rgba(255, 255, 255, 0.7);
 }
 
-.entry.is-new {
+.entry-row.is-new {
 	animation: fade-in 0.18s ease-out both;
 }
 

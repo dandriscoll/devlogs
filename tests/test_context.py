@@ -2,7 +2,7 @@ import logging
 import pytest
 from devlogs import context
 from devlogs.handler import DiagnosticsHandler
-from devlogs.opensearch.queries import search_logs
+from devlogs.opensearch.queries import normalize_log_entries, search_logs
 
 def test_operation_context_sets_and_resets():
     with context.operation("opid", "web", rollup=False):
@@ -54,18 +54,27 @@ def test_diagnostics_handler_nested_contexts(opensearch_client, test_index):
     outer_docs = search_logs(opensearch_client, test_index, operation_id="outer")
     inner_docs = search_logs(opensearch_client, test_index, operation_id="inner")
     assert len(outer_docs) == 1
-    assert len(inner_docs) == 1
-    assert outer_docs[0]["area"] == "api"
-    assert inner_docs[0]["area"] == "jobs"
-    assert "outer" in (outer_docs[0].get("message") or "")
-    assert "inner" in (inner_docs[0].get("message") or "")
+    assert len(inner_docs) == 0
+    entries = normalize_log_entries(outer_docs)
+    assert any(
+        entry.get("operation_id") == "outer"
+        and entry.get("area") == "api"
+        and "outer" in (entry.get("message") or "")
+        for entry in entries
+    )
+    assert any(
+        entry.get("operation_id") == "inner"
+        and entry.get("area") == "jobs"
+        and "inner" in (entry.get("message") or "")
+        for entry in entries
+    )
 
 
 def test_diagnostics_handler_extra_overrides_context(opensearch_client, test_index):
     handler = DiagnosticsHandler(opensearch_client=opensearch_client, index_name=test_index)
     logger = _get_logger("ctx-extra", handler)
 
-    with context.operation("op-context", "web"):
+    with context.operation("op-context", "web", rollup=False):
         logger.info("override", extra={"operation_id": "op-extra", "area": "jobs"})
 
     opensearch_client.indices.refresh(index=test_index)

@@ -45,6 +45,46 @@ def _iter_child_docs(client, index_logs, since: Optional[str] = None) -> Iterabl
 			yield hit
 		search_after = hits[-1].get("sort")
 
+def _collect_all_child_docs(client, index_logs, since: Optional[str] = None) -> List[Dict[str, Any]]:
+	docs: List[Dict[str, Any]] = []
+	for hit in _iter_child_docs(client, index_logs, since=since):
+		source = hit.get("_source", {})
+		if source:
+			docs.append(source)
+	return docs
+
+def _build_parent_map(docs: Sequence[Dict[str, Any]]) -> Dict[str, str]:
+	parent_map: Dict[str, str] = {}
+	for doc in docs:
+		operation_id = doc.get("operation_id")
+		parent_operation_id = doc.get("parent_operation_id")
+		if operation_id and parent_operation_id and operation_id not in parent_map:
+			parent_map[operation_id] = parent_operation_id
+	return parent_map
+
+def _resolve_root(operation_id: Optional[str], parent_map: Dict[str, str]) -> Optional[str]:
+	if not operation_id:
+		return None
+	current = operation_id
+	seen = set()
+	while current in parent_map and current not in seen:
+		seen.add(current)
+		current = parent_map[current]
+	return current
+
+def _group_child_docs(docs: Sequence[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+	parent_map = _build_parent_map(docs)
+	groups: Dict[str, Dict[str, Any]] = {}
+	for doc in docs:
+		operation_id = doc.get("operation_id")
+		if not operation_id:
+			continue
+		root_id = _resolve_root(operation_id, parent_map) or operation_id
+		group = groups.setdefault(root_id, {"docs": [], "operation_ids": set()})
+		group["docs"].append(doc)
+		group["operation_ids"].add(operation_id)
+	return groups
+
 
 def _format_rollup_line(doc: Dict[str, Any]) -> str:
 	timestamp = doc.get("timestamp") or ""
@@ -90,7 +130,7 @@ def _collect_child_docs(
 	return docs
 
 
-def _summarize_docs(docs: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+def _summarize_docs(docs: Sequence[Dict[str, Any]], root_operation_id: Optional[str] = None) -> Dict[str, Any]:
 	counts_by_level: Dict[str, int] = {}
 	error_count = 0
 	start_time = None
@@ -98,6 +138,7 @@ def _summarize_docs(docs: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
 	last_message = None
 	area = None
 	parent_operation_id = None
+	root_area = None
 	lines: List[str] = []
 
 	for doc in docs:
@@ -109,10 +150,12 @@ def _summarize_docs(docs: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
 		doc_area = doc.get("area")
 		if doc_area and area is None:
 			area = doc_area
-		# Capture parent_operation_id from the first doc that has it
-		doc_parent = doc.get("parent_operation_id")
-		if doc_parent and parent_operation_id is None:
-			parent_operation_id = doc_parent
+		if root_operation_id and doc.get("operation_id") == root_operation_id:
+			if doc_area and root_area is None:
+				root_area = doc_area
+			doc_parent = doc.get("parent_operation_id")
+			if doc_parent is not None and parent_operation_id is None:
+				parent_operation_id = doc_parent
 
 		ts = _parse_timestamp(doc.get("timestamp"))
 		if ts:
@@ -124,6 +167,8 @@ def _summarize_docs(docs: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
 		lines.append(_format_rollup_line(doc))
 
 	rollup_message = "\n".join(line for line in lines if line)
+	if root_area:
+		area = root_area
 	result = {
 		"area": area,
 		"start_time": _to_iso(start_time),
@@ -139,59 +184,95 @@ def _summarize_docs(docs: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
 	return result
 
 
-def rollup_operation(client, index_logs, operation_id: str, refresh: bool = False) -> bool:
-	"""Aggregate child docs for a single operation into a parent, then delete children."""
-	if refresh:
-		try:
-			client.indices.refresh(index=index_logs)
-		except Exception:
-			pass
-	docs = _collect_child_docs(client, index_logs, operation_id)
+def _compact_child_doc(doc: Dict[str, Any]) -> Dict[str, Any]:
+	return {
+		"timestamp": doc.get("timestamp"),
+		"level": doc.get("level"),
+		"logger_name": doc.get("logger_name"),
+		"message": doc.get("message"),
+		"area": doc.get("area"),
+		"operation_id": doc.get("operation_id"),
+		"parent_operation_id": doc.get("parent_operation_id"),
+		"pathname": doc.get("pathname"),
+		"lineno": doc.get("lineno"),
+		"exception": doc.get("exception"),
+	}
+
+
+def _rollup_group(client, index_logs, root_id: str, docs: Sequence[Dict[str, Any]], operation_ids: Sequence[str]) -> int:
 	if not docs:
-		return False
-	summary = _summarize_docs(docs)
+		return 0
+	summary = _summarize_docs(docs, root_operation_id=root_id)
+	entries = [_compact_child_doc(doc) for doc in docs]
 	parent_doc = {
 		"doc_type": "operation",
-		"operation_id": operation_id,
+		"operation_id": root_id,
+		"entries": entries,
 		**summary,
 	}
 
 	client.index(
 		index=index_logs,
-		id=operation_id,
+		id=root_id,
 		body=parent_doc,
-		routing=operation_id,
+		routing=root_id,
 		refresh=False,
 	)
 
-	client.delete_by_query(
-		index=index_logs,
-		body={
-			"query": {
-				"bool": {
-					"filter": [
-						{"term": {"doc_type": "log_entry"}},
-						{"term": {"operation_id": operation_id}},
-					]
+	if operation_ids:
+		client.delete_by_query(
+			index=index_logs,
+			body={
+				"query": {
+					"bool": {
+						"filter": [
+							{"term": {"doc_type": "log_entry"}},
+							{"terms": {"operation_id": list(operation_ids)}},
+						]
+					}
 				}
-			}
-		},
-		routing=operation_id,
-		refresh=False,
-		conflicts="proceed",
-		slices="auto",
-	)
-	return True
+			},
+			refresh=False,
+			conflicts="proceed",
+			slices="auto",
+		)
+	return len(docs)
+
+
+def rollup_operation(client, index_logs, operation_id: str, refresh: bool = False) -> int:
+	"""Aggregate child docs for the root operation, then delete children."""
+	if refresh:
+		try:
+			client.indices.refresh(index=index_logs)
+		except Exception:
+			pass
+	docs = _collect_all_child_docs(client, index_logs)
+	if not docs:
+		return 0
+	parent_map = _build_parent_map(docs)
+	root_id = _resolve_root(operation_id, parent_map) or operation_id
+	groups = _group_child_docs(docs)
+	group = groups.get(root_id)
+	if not group:
+		return 0
+	operation_ids = sorted(group["operation_ids"])
+	return _rollup_group(client, index_logs, root_id, group["docs"], operation_ids)
 
 
 def rollup_operations(client, index_logs, since=None):
 	"""Aggregate log entry children into parent operation docs, then delete children."""
-	operations = set()
-	for hit in _iter_child_docs(client, index_logs, since=since):
-		source = hit.get("_source", {})
-		operation_id = source.get("operation_id")
-		if operation_id:
-			operations.add(operation_id)
+	docs = _collect_all_child_docs(client, index_logs, since=since)
+	if not docs:
+		return 0, 0
+	groups = _group_child_docs(docs)
 
-	for operation_id in sorted(operations):
-		rollup_operation(client, index_logs, operation_id)
+	child_total = 0
+	parent_total = 0
+	for root_id in sorted(groups.keys()):
+		group = groups[root_id]
+		operation_ids = sorted(group["operation_ids"])
+		rolled_children = _rollup_group(client, index_logs, root_id, group["docs"], operation_ids)
+		if rolled_children:
+			parent_total += 1
+			child_total += rolled_children
+	return child_total, parent_total

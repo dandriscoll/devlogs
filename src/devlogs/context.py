@@ -8,6 +8,13 @@ from typing import Optional
 _operation_id_var = contextvars.ContextVar("operation_id", default=None)
 _parent_operation_id_var = contextvars.ContextVar("parent_operation_id", default=None)
 _area_var = contextvars.ContextVar("area", default=None)
+_rollup_default = True
+
+
+def set_rollup_default(enabled: bool) -> None:
+	"""Set the default rollup behavior for operation contexts."""
+	global _rollup_default
+	_rollup_default = bool(enabled)
 
 def _rollup_operation(operation_id: str) -> None:
 	try:
@@ -25,11 +32,12 @@ def _rollup_operation(operation_id: str) -> None:
 def operation(
 	operation_id: Optional[str] = None,
 	area: Optional[str] = None,
-	rollup: bool = True,
+	rollup: Optional[bool] = None,
 ):
 	"""Context manager to set operation_id and area for log context.
 
 	When nested, the outer operation becomes the parent_operation_id.
+	Rollup runs only for the outermost operation context.
 	"""
 	token_op = None
 	token_parent = None
@@ -37,7 +45,8 @@ def operation(
 	prev_operation_id = _operation_id_var.get()
 	if operation_id is None:
 		operation_id = str(uuid.uuid4())
-	should_rollup = rollup and (prev_operation_id != operation_id)
+	rollup_enabled = _rollup_default if rollup is None else rollup
+	should_rollup = rollup_enabled and prev_operation_id is None
 	try:
 		token_op = _operation_id_var.set(operation_id)
 		# If there was a previous operation, it becomes the parent

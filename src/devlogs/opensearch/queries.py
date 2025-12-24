@@ -29,13 +29,13 @@ def _build_log_query(query=None, area=None, operation_id=None, level=None, since
 	if query:
 		bool_query["must"] = [
 			{
-				"simple_query_string": {
-					"query": query,
-					"fields": ["message^2", "logger_name", "operation_id", "area"],
-					"default_operator": "and",
+					"simple_query_string": {
+						"query": query,
+						"fields": ["message^2", "logger_name", "operation_id", "parent_operation_id", "area"],
+						"default_operator": "and",
+					}
 				}
-			}
-		]
+			]
 	return {"bool": bool_query}
 
 
@@ -77,6 +77,7 @@ def _normalize_entry(doc: Dict[str, Any]) -> Dict[str, Any]:
 		"logger_name": doc.get("logger_name"),
 		"area": doc.get("area"),
 		"operation_id": doc.get("operation_id"),
+		"parent_operation_id": doc.get("parent_operation_id"),
 		"pathname": doc.get("pathname"),
 		"lineno": doc.get("lineno"),
 		"exception": doc.get("exception"),
@@ -84,11 +85,23 @@ def _normalize_entry(doc: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _is_rollup_doc(doc: Dict[str, Any]) -> bool:
-	return bool(doc.get("counts_by_level") or doc.get("start_time") or doc.get("end_time"))
+	return bool(doc.get("entries") or doc.get("counts_by_level") or doc.get("start_time") or doc.get("end_time"))
 
 
 def _expand_doc(doc: Dict[str, Any]) -> List[Dict[str, Any]]:
 	doc_type = doc.get("doc_type")
+	if doc_type == "operation" and doc.get("entries"):
+		entries: List[Dict[str, Any]] = []
+		for entry in doc.get("entries", []):
+			normalized = _normalize_entry(entry)
+			if not normalized.get("area"):
+				normalized["area"] = doc.get("area")
+			if not normalized.get("operation_id"):
+				normalized["operation_id"] = doc.get("operation_id")
+			if not normalized.get("parent_operation_id"):
+				normalized["parent_operation_id"] = doc.get("parent_operation_id")
+			entries.append(normalized)
+		return entries
 	if doc_type == "operation" and _is_rollup_doc(doc) and doc.get("message"):
 		entries: List[Dict[str, Any]] = []
 		for line in str(doc.get("message", "")).splitlines():
@@ -96,6 +109,7 @@ def _expand_doc(doc: Dict[str, Any]) -> List[Dict[str, Any]]:
 			if parsed:
 				parsed["area"] = doc.get("area")
 				parsed["operation_id"] = doc.get("operation_id")
+				parsed["parent_operation_id"] = doc.get("parent_operation_id")
 				parsed["pathname"] = None
 				parsed["lineno"] = None
 				parsed["exception"] = None
