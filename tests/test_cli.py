@@ -1,6 +1,8 @@
 import os
 import uuid
 import pytest
+
+typer = pytest.importorskip("typer")
 from typer.testing import CliRunner
 from devlogs import cli
 

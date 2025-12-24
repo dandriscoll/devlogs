@@ -5,7 +5,6 @@ import uuid
 import pytest
 import warnings
 
-from opensearchpy import OpenSearchWarning
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
 SRC_DIR = os.path.join(PROJECT_ROOT, "src")
@@ -28,16 +27,6 @@ def opensearch_client():
 
 @pytest.fixture()
 def test_index(opensearch_client):
-	warnings.filterwarnings(
-		"ignore",
-		category=OpenSearchWarning,
-		message=r".*legacy template.*devlogs-logs-template.*",
-	)
-	warnings.filterwarnings(
-		"ignore",
-		category=OpenSearchWarning,
-		message=r".*index template.*devlogs-template.*older templates.*devlogs-logs-template.*",
-	)
 	legacy_template_created = False
 	try:
 		opensearch_client.indices.delete_template(name="devlogs-logs-template")

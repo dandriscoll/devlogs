@@ -13,6 +13,7 @@ from .opensearch.client import (
 	check_connection,
 	check_index,
 	OpenSearchError,
+	ConnectionFailedError,
 )
 from .opensearch.mappings import LOG_INDEX_TEMPLATE
 from .opensearch.queries import tail_logs
@@ -57,7 +58,7 @@ def tail(
 	follow: bool = typer.Option(False, "--follow"),
 ):
 	"""Tail logs for a given area/operation."""
-	from opensearchpy.exceptions import ConnectionError, ConnectionTimeout, TransportError
+	import urllib.error
 
 	client, cfg = require_opensearch()
 	typer.echo(typer.style(
@@ -83,7 +84,7 @@ def tail(
 				search_after=search_after,
 			)
 			consecutive_errors = 0  # Reset on success
-		except (ConnectionError, ConnectionTimeout) as e:
+		except (ConnectionFailedError, urllib.error.URLError) as e:
 			consecutive_errors += 1
 			if not follow or consecutive_errors >= max_errors:
 				typer.echo(typer.style(
@@ -97,9 +98,9 @@ def tail(
 			), err=True)
 			time.sleep(2)
 			continue
-		except TransportError as e:
+		except urllib.error.HTTPError as e:
 			typer.echo(typer.style(
-				f"Error: OpenSearch error: {e.error} - {e.info}",
+				f"Error: OpenSearch error: HTTP {e.code} - {e.reason}",
 				fg=typer.colors.RED
 			), err=True)
 			raise typer.Exit(1)
