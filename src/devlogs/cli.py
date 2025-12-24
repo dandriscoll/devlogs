@@ -8,6 +8,7 @@ import time
 import typer
 
 from .config import load_config
+from .formatting import format_timestamp
 from .opensearch.client import (
 	get_opensearch_client,
 	check_connection,
@@ -57,6 +58,7 @@ def tail(
 	since: str = typer.Option(None, "--since"),
 	limit: int = typer.Option(20, "--limit"),
 	follow: bool = typer.Option(False, "--follow", "-f"),
+	utc: bool = typer.Option(False, "--utc", help="Display timestamps in UTC instead of local time"),
 ):
 	"""Tail logs for a given area/operation."""
 	import urllib.error
@@ -118,7 +120,7 @@ def tail(
 		first_poll = False
 
 		for doc in entries:
-			timestamp = doc.get("timestamp") or ""
+			timestamp = format_timestamp(doc.get("timestamp") or "", use_utc=utc)
 			entry_level = doc.get("level") or ""
 			entry_area = doc.get("area") or ""
 			entry_operation = doc.get("operation_id") or ""
@@ -139,6 +141,7 @@ def search(
 	since: str = typer.Option(None, "--since"),
 	limit: int = typer.Option(50, "--limit"),
 	follow: bool = typer.Option(False, "--follow", "-f"),
+	utc: bool = typer.Option(False, "--utc", help="Display timestamps in UTC instead of local time"),
 ):
 	"""Search logs for a query."""
 	import urllib.error
@@ -208,7 +211,7 @@ def search(
 		first_poll = False
 
 		for doc in entries:
-			timestamp = doc.get("timestamp") or ""
+			timestamp = format_timestamp(doc.get("timestamp") or "", use_utc=utc)
 			entry_level = doc.get("level") or ""
 			entry_area = doc.get("area") or ""
 			entry_operation = doc.get("operation_id") or ""
