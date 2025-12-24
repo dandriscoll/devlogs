@@ -243,6 +243,17 @@ def demo(
 	run_demo(duration, count, require_opensearch)
 
 
+@app.command()
+def serve(
+	port: int = typer.Option(8888, "--port", "-p", help="Port to serve on"),
+	host: str = typer.Option("127.0.0.1", "--host", "-h", help="Host to bind to"),
+	reload: bool = typer.Option(False, "--reload", "-r", help="Enable auto-reload for development"),
+):
+	"""Start the web UI server."""
+	import uvicorn
+	uvicorn.run("devlogs.web.server:app", host=host, port=port, reload=reload)
+
+
 def main():
 	if len(sys.argv) == 1:
 		# No arguments: show help

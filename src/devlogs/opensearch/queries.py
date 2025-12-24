@@ -136,7 +136,13 @@ def search_logs(client, index, query=None, area=None, operation_id=None, level=N
 
 
 def tail_logs(client, index, query=None, operation_id=None, area=None, level=None, since=None, limit=20, search_after=None):
-	"""Tail log entries for an operation."""
+	"""Tail log entries for an operation.
+
+	On initial call (no search_after): fetches the most recent logs in descending order,
+	then reverses them for chronological display.
+	On subsequent calls: continues forward from the cursor in ascending order.
+	"""
+	is_initial = search_after is None
 	body = {
 		"query": _build_log_query(
 			query=query,
@@ -145,7 +151,7 @@ def tail_logs(client, index, query=None, operation_id=None, area=None, level=Non
 			level=level,
 			since=since,
 		),
-		"sort": [{"timestamp": "asc"}, {"_id": "asc"}],
+		"sort": [{"timestamp": "desc" if is_initial else "asc"}, {"_id": "desc" if is_initial else "asc"}],
 		"size": limit,
 	}
 	if search_after:
@@ -153,7 +159,14 @@ def tail_logs(client, index, query=None, operation_id=None, area=None, level=Non
 	response = client.search(index=index, body=body)
 	hits = response.get("hits", {}).get("hits", [])
 	docs = _hits_to_docs(hits)
-	next_search_after = docs[-1]["sort"] if docs else search_after
+
+	if is_initial and docs:
+		# Reverse to chronological order for display, use the last (most recent) as cursor
+		docs = list(reversed(docs))
+		next_search_after = docs[-1]["sort"]
+	else:
+		next_search_after = docs[-1]["sort"] if docs else search_after
+
 	return docs, next_search_after
 
 

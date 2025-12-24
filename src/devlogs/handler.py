@@ -3,7 +3,7 @@
 import logging
 import uuid
 from datetime import datetime, timezone
-from .context import get_area, get_operation_id
+from .context import get_area, get_operation_id, get_parent_operation_id
 
 class OpenSearchHandler(logging.Handler):
 	"""Logging handler that writes log records to OpenSearch."""
@@ -48,6 +48,7 @@ class OpenSearchHandler(logging.Handler):
 			"exception": getattr(record, "exc_text", None),
 			"area": get_area(),
 			"operation_id": get_operation_id(),
+			"parent_operation_id": get_parent_operation_id(),
 		}
 
 

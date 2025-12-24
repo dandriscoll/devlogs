@@ -1,7 +1,7 @@
 # Web server API endpoints for devlogs
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from typing import Optional, Tuple
 import os
 
@@ -15,6 +15,11 @@ from ..opensearch.client import (
 from ..opensearch.queries import search_logs, tail_logs, normalize_log_entries
 
 app = FastAPI()
+
+
+@app.get("/")
+def root():
+	return RedirectResponse(url="/ui/")
 
 
 def _try_client() -> Tuple[Optional[object], Optional[str]]:

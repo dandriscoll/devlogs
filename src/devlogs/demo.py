@@ -77,96 +77,143 @@ def run_demo(
 		"""Emit a random log entry based on current scenario."""
 		nonlocal generated
 		scenario = random.choices(
-			["api", "database", "auth", "payments", "scheduler", "notifications", "burst"],
-			weights=[20, 15, 15, 10, 10, 10, 20],
+			["api", "auth", "payments", "scheduler", "notifications"],
+			weights=[35, 20, 15, 15, 15],
 		)[0]
 
 		if scenario == "api":
+			# API request with auth check and database query
 			with operation(area="api"):
 				endpoint = random.choice(endpoints)
 				user = random.choice(users)
-				latency = random.randint(10, 500)
-				log_type = random.choice(["request", "response", "error"])
-				if log_type == "request":
-					logger.debug(f"Request received: GET {endpoint} from user={user}")
-				elif log_type == "response":
-					if latency > 400:
-						logger.warning(f"Slow response: {latency}ms for {endpoint}")
-					else:
-						logger.info(f"Response sent: {endpoint} in {latency}ms")
-				else:
-					logger.error(f"Request failed: {endpoint} - connection timeout")
+				logger.info(f"Request received: GET {endpoint} from user={user}")
 
-		elif scenario == "database":
-			with operation(area="database"):
-				table = random.choice(tables)
-				rows = random.randint(1, 1000)
-				query_time = random.randint(1, 200)
-				if query_time > 150:
-					logger.warning(f"Slow query: {query_time}ms on {table}")
-				elif random.random() < 0.1:
-					logger.error(f"Deadlock detected on table={table}, retrying...")
+				# Auth check
+				with operation(area="auth"):
+					if random.random() < 0.1:
+						logger.warning(f"Token near expiry for user={user}")
+					else:
+						logger.debug(f"Token validated for user={user}")
+
+				# Database query
+				with operation(area="database"):
+					table = random.choice(tables)
+					rows = random.randint(1, 1000)
+					query_time = random.randint(1, 200)
+					if query_time > 150:
+						logger.warning(f"Slow query: {query_time}ms on {table}")
+					elif random.random() < 0.05:
+						logger.error(f"Deadlock detected on table={table}, retrying...")
+					else:
+						logger.info(f"Query returned {rows} rows from {table}")
+
+				# Response
+				latency = random.randint(50, 500)
+				if random.random() < 0.1:
+					logger.error(f"Request failed: {endpoint} - connection timeout")
+				elif latency > 400:
+					logger.warning(f"Slow response: {latency}ms for {endpoint}")
 				else:
-					logger.info(f"Query returned {rows} rows from {table}")
+					logger.info(f"Response sent: {endpoint} in {latency}ms")
 
 		elif scenario == "auth":
+			# Auth operation with database lookup and optional notification
 			with operation(area="auth"):
 				user = random.choice(users)
-				action = random.choice(["login_success", "login_fail", "logout", "token"])
-				if action == "login_success":
-					logger.info(f"Successful login: user={user}")
-				elif action == "login_fail":
-					logger.warning(f"Failed login attempt for user={user}")
+				action = random.choice(["login", "logout", "token"])
+
+				if action == "login":
+					logger.info(f"Login attempt for user={user}")
+
+					# Database lookup
+					with operation(area="database"):
+						logger.debug(f"Looking up credentials for user={user}")
+
+					if random.random() < 0.2:
+						logger.warning(f"Failed login attempt for user={user}")
+						# Send security notification
+						with operation(area="notifications"):
+							logger.info(f"Security alert sent to user={user}")
+					else:
+						logger.info(f"Successful login: user={user}")
+
 				elif action == "logout":
 					logger.info(f"User logged out: user={user}")
+					with operation(area="database"):
+						logger.debug(f"Session cleared for user={user}")
+
 				else:
-					logger.debug(f"Token refreshed for user={user}")
+					logger.debug(f"Token refresh requested for user={user}")
+					with operation(area="database"):
+						logger.debug(f"Token validated for user={user}")
 
 		elif scenario == "payments":
+			# Payment with auth, database, and notification
 			with operation(area="payments"):
 				amount = random.randint(10, 500)
 				order_id = f"ORD-{random.randint(10000, 99999)}"
-				if random.random() < 0.15:
-					logger.error(f"Payment declined: {order_id} reason=insufficient_funds")
-				else:
-					logger.info(f"Payment successful: {order_id} amount=${amount}")
+				logger.info(f"Processing payment for {order_id}")
+
+				# Auth verification
+				with operation(area="auth"):
+					logger.debug(f"Verifying payment authorization for {order_id}")
+
+				# Database update
+				with operation(area="database"):
+					if random.random() < 0.15:
+						logger.error(f"Payment declined: {order_id} reason=insufficient_funds")
+					else:
+						logger.info(f"Payment recorded: {order_id} amount=${amount}")
+
+						# Send receipt notification
+						with operation(area="notifications"):
+							channel = random.choice(["email", "sms"])
+							logger.info(f"Receipt sent via {channel} for {order_id}")
 
 		elif scenario == "scheduler":
+			# Scheduled job with database operations
 			with operation(area="scheduler"):
 				job = random.choice(jobs)
+				logger.info(f"Job started: {job}")
+
+				# Database operations during job
+				with operation(area="database"):
+					table = random.choice(tables)
+					if job == "cleanup_sessions":
+						rows = random.randint(10, 500)
+						logger.info(f"Cleaned up {rows} expired sessions")
+					elif job == "generate_reports":
+						query_time = random.randint(100, 2000)
+						if query_time > 1500:
+							logger.warning(f"Slow report query: {query_time}ms on {table}")
+						else:
+							logger.info(f"Report data fetched from {table}")
+					else:
+						logger.debug(f"Processing {table} records")
+
 				job_duration = random.randint(100, 5000)
-				if random.random() < 0.5:
-					logger.info(f"Job started: {job}")
-				elif job_duration > 4000:
-					logger.warning(f"Job {job} taking longer than expected: {job_duration}ms")
+				if job_duration > 4000:
+					logger.warning(f"Job {job} took longer than expected: {job_duration}ms")
 				else:
 					logger.info(f"Job completed: {job} in {job_duration}ms")
 
-		elif scenario == "notifications":
+		else:  # notifications
+			# Notification with optional database logging
 			with operation(area="notifications"):
 				channel = random.choice(channels)
 				user = random.choice(users)
+				logger.info(f"Sending {channel} notification to user={user}")
+
+				# Log to database
+				with operation(area="database"):
+					logger.debug(f"Recording notification in audit_log")
+
 				if channel == "sms" and random.random() < 0.15:
 					logger.error(f"SMS delivery failed for user={user}: carrier_error")
 				elif channel == "webhook" and random.random() < 0.2:
 					logger.warning(f"Webhook timeout for user={user}, will retry")
 				else:
-					logger.info(f"Notification sent via {channel} to user={user}")
-
-		else:  # burst
-			with operation(area="api"):
-				level = random.choices(
-					[logging.DEBUG, logging.INFO, logging.WARNING, logging.ERROR, logging.CRITICAL],
-					weights=[30, 40, 15, 10, 5],
-				)[0]
-				messages = {
-					logging.DEBUG: "Cache miss, fetching from source",
-					logging.INFO: "Request processed successfully",
-					logging.WARNING: "Rate limit approaching threshold",
-					logging.ERROR: "Service temporarily unavailable",
-					logging.CRITICAL: "Circuit breaker triggered, failing fast",
-				}
-				logger.log(level, messages[level])
+					logger.info(f"Notification delivered via {channel} to user={user}")
 
 		generated += 1
 

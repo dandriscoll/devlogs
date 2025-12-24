@@ -97,6 +97,7 @@ def _summarize_docs(docs: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
 	end_time = None
 	last_message = None
 	area = None
+	parent_operation_id = None
 	lines: List[str] = []
 
 	for doc in docs:
@@ -108,6 +109,10 @@ def _summarize_docs(docs: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
 		doc_area = doc.get("area")
 		if doc_area and area is None:
 			area = doc_area
+		# Capture parent_operation_id from the first doc that has it
+		doc_parent = doc.get("parent_operation_id")
+		if doc_parent and parent_operation_id is None:
+			parent_operation_id = doc_parent
 
 		ts = _parse_timestamp(doc.get("timestamp"))
 		if ts:
@@ -119,7 +124,7 @@ def _summarize_docs(docs: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
 		lines.append(_format_rollup_line(doc))
 
 	rollup_message = "\n".join(line for line in lines if line)
-	return {
+	result = {
 		"area": area,
 		"start_time": _to_iso(start_time),
 		"end_time": _to_iso(end_time),
@@ -129,6 +134,9 @@ def _summarize_docs(docs: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
 		"message": rollup_message or None,
 		"timestamp": _to_iso(end_time or start_time),
 	}
+	if parent_operation_id:
+		result["parent_operation_id"] = parent_operation_id
+	return result
 
 
 def rollup_operation(client, index_logs, operation_id: str, refresh: bool = False) -> bool:
