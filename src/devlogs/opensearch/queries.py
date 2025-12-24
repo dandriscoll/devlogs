@@ -50,6 +50,73 @@ def _hits_to_docs(hits: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
 	return docs
 
 
+def _looks_like_iso(value: str) -> bool:
+	return "T" in value and ("Z" in value or "+" in value)
+
+
+def _parse_rollup_line(line: str) -> Optional[Dict[str, Any]]:
+	parts = line.split(" ", 3)
+	if len(parts) < 4:
+		return None
+	timestamp, level, logger_name, message = parts
+	if not _looks_like_iso(timestamp):
+		return None
+	return {
+		"timestamp": timestamp,
+		"level": level,
+		"logger_name": logger_name,
+		"message": message,
+	}
+
+
+def _normalize_entry(doc: Dict[str, Any]) -> Dict[str, Any]:
+	return {
+		"timestamp": doc.get("timestamp"),
+		"level": doc.get("level"),
+		"message": doc.get("message"),
+		"logger_name": doc.get("logger_name"),
+		"area": doc.get("area"),
+		"operation_id": doc.get("operation_id"),
+		"pathname": doc.get("pathname"),
+		"lineno": doc.get("lineno"),
+		"exception": doc.get("exception"),
+	}
+
+
+def _is_rollup_doc(doc: Dict[str, Any]) -> bool:
+	return bool(doc.get("counts_by_level") or doc.get("start_time") or doc.get("end_time"))
+
+
+def _expand_doc(doc: Dict[str, Any]) -> List[Dict[str, Any]]:
+	doc_type = doc.get("doc_type")
+	if doc_type == "operation" and _is_rollup_doc(doc) and doc.get("message"):
+		entries: List[Dict[str, Any]] = []
+		for line in str(doc.get("message", "")).splitlines():
+			parsed = _parse_rollup_line(line.strip())
+			if parsed:
+				parsed["area"] = doc.get("area")
+				parsed["operation_id"] = doc.get("operation_id")
+				parsed["pathname"] = None
+				parsed["lineno"] = None
+				parsed["exception"] = None
+				entries.append(parsed)
+			elif line.strip():
+				entry = _normalize_entry(doc)
+				entry["message"] = line.strip()
+				entries.append(entry)
+		return entries
+	return [_normalize_entry(doc)]
+
+
+def normalize_log_entries(docs: Iterable[Dict[str, Any]], limit: Optional[int] = None) -> List[Dict[str, Any]]:
+	entries: List[Dict[str, Any]] = []
+	for doc in docs:
+		entries.extend(_expand_doc(doc))
+		if limit is not None and len(entries) >= limit:
+			return entries[:limit]
+	return entries
+
+
 def search_logs(client, index, query=None, area=None, operation_id=None, level=None, since=None, limit=50):
 	"""Search log entries with filters."""
 	body = {

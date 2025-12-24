@@ -1,21 +1,69 @@
 # Web server API endpoints for devlogs
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI
 from fastapi.responses import FileResponse
-from typing import Optional
+from typing import Optional, Tuple
 import os
+
+from ..config import load_config
+from ..opensearch.client import (
+	get_opensearch_client,
+	check_connection,
+	check_index,
+	OpenSearchError,
+)
+from ..opensearch.queries import search_logs, tail_logs, normalize_log_entries
 
 app = FastAPI()
 
+
+def _try_client() -> Tuple[Optional[object], Optional[str]]:
+	cfg = load_config()
+	client = get_opensearch_client()
+	try:
+		check_connection(client)
+		check_index(client, cfg.index_logs)
+		return client, None
+	except OpenSearchError as exc:
+		return None, str(exc)
+
+
 @app.get("/api/search")
 def search(q: Optional[str] = None, area: Optional[str] = None, level: Optional[str] = None, operation_id: Optional[str] = None, since: Optional[str] = None, limit: int = 50):
-	# TODO: Call shared query logic
-	return {"results": []}
+	client, error = _try_client()
+	if not client:
+		return {"results": [], "error": error}
+	cfg = load_config()
+	docs = search_logs(
+		client,
+		cfg.index_logs,
+		query=q,
+		area=area,
+		operation_id=operation_id,
+		level=level,
+		since=since,
+		limit=limit,
+	)
+	results = normalize_log_entries(docs, limit=limit)
+	return {"results": results}
 
 @app.get("/api/tail")
 def tail(operation_id: Optional[str] = None, area: Optional[str] = None, level: Optional[str] = None, since: Optional[str] = None, limit: int = 20):
-	# TODO: Call shared tail logic
-	return {"results": []}
+	client, error = _try_client()
+	if not client:
+		return {"results": [], "error": error}
+	cfg = load_config()
+	docs, cursor = tail_logs(
+		client,
+		cfg.index_logs,
+		operation_id=operation_id,
+		area=area,
+		level=level,
+		since=since,
+		limit=limit,
+	)
+	results = normalize_log_entries(docs, limit=limit)
+	return {"results": results, "cursor": cursor}
 
 @app.get("/ui/{path:path}")
 def serve_ui(path: str):

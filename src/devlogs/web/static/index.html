@@ -1,14 +1,64 @@
-<!-- Minimal embeddable UI for devlogs -->
+<!-- Embeddable UI for devlogs -->
 <html>
 <head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<title>devlogs UI</title>
 	<link rel="stylesheet" href="devlogs.css">
 </head>
 <body>
 	<div id="app">
-		<h1>devlogs</h1>
-		<input id="search" placeholder="Search logs..." />
-		<div id="results"></div>
+		<header class="hero">
+			<div class="brand">
+				<div class="badge">DEVLOGS</div>
+				<h1>Trace Canvas</h1>
+				<p>Explore live log streams across operations. Rolled-up and live entries look identical here.</p>
+			</div>
+			<div class="panel">
+				<div class="field">
+					<label for="search">Search</label>
+					<input id="search" placeholder="error, auth, timeout..." autocomplete="off" />
+				</div>
+				<div class="grid">
+					<div class="field">
+						<label for="area">Area</label>
+						<input id="area" placeholder="web, jobs" />
+					</div>
+					<div class="field">
+						<label for="operation">Operation</label>
+						<input id="operation" placeholder="operation id" />
+					</div>
+					<div class="field">
+						<label for="level">Level</label>
+						<select id="level">
+							<option value="">Any</option>
+							<option>DEBUG</option>
+							<option>INFO</option>
+							<option>WARNING</option>
+							<option>ERROR</option>
+							<option>CRITICAL</option>
+						</select>
+					</div>
+					<div class="field">
+						<label for="limit">Limit</label>
+						<input id="limit" type="number" min="1" max="200" value="50" />
+					</div>
+				</div>
+				<div class="actions">
+					<button id="refresh">Refresh</button>
+					<button id="clear" class="ghost">Clear</button>
+					<label class="toggle">
+						<input id="follow" type="checkbox" />
+						<span>Follow</span>
+					</label>
+				</div>
+			</div>
+		</header>
+		<section class="meta">
+			<div id="status">Ready</div>
+			<div id="count">0 entries</div>
+		</section>
+		<section id="results" class="timeline"></section>
 	</div>
 	<script src="devlogs.js"></script>
 </body>
