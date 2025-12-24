@@ -48,9 +48,13 @@ def test_cli_tail_command_help():
     result = runner.invoke(cli.app, ["tail", "--help"])
     assert result.exit_code == 0
     assert "Tail logs" in result.output or "tail" in result.output
+    # Check for utc flag (case insensitive due to ANSI codes)
+    assert "utc" in result.output.lower()
 
 def test_cli_search_command_help():
     runner = CliRunner()
     result = runner.invoke(cli.app, ["search", "--help"])
     assert result.exit_code == 0
     assert "Search logs" in result.output or "search" in result.output
+    # Check for utc flag (case insensitive due to ANSI codes)
+    assert "utc" in result.output.lower()
