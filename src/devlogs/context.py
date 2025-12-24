@@ -15,7 +15,7 @@ def _rollup_operation(operation_id: str) -> None:
 		from .rollup import rollup_operation
 		cfg = load_config()
 		client = get_opensearch_client()
-		rollup_operation(client, cfg.index_logs, operation_id)
+		rollup_operation(client, cfg.index_logs, operation_id, refresh=True)
 	except Exception as exc:
 		print(f"[devlogs] Failed to roll up operation {operation_id}: {exc}")
 

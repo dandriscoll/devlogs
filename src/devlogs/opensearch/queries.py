@@ -135,10 +135,11 @@ def search_logs(client, index, query=None, area=None, operation_id=None, level=N
 	return _hits_to_docs(hits)
 
 
-def tail_logs(client, index, operation_id=None, area=None, level=None, since=None, limit=20, search_after=None):
+def tail_logs(client, index, query=None, operation_id=None, area=None, level=None, since=None, limit=20, search_after=None):
 	"""Tail log entries for an operation."""
 	body = {
 		"query": _build_log_query(
+			query=query,
 			area=area,
 			operation_id=operation_id,
 			level=level,

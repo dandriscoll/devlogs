@@ -131,8 +131,13 @@ def _summarize_docs(docs: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
 	}
 
 
-def rollup_operation(client, index_logs, operation_id: str) -> bool:
+def rollup_operation(client, index_logs, operation_id: str, refresh: bool = False) -> bool:
 	"""Aggregate child docs for a single operation into a parent, then delete children."""
+	if refresh:
+		try:
+			client.indices.refresh(index=index_logs)
+		except Exception:
+			pass
 	docs = _collect_child_docs(client, index_logs, operation_id)
 	if not docs:
 		return False

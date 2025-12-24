@@ -16,7 +16,7 @@ from .opensearch.client import (
 	ConnectionFailedError,
 )
 from .opensearch.mappings import LOG_INDEX_TEMPLATE
-from .opensearch.queries import tail_logs
+from .opensearch.queries import normalize_log_entries, search_logs, tail_logs
 from .rollup import rollup_operations
 
 app = typer.Typer()
@@ -56,7 +56,7 @@ def tail(
 	level: str = typer.Option(None, "--level"),
 	since: str = typer.Option(None, "--since"),
 	limit: int = typer.Option(20, "--limit"),
-	follow: bool = typer.Option(False, "--follow"),
+	follow: bool = typer.Option(False, "--follow", "-f"),
 ):
 	"""Tail logs for a given area/operation."""
 	import urllib.error
@@ -84,6 +84,7 @@ def tail(
 				limit=limit,
 				search_after=search_after,
 			)
+			entries = normalize_log_entries(docs)
 			consecutive_errors = 0  # Reset on success
 		except (ConnectionFailedError, urllib.error.URLError) as e:
 			consecutive_errors += 1
@@ -112,11 +113,11 @@ def tail(
 			), err=True)
 			raise typer.Exit(1)
 
-		if first_poll and not docs:
+		if first_poll and not entries:
 			typer.echo(typer.style("No logs found.", dim=True), err=True)
 		first_poll = False
 
-		for doc in docs:
+		for doc in entries:
 			timestamp = doc.get("timestamp") or ""
 			entry_level = doc.get("level") or ""
 			entry_area = doc.get("area") or ""
@@ -130,9 +131,93 @@ def tail(
 
 
 @app.command()
-def search(q: str = "", area: str = "web"):
-	"""Search logs for a query (stub)."""
-	typer.echo(f"[stub] Searching logs for area: {area}, query='{q}'")
+def search(
+	q: str = typer.Option("", "--q", help="Search query"),
+	area: str = typer.Option(None, "--area"),
+	level: str = typer.Option(None, "--level"),
+	operation_id: str = typer.Option(None, "--operation", "-o"),
+	since: str = typer.Option(None, "--since"),
+	limit: int = typer.Option(50, "--limit"),
+	follow: bool = typer.Option(False, "--follow", "-f"),
+):
+	"""Search logs for a query."""
+	import urllib.error
+
+	client, cfg = require_opensearch()
+	search_after = None
+	consecutive_errors = 0
+	max_errors = 3
+	first_poll = True
+
+	while True:
+		try:
+			if follow:
+				docs, search_after = tail_logs(
+					client,
+					cfg.index_logs,
+					query=q,
+					operation_id=operation_id,
+					area=area,
+					level=level,
+					since=since,
+					limit=limit,
+					search_after=search_after,
+				)
+			else:
+				docs = search_logs(
+					client,
+					cfg.index_logs,
+					query=q,
+					area=area,
+					operation_id=operation_id,
+					level=level,
+					since=since,
+					limit=limit,
+				)
+			entries = normalize_log_entries(docs, limit=limit)
+			consecutive_errors = 0
+		except (ConnectionFailedError, urllib.error.URLError) as e:
+			consecutive_errors += 1
+			if not follow or consecutive_errors >= max_errors:
+				typer.echo(typer.style(
+					f"Error: Lost connection to OpenSearch ({consecutive_errors} attempts)",
+					fg=typer.colors.RED
+				), err=True)
+				raise typer.Exit(1)
+			typer.echo(typer.style(
+				f"Connection error, retrying... ({consecutive_errors}/{max_errors})",
+				fg=typer.colors.YELLOW
+			), err=True)
+			time.sleep(2)
+			continue
+		except urllib.error.HTTPError as e:
+			typer.echo(typer.style(
+				f"Error: OpenSearch error: HTTP {e.code} - {e.reason}",
+				fg=typer.colors.RED
+			), err=True)
+			raise typer.Exit(1)
+		except Exception as e:
+			typer.echo(typer.style(
+				f"Error: Unexpected error: {type(e).__name__}: {e}",
+				fg=typer.colors.RED
+			), err=True)
+			raise typer.Exit(1)
+
+		if first_poll and not entries:
+			typer.echo(typer.style("No logs found.", dim=True), err=True)
+		first_poll = False
+
+		for doc in entries:
+			timestamp = doc.get("timestamp") or ""
+			entry_level = doc.get("level") or ""
+			entry_area = doc.get("area") or ""
+			entry_operation = doc.get("operation_id") or ""
+			message = doc.get("message") or ""
+			typer.echo(f"{timestamp} {entry_level} {entry_area} {entry_operation} {message}")
+
+		if not follow:
+			break
+		time.sleep(2)
 
 
 @app.command()
