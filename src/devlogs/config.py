@@ -12,11 +12,11 @@ def _getenv(name, default):
 class DevlogsConfig:
 	"""Loads configuration from environment variables and provides defaults."""
 	def __init__(self):
-		self.opensearch_host = _getenv("OPENSEARCH_HOST", "localhost")
-		self.opensearch_port = int(_getenv("OPENSEARCH_PORT", "9200"))
-		self.opensearch_user = _getenv("OPENSEARCH_USER", "admin")
-		self.opensearch_pass = _getenv("OPENSEARCH_PASS", "admin")
-		self.opensearch_timeout = int(_getenv("OPENSEARCH_TIMEOUT", "30"))
+		self.opensearch_host = _getenv("DEVLOGS_OPENSEARCH_HOST", "localhost")
+		self.opensearch_port = int(_getenv("DEVLOGS_OPENSEARCH_PORT", "9200"))
+		self.opensearch_user = _getenv("DEVLOGS_OPENSEARCH_USER", "admin")
+		self.opensearch_pass = _getenv("DEVLOGS_OPENSEARCH_PASS", "admin")
+		self.opensearch_timeout = int(_getenv("DEVLOGS_OPENSEARCH_TIMEOUT", "30"))
 		self.index_logs = _getenv("DEVLOGS_INDEX_LOGS", "devlogs-0001")
 		self.retention_debug_hours = int(_getenv("DEVLOGS_RETENTION_DEBUG_HOURS", "24"))
 		self.area_default = _getenv("DEVLOGS_AREA_DEFAULT", "general")

@@ -16,10 +16,10 @@ docker-compose up -d opensearch  # Or use existing OpenSearch instance
 
 ### 3. Configure (create `.env`)
 ```bash
-OPENSEARCH_HOST=localhost
-OPENSEARCH_PORT=9200
-OPENSEARCH_USER=admin
-OPENSEARCH_PASS=YourPassword123!
+DEVLOGS_OPENSEARCH_HOST=localhost
+DEVLOGS_OPENSEARCH_PORT=9200
+DEVLOGS_OPENSEARCH_USER=admin
+DEVLOGS_OPENSEARCH_PASS=YourPassword123!
 DEVLOGS_INDEX_LOGS=devlogs-myproject
 ```
 

@@ -177,7 +177,7 @@ def check_connection(client):
 	except AuthenticationError:
 		raise AuthenticationError(
 			f"Authentication failed for OpenSearch at {cfg.opensearch_host}:{cfg.opensearch_port}\n"
-			f"Check OPENSEARCH_USER and OPENSEARCH_PASS in your .env file."
+			f"Check DEVLOGS_OPENSEARCH_USER and DEVLOGS_OPENSEARCH_PASS in your .env file."
 		)
 
 

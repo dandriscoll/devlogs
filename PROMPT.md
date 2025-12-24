@@ -36,7 +36,7 @@ Tech constraints / assumptions
 - Use `opensearch-py` client.
 - Keep dependencies light; use `typer` (or `click`) for CLI; `fastapi` (or minimal Flask) for web server.
 - Provide good defaults but allow configuration via env vars and CLI flags:
-  - OPENSEARCH_HOST, OPENSEARCH_PORT, OPENSEARCH_USER, OPENSEARCH_PASS
+  - DEVLOGS_OPENSEARCH_HOST, DEVLOGS_OPENSEARCH_PORT, DEVLOGS_OPENSEARCH_USER, DEVLOGS_OPENSEARCH_PASS
   - index names, retention windows, area default, etc.
 
 Deliverables (project structure)
