@@ -25,9 +25,9 @@ def test_diagnostics_handler_child_with_context(opensearch_client, test_index):
 	results = search_logs(opensearch_client, test_index, operation_id="op-1")
 	assert results
 	doc = results[0]
-	assert doc["doc_type"]["name"] == "log_entry"
-	assert doc["doc_type"]["parent"] == "op-1"
+	assert doc["doc_type"] == "operation"
 	assert doc["area"] == "web"
+	assert "child log" in (doc.get("message") or "")
 
 
 def test_diagnostics_handler_parent_without_context(opensearch_client, test_index):
@@ -79,11 +79,12 @@ def test_index_and_query_varied_contexts(opensearch_client, test_index):
 	opensearch_client.indices.refresh(index=test_index)
 	results = search_logs(opensearch_client, test_index, area="service-api")
 	assert len(results) == 1
-	assert results[0]["message"] == "beta two"
+	assert "beta two" in (results[0].get("message") or "")
 
 	results = search_logs(opensearch_client, test_index, operation_id=long_operation)
 	assert len(results) == 1
 	assert results[0]["area"] == long_area
+	assert "gamma three" in (results[0].get("message") or "")
 
 
 def test_nested_contexts_are_distinct(opensearch_client, test_index):
@@ -98,9 +99,12 @@ def test_nested_contexts_are_distinct(opensearch_client, test_index):
 
 	opensearch_client.indices.refresh(index=test_index)
 	results = search_logs(opensearch_client, test_index, operation_id="outer")
-	assert len(results) == 2
+	assert len(results) == 1
+	assert "outer start" in (results[0].get("message") or "")
+	assert "outer end" in (results[0].get("message") or "")
 	results = search_logs(opensearch_client, test_index, operation_id="inner")
 	assert len(results) == 1
+	assert "inner" in (results[0].get("message") or "")
 
 
 def test_tail_logs_pagination(opensearch_client, test_index):
@@ -134,8 +138,11 @@ def test_tail_logs_pagination(opensearch_client, test_index):
 		search_after=cursor2,
 	)
 
-	messages = [doc["message"] for doc in page1 + page2 + page3]
-	assert messages[:5] == [f"msg {i}" for i in range(5)]
+	rollup_docs = page1 + page2 + page3
+	assert len(rollup_docs) == 1
+	message = rollup_docs[0].get("message") or ""
+	for i in range(5):
+		assert f"msg {i}" in message
 
 
 def test_tail_logs_finds_opensearch_handler_entries(opensearch_client, test_index):
@@ -148,4 +155,4 @@ def test_tail_logs_finds_opensearch_handler_entries(opensearch_client, test_inde
 
 	opensearch_client.indices.refresh(index=test_index)
 	results, _ = tail_logs(opensearch_client, test_index, operation_id="op-basic", limit=5)
-	assert any(doc["message"] == "basic message" for doc in results)
+	assert any("basic message" in (doc.get("message") or "") for doc in results)

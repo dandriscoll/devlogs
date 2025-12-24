@@ -17,6 +17,7 @@ from .opensearch.client import (
 )
 from .opensearch.mappings import LOG_INDEX_TEMPLATE
 from .opensearch.queries import tail_logs
+from .rollup import rollup_operations
 
 app = typer.Typer()
 
@@ -132,6 +133,16 @@ def tail(
 def search(q: str = "", area: str = "web"):
 	"""Search logs for a query (stub)."""
 	typer.echo(f"[stub] Searching logs for area: {area}, query='{q}'")
+
+
+@app.command()
+def rollup(
+	since: str = typer.Option(None, "--since", help="Only roll up logs since timestamp"),
+):
+	"""Roll up any dangling child logs into their parent operations."""
+	client, cfg = require_opensearch()
+	rollup_operations(client, cfg.index_logs, since=since)
+	typer.echo("Rollup complete.")
 
 
 @app.command()

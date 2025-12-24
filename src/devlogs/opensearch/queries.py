@@ -9,6 +9,7 @@ def _build_log_query(query=None, area=None, operation_id=None, level=None, since
 			"bool": {
 				"should": [
 					{"term": {"doc_type": "log_entry"}},
+					{"term": {"doc_type": "operation"}},
 					{"bool": {"must_not": {"exists": {"field": "doc_type"}}}},
 				],
 				"minimum_should_match": 1,

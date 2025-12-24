@@ -63,15 +63,44 @@ class LightweightOpenSearchClient:
 		"""Get cluster info (used for connection check)."""
 		return self._request("GET", "/")
 
-	def search(self, index, body):
+	def search(self, index, body, scroll=None):
 		"""Search an index."""
-		return self._request("POST", f"/{index}/_search", body)
+		path = f"/{index}/_search"
+		if scroll:
+			path += f"?scroll={scroll}"
+		return self._request("POST", path, body)
 
-	def index(self, index, body, routing=None):
+	def index(self, index, body, routing=None, id=None, doc_id=None, refresh=None):
 		"""Index a document."""
+		doc_id = doc_id or id
 		path = f"/{index}/_doc"
+		method = "POST"
+		if doc_id:
+			path += f"/{doc_id}"
+			method = "PUT"
+		params = []
 		if routing:
-			path += f"?routing={routing}"
+			params.append(f"routing={routing}")
+		if refresh is not None:
+			params.append(f"refresh={'true' if refresh else 'false'}")
+		if params:
+			path += "?" + "&".join(params)
+		return self._request(method, path, body)
+
+	def delete_by_query(self, index, body, routing=None, refresh=None, conflicts=None, slices=None):
+		"""Delete documents matching a query."""
+		path = f"/{index}/_delete_by_query"
+		params = []
+		if routing:
+			params.append(f"routing={routing}")
+		if refresh is not None:
+			params.append(f"refresh={'true' if refresh else 'false'}")
+		if conflicts:
+			params.append(f"conflicts={conflicts}")
+		if slices:
+			params.append(f"slices={slices}")
+		if params:
+			path += "?" + "&".join(params)
 		return self._request("POST", path, body)
 
 

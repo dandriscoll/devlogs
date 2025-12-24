@@ -5,7 +5,7 @@ from devlogs.handler import DiagnosticsHandler
 from devlogs.opensearch.queries import search_logs
 
 def test_operation_context_sets_and_resets():
-    with context.operation("opid", "web"):
+    with context.operation("opid", "web", rollup=False):
         assert context.get_operation_id() == "opid"
         assert context.get_area() == "web"
     assert context.get_operation_id() is None
@@ -35,9 +35,9 @@ def test_diagnostics_handler_uses_context_for_child_docs(opensearch_client, test
     results = search_logs(opensearch_client, test_index, operation_id="op-ctx")
     assert results
     doc = results[0]
-    assert doc["doc_type"]["name"] == "log_entry"
-    assert doc["doc_type"]["parent"] == "op-ctx"
+    assert doc["doc_type"] == "operation"
     assert doc["area"] == "web"
+    assert "hello" in (doc.get("message") or "")
 
 
 def test_diagnostics_handler_nested_contexts(opensearch_client, test_index):
@@ -53,10 +53,12 @@ def test_diagnostics_handler_nested_contexts(opensearch_client, test_index):
     opensearch_client.indices.refresh(index=test_index)
     outer_docs = search_logs(opensearch_client, test_index, operation_id="outer")
     inner_docs = search_logs(opensearch_client, test_index, operation_id="inner")
-    assert len(outer_docs) == 2
+    assert len(outer_docs) == 1
     assert len(inner_docs) == 1
     assert outer_docs[0]["area"] == "api"
     assert inner_docs[0]["area"] == "jobs"
+    assert "outer" in (outer_docs[0].get("message") or "")
+    assert "inner" in (inner_docs[0].get("message") or "")
 
 
 def test_diagnostics_handler_extra_overrides_context(opensearch_client, test_index):
