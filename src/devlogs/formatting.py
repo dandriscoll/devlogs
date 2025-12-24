@@ -3,12 +3,12 @@
 from datetime import datetime, timezone
 
 
-def format_timestamp(timestamp_str: str, use_utc: bool = False) -> str:
+def format_timestamp(timestamp_str: str | None, use_utc: bool = False) -> str:
 	"""
 	Format a timestamp string for display.
 	
 	Args:
-		timestamp_str: ISO 8601 timestamp string (typically UTC with Z suffix)
+		timestamp_str: ISO 8601 timestamp string (typically UTC with Z suffix) or None
 		use_utc: If True, display in UTC; if False, display in local time
 	
 	Returns:
