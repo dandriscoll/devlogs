@@ -5,6 +5,7 @@ import sys
 signal.signal(signal.SIGINT, lambda *_: sys.exit(130))
 
 import time
+import click
 import typer
 
 from .config import load_config
@@ -258,7 +259,9 @@ def serve(
 def main():
 	if len(sys.argv) == 1:
 		# No arguments: show help
-		typer.echo(app.get_help(), err=True)
+		command = typer.main.get_command(app)
+		ctx = click.Context(command)
+		typer.echo(command.get_help(ctx), err=True)
 		raise typer.Exit(0)
 	try:
 		app()
