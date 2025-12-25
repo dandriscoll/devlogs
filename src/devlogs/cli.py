@@ -262,7 +262,7 @@ def main():
 		command = typer.main.get_command(app)
 		ctx = click.Context(command)
 		typer.echo(command.get_help(ctx), err=True)
-		raise typer.Exit(0)
+		return 0
 	try:
 		app()
 	except typer.Exit:
