@@ -1,6 +1,19 @@
 # Search APIs for OpenSearch
 
 from typing import Any, Dict, Iterable, List, Optional, Tuple
+from ..levels import normalize_level
+
+
+def _normalize_level_terms(level: Optional[str]) -> Optional[List[str]]:
+	normalized = normalize_level(level)
+	if not normalized:
+		return None
+	terms = {normalized, normalized.upper()}
+	if isinstance(level, str):
+		raw = level.strip()
+		if raw:
+			terms.add(raw)
+	return sorted(terms)
 
 
 def _build_log_query(query=None, area=None, operation_id=None, level=None, since=None):
@@ -20,8 +33,9 @@ def _build_log_query(query=None, area=None, operation_id=None, level=None, since
 		filters.append({"term": {"area": area}})
 	if operation_id:
 		filters.append({"term": {"operation_id": operation_id}})
-	if level:
-		filters.append({"term": {"level": level}})
+	level_terms = _normalize_level_terms(level)
+	if level_terms:
+		filters.append({"terms": {"level": level_terms}})
 	if since:
 		filters.append({"range": {"timestamp": {"gte": since}}})
 
@@ -59,7 +73,10 @@ def _parse_rollup_line(line: str) -> Optional[Dict[str, Any]]:
 	if len(parts) < 4:
 		return None
 	timestamp, level, logger_name, message = parts
+	level = normalize_level(level)
 	if not _looks_like_iso(timestamp):
+		return None
+	if not level:
 		return None
 	return {
 		"timestamp": timestamp,
@@ -72,7 +89,7 @@ def _parse_rollup_line(line: str) -> Optional[Dict[str, Any]]:
 def _normalize_entry(doc: Dict[str, Any]) -> Dict[str, Any]:
 	return {
 		"timestamp": doc.get("timestamp"),
-		"level": doc.get("level"),
+		"level": normalize_level(doc.get("level")),
 		"message": doc.get("message"),
 		"logger_name": doc.get("logger_name"),
 		"area": doc.get("area"),

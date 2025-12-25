@@ -164,7 +164,7 @@ function renderEntries(entries, { highlightKeys } = {}) {
 		}
 		const areaBadge = groupArea ? `<span class="entry-group-area">${escapeHtml(groupArea)}</span>` : '';
 		const rows = group.entries.map((entry) => {
-			const level = (entry.level || 'INFO').toUpperCase();
+			const level = (entry.level || 'info').toUpperCase();
 			const levelClass = `level-${level}`;
 			const key = entryKey(entry);
 			const isNew = highlightKeys && highlightKeys.has(key);

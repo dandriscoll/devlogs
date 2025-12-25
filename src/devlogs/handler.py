@@ -4,6 +4,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 from .context import get_area, get_operation_id, get_parent_operation_id
+from .levels import normalize_level
 
 class OpenSearchHandler(logging.Handler):
 	"""Logging handler that writes log records to OpenSearch."""
@@ -36,7 +37,7 @@ class OpenSearchHandler(logging.Handler):
 			timestamp = datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat().replace("+00:00", "Z")
 		return {
 			"timestamp": timestamp,
-			"level": record.levelname,
+			"level": normalize_level(record.levelname),
 			"levelno": record.levelno,
 			"logger_name": record.name,
 			"message": self.format(record),

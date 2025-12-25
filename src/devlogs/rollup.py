@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Sequence
+from .levels import normalize_level
 
 
 def _parse_timestamp(value: Any) -> Optional[datetime]:
@@ -88,7 +89,7 @@ def _group_child_docs(docs: Sequence[Dict[str, Any]]) -> Dict[str, Dict[str, Any
 
 def _format_rollup_line(doc: Dict[str, Any]) -> str:
 	timestamp = doc.get("timestamp") or ""
-	level = doc.get("level") or ""
+	level = normalize_level(doc.get("level")) or ""
 	logger_name = doc.get("logger_name") or ""
 	message = doc.get("message") or ""
 	line = f"{timestamp} {level} {logger_name} {message}".strip()
@@ -142,10 +143,10 @@ def _summarize_docs(docs: Sequence[Dict[str, Any]], root_operation_id: Optional[
 	lines: List[str] = []
 
 	for doc in docs:
-		level = doc.get("level")
+		level = normalize_level(doc.get("level"))
 		if level:
 			counts_by_level[level] = counts_by_level.get(level, 0) + 1
-			if level.upper() in ("ERROR", "CRITICAL"):
+			if level in ("error", "critical"):
 				error_count += 1
 		doc_area = doc.get("area")
 		if doc_area and area is None:
@@ -187,7 +188,7 @@ def _summarize_docs(docs: Sequence[Dict[str, Any]], root_operation_id: Optional[
 def _compact_child_doc(doc: Dict[str, Any]) -> Dict[str, Any]:
 	return {
 		"timestamp": doc.get("timestamp"),
-		"level": doc.get("level"),
+		"level": normalize_level(doc.get("level")),
 		"logger_name": doc.get("logger_name"),
 		"message": doc.get("message"),
 		"area": doc.get("area"),

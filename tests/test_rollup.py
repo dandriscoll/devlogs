@@ -67,8 +67,8 @@ def test_rollup_operation_creates_parent_and_deletes_children(opensearch_client,
 	assert parent is not None
 	assert parent["doc_type"] == "operation"
 	assert parent["area"] == "api"
-	assert parent["counts_by_level"].get("INFO") == 1
-	assert parent["counts_by_level"].get("ERROR") == 1
+	assert parent["counts_by_level"].get("info") == 1
+	assert parent["counts_by_level"].get("error") == 1
 	assert parent["error_count"] == 1
 	assert "first message" in (parent.get("message") or "")
 	assert "second message" in (parent.get("message") or "")

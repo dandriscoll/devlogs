@@ -31,10 +31,10 @@ def test_search_expands_rollup_docs(monkeypatch):
 		"doc_type": "operation",
 		"operation_id": "op-1",
 		"area": "web",
-		"counts_by_level": {"INFO": 1},
+		"counts_by_level": {"info": 1},
 		"message": (
-			"2024-02-01T10:00:00Z INFO svc first\n"
-			"2024-02-01T10:00:01Z ERROR svc second"
+			"2024-02-01T10:00:00Z info svc first\n"
+			"2024-02-01T10:00:01Z error svc second"
 		),
 	}
 
@@ -51,8 +51,8 @@ def test_search_expands_rollup_docs(monkeypatch):
 	assert len(results) == 2
 	assert results[0]["operation_id"] == "op-1"
 	assert results[0]["area"] == "web"
-	assert results[0]["level"] == "INFO"
-	assert results[1]["level"] == "ERROR"
+	assert results[0]["level"] == "info"
+	assert results[1]["level"] == "error"
 	assert results[1]["message"] == "second"
 
 
@@ -63,7 +63,7 @@ def test_search_returns_unrolled_docs(monkeypatch):
 		"operation_id": "op-2",
 		"area": "jobs",
 		"timestamp": "2024-02-01T09:30:00Z",
-		"level": "INFO",
+		"level": "info",
 		"logger_name": "svc",
 		"message": "hello",
 		"pathname": "worker.py",
@@ -89,7 +89,7 @@ def test_tail_endpoint_returns_cursor(monkeypatch):
 		"operation_id": "op-3",
 		"area": "api",
 		"timestamp": "2024-02-01T09:40:00Z",
-		"level": "WARNING",
+		"level": "warning",
 		"logger_name": "svc",
 		"message": "slow response",
 	}
