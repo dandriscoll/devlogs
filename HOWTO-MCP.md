@@ -26,21 +26,11 @@ You can have multiple `.env` files for different environments (e.g., `production
 
 ### 2. Add MCP Server Configuration
 
-All AI assistants use the same basic configuration format. Add this to the appropriate configuration file for your tool:
+Add the devlogs MCP server configuration to the appropriate file for your tool. The basic structure is similar across all platforms:
 
-```json
-{
-  "mcpServers": {
-    "devlogs": {
-      "command": "/path/to/your/project/.venv/bin/python",
-      "args": ["-m", "devlogs.mcp.server"],
-      "env": {
-        "DOTENV_PATH": "/path/to/your/project/.env"
-      }
-    }
-  }
-}
-```
+**Command**: `/path/to/your/project/.venv/bin/python` (or `${workspaceFolder}/.venv/bin/python` for VS Code)
+**Args**: `["-m", "devlogs.mcp.server"]`
+**Environment**: `DOTENV_PATH` pointing to your `.env` file
 
 **Important**: Replace `/path/to/your/project` with the actual path to your project directory.
 
@@ -50,17 +40,32 @@ All AI assistants use the same basic configuration format. Add this to the appro
 - Create `.mcp.json` in your project root
 - The configuration will be shared with your team via version control
 - Claude Code will prompt for approval when first using the server
+- Configuration:
+  ```json
+  {
+    "mcpServers": {
+      "devlogs": {
+        "command": "/path/to/your/project/.venv/bin/python",
+        "args": ["-m", "devlogs.mcp.server"],
+        "env": {
+          "DOTENV_PATH": "/path/to/your/project/.env"
+        }
+      }
+    }
+  }
+  ```
 
 **Claude Code** - User-scoped configuration (personal):
-- Add to `~/.claude.json` under the `mcpServers` field
+- Add to `~/.claude.json` under the `mcpServers` field (same format as above)
 - Available across all your projects
 
 **GitHub Copilot** - VS Code project settings:
-- Add to `.vscode/settings.json` in your project root
-- Use `${workspaceFolder}` for paths:
+- Create `.vscode/mcp.json` in your project root
+- VS Code 1.102+ required for MCP support
+- Configuration:
   ```json
   {
-    "mcp.servers": {
+    "servers": {
       "devlogs": {
         "command": "${workspaceFolder}/.venv/bin/python",
         "args": ["-m", "devlogs.mcp.server"],
@@ -71,6 +76,7 @@ All AI assistants use the same basic configuration format. Add this to the appro
     }
   }
   ```
+- Click the "Start" button in the file to start the MCP server
 
 **Codex** - TOML configuration:
 - Add to `~/.codex/config.toml`:
@@ -138,5 +144,7 @@ Replace the `env` section with inline credentials:
 
 ## References
 
+- [Use MCP servers in VS Code - GitHub Copilot](https://code.visualstudio.com/docs/copilot/customization/mcp-servers)
+- [Extending GitHub Copilot Chat with MCP servers](https://docs.github.com/copilot/customizing-copilot/using-model-context-protocol/extending-copilot-chat-with-mcp)
 - [Model Context Protocol - OpenAI Codex](https://developers.openai.com/codex/mcp/)
 - [Codex MCP Configuration Guide](https://vladimirsiedykh.com/blog/codex-mcp-config-toml-shared-configuration-cli-vscode-setup-2025)
