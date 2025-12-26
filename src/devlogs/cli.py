@@ -76,16 +76,28 @@ def tail(
 	since: str = typer.Option(None, "--since"),
 	limit: int = typer.Option(20, "--limit"),
 	follow: bool = typer.Option(False, "--follow", "-f"),
+	verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose output"),
 	utc: bool = typer.Option(False, "--utc", help="Display timestamps in UTC instead of local time"),
 ):
 	"""Tail logs for a given area/operation."""
 	import urllib.error
 
 	client, cfg = require_opensearch()
-	typer.echo(typer.style(
-		f"Connected to OpenSearch, tailing index '{cfg.index_logs}'...",
-		fg=typer.colors.GREEN
-	), err=True)
+	if verbose:
+		parts = []
+		if operation_id:
+			parts.append(f"operation={operation_id}")
+		if area:
+			parts.append(f"area={area}")
+		if level:
+			parts.append(f"level={level}")
+		if since:
+			parts.append(f"since={since}")
+		filter_text = " ".join(parts) if parts else "no filters"
+		typer.echo(typer.style(
+			f"Tailing index '{cfg.index_logs}' ({filter_text}), limit={limit}, follow={follow}",
+			fg=typer.colors.BLUE
+		), err=True)
 
 	search_after = None
 	consecutive_errors = 0
