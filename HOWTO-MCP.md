@@ -12,7 +12,7 @@ The devlogs MCP server allows AI assistants like Claude Code, GitHub Copilot, an
 
 ### 1. Configure .env
 
-Create a `.env` file with your OpenSearch credentials:
+Create a `.env` file in your project with your OpenSearch credentials:
 
 ```bash
 DEVLOGS_OPENSEARCH_HOST=localhost
@@ -24,85 +24,71 @@ DEVLOGS_INDEX_LOGS=devlogs-0001
 
 You can have multiple `.env` files for different environments (e.g., `production.env`, `staging.env`).
 
-### 2. Configure Your AI Assistant
+### 2. Add MCP Server Configuration
 
-Add the MCP server configuration to your AI assistant's settings. The AI assistant will automatically start and manage the MCP server process.
-
-#### Claude Code
-
-Add to your MCP server configuration:
+All AI assistants use the same basic configuration format. Add this to the appropriate configuration file for your tool:
 
 ```json
 {
   "mcpServers": {
     "devlogs": {
-      "command": "python",
+      "command": "/path/to/your/project/.venv/bin/python",
       "args": ["-m", "devlogs.mcp.server"],
-      "cwd": "/path/to/your/project",
       "env": {
-        "DOTENV_PATH": "/path/to/your/.env"
+        "DOTENV_PATH": "/path/to/your/project/.env"
       }
     }
   }
 }
 ```
 
-Or with inline credentials:
+**Important**: Replace `/path/to/your/project` with the actual path to your project directory.
 
-```json
-{
-  "mcpServers": {
-    "devlogs": {
-      "command": "python",
-      "args": ["-m", "devlogs.mcp.server"],
-      "env": {
-        "DEVLOGS_OPENSEARCH_HOST": "localhost",
-        "DEVLOGS_OPENSEARCH_PORT": "9200",
-        "DEVLOGS_OPENSEARCH_USER": "admin",
-        "DEVLOGS_OPENSEARCH_PASS": "YourPassword123!",
-        "DEVLOGS_INDEX_LOGS": "devlogs-0001"
+#### Where to Add This Configuration
+
+**Claude Code** - Project-scoped configuration (recommended):
+- Create `.mcp.json` in your project root
+- The configuration will be shared with your team via version control
+- Claude Code will prompt for approval when first using the server
+
+**Claude Code** - User-scoped configuration (personal):
+- Add to `~/.claude.json` under the `mcpServers` field
+- Available across all your projects
+
+**GitHub Copilot** - VS Code project settings:
+- Add to `.vscode/settings.json` in your project root
+- Use `${workspaceFolder}` for paths:
+  ```json
+  {
+    "mcp.servers": {
+      "devlogs": {
+        "command": "${workspaceFolder}/.venv/bin/python",
+        "args": ["-m", "devlogs.mcp.server"],
+        "env": {
+          "DOTENV_PATH": "${workspaceFolder}/.env"
+        }
       }
     }
   }
-}
-```
+  ```
 
-#### GitHub Copilot
+**Codex** - TOML configuration:
+- Add to `~/.codex/config.toml`:
+  ```toml
+  [mcp_servers.devlogs]
+  command = "/path/to/your/project/.venv/bin/python"
+  args = ["-m", "devlogs.mcp.server"]
 
-If using VS Code with MCP support, add to `.vscode/settings.json`:
+  [mcp_servers.devlogs.env]
+  DOTENV_PATH = "/path/to/your/project/.env"
+  ```
+- Or use the CLI: `codex mcp add devlogs`
 
-```json
-{
-  "mcp.servers": {
-    "devlogs": {
-      "command": "python",
-      "args": ["-m", "devlogs.mcp.server"],
-      "cwd": "${workspaceFolder}",
-      "env": {
-        "DOTENV_PATH": "${workspaceFolder}/.env"
-      }
-    }
-  }
-}
-```
+### 3. Restart Your AI Assistant
 
-#### Codex / OpenAI API
-
-Configure the MCP server in your integration's settings using the same format:
-
-```json
-{
-  "devlogs": {
-    "command": "python",
-    "args": ["-m", "devlogs.mcp.server"],
-    "env": {
-      "DOTENV_PATH": "/path/to/your/.env"
-    }
-  }
-}
-```
-
-The integration will start and manage the server process automatically.
+- **Claude Code**: Restart Claude Code or run `claude mcp list` to verify
+- **GitHub Copilot**: Reload VS Code window
+- **Codex**: Restart Codex
 
 ## Usage
 
@@ -131,3 +117,26 @@ Find all WARNING and ERROR logs in the database area
 - Read [HOWTO.md](HOWTO.md) for general devlogs integration
 - Read [README.md](README.md) for project overview
 - Run `devlogs demo` to generate sample logs for testing
+
+## Alternative: Inline Credentials
+
+Instead of using a `.env` file, you can specify credentials directly in your MCP configuration. This is useful for simple setups but less secure for production use.
+
+Replace the `env` section with inline credentials:
+
+```json
+"env": {
+  "DEVLOGS_OPENSEARCH_HOST": "localhost",
+  "DEVLOGS_OPENSEARCH_PORT": "9200",
+  "DEVLOGS_OPENSEARCH_USER": "admin",
+  "DEVLOGS_OPENSEARCH_PASS": "YourPassword123!",
+  "DEVLOGS_INDEX_LOGS": "devlogs-0001"
+}
+```
+
+**Security Note**: Avoid committing inline credentials to version control. Use `.env` files and add them to `.gitignore`.
+
+## References
+
+- [Model Context Protocol - OpenAI Codex](https://developers.openai.com/codex/mcp/)
+- [Codex MCP Configuration Guide](https://vladimirsiedykh.com/blog/codex-mcp-config-toml-shared-configuration-cli-vscode-setup-2025)
