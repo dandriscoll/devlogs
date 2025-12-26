@@ -1,6 +1,7 @@
 # OpenSearchHandler implementation
 
 import logging
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
@@ -49,6 +50,13 @@ def _extract_features(record: logging.LogRecord) -> Optional[Dict[str, Any]]:
 
 class OpenSearchHandler(logging.Handler):
 	"""Logging handler that writes log records to OpenSearch."""
+	# Circuit breaker state shared across all instances
+	_circuit_open = False
+	_circuit_open_until = 0.0
+	_circuit_breaker_duration = 60.0  # seconds to wait before retrying
+	_last_error_printed = 0.0
+	_error_print_interval = 10.0  # only print errors every 10 seconds
+
 	def __init__(self, level=logging.DEBUG, opensearch_client=None, index_name=None):
 		super().__init__(level)
 		self.client = opensearch_client
@@ -57,7 +65,14 @@ class OpenSearchHandler(logging.Handler):
 	def emit(self, record):
 		# Build log document
 		doc = self.format_record(record)
-		# Index document (stub)
+
+		# Circuit breaker: skip indexing if we know the index is unavailable
+		current_time = time.time()
+		if OpenSearchHandler._circuit_open and current_time < OpenSearchHandler._circuit_open_until:
+			# Silently fail - circuit is open
+			return
+
+		# Index document
 		try:
 			if self.client:
 				operation_id = doc.get("operation_id")
@@ -67,9 +82,19 @@ class OpenSearchHandler(logging.Handler):
 				else:
 					doc["doc_type"] = "operation"
 					self.client.index(index=self.index_name, body=doc)
+				# Success - close circuit breaker if it was open
+				if OpenSearchHandler._circuit_open:
+					OpenSearchHandler._circuit_open = False
+					print(f"[devlogs] Connection restored, resuming indexing")
 		except Exception as e:
-			# Fallback: print warning, do not crash
-			print(f"[devlogs] Failed to index log: {e}")
+			# Open circuit breaker to prevent further attempts
+			OpenSearchHandler._circuit_open = True
+			OpenSearchHandler._circuit_open_until = current_time + OpenSearchHandler._circuit_breaker_duration
+
+			# Only print error occasionally to avoid log spam
+			if current_time - OpenSearchHandler._last_error_printed > OpenSearchHandler._error_print_interval:
+				print(f"[devlogs] Failed to index log, pausing indexing for {OpenSearchHandler._circuit_breaker_duration}s: {e}")
+				OpenSearchHandler._last_error_printed = current_time
 
 	def format_record(self, record):
 		# Compose log document with context
@@ -104,6 +129,12 @@ class DiagnosticsHandler(OpenSearchHandler):
 		super().__init__(level=logging.DEBUG, opensearch_client=opensearch_client, index_name=index_name)
 
 	def emit(self, record):
+		# Circuit breaker: skip indexing if we know the index is unavailable
+		current_time = time.time()
+		if OpenSearchHandler._circuit_open and current_time < OpenSearchHandler._circuit_open_until:
+			# Silently fail - circuit is open
+			return
+
 		doc = self.format_record(record)
 		operation_id = doc.get("operation_id")
 		if not operation_id:
@@ -120,8 +151,19 @@ class DiagnosticsHandler(OpenSearchHandler):
 		try:
 			if self.client:
 				self.client.index(index=self.index_name, body=doc, routing=routing)
+				# Success - close circuit breaker if it was open
+				if OpenSearchHandler._circuit_open:
+					OpenSearchHandler._circuit_open = False
+					print(f"[devlogs] Connection restored, resuming indexing")
 		except Exception as e:
-			print(f"[devlogs] Failed to index log: {e}")
+			# Open circuit breaker to prevent further attempts
+			OpenSearchHandler._circuit_open = True
+			OpenSearchHandler._circuit_open_until = current_time + OpenSearchHandler._circuit_breaker_duration
+
+			# Only print error occasionally to avoid log spam
+			if current_time - OpenSearchHandler._last_error_printed > OpenSearchHandler._error_print_interval:
+				print(f"[devlogs] Failed to index log, pausing indexing for {OpenSearchHandler._circuit_breaker_duration}s: {e}")
+				OpenSearchHandler._last_error_printed = current_time
 
 	def format_record(self, record):
 		doc = super().format_record(record)

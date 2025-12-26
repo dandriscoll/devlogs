@@ -1,6 +1,7 @@
 # Context management for operation_id and area
 
 import contextvars
+import time
 import uuid
 from contextlib import contextmanager
 from typing import Optional
@@ -10,6 +11,13 @@ _parent_operation_id_var = contextvars.ContextVar("parent_operation_id", default
 _area_var = contextvars.ContextVar("area", default=None)
 _rollup_default = True
 
+# Circuit breaker for rollup operations
+_rollup_circuit_open = False
+_rollup_circuit_open_until = 0.0
+_rollup_circuit_breaker_duration = 60.0  # seconds
+_rollup_last_error_printed = 0.0
+_rollup_error_print_interval = 10.0  # seconds
+
 
 def set_rollup_default(enabled: bool) -> None:
 	"""Set the default rollup behavior for operation contexts."""
@@ -17,6 +25,14 @@ def set_rollup_default(enabled: bool) -> None:
 	_rollup_default = bool(enabled)
 
 def _rollup_operation(operation_id: str) -> None:
+	global _rollup_circuit_open, _rollup_circuit_open_until, _rollup_last_error_printed
+
+	# Circuit breaker: skip rollup if we know the index is unavailable
+	current_time = time.time()
+	if _rollup_circuit_open and current_time < _rollup_circuit_open_until:
+		# Silently fail - circuit is open
+		return
+
 	try:
 		from .config import load_config
 		from .opensearch.client import get_opensearch_client
@@ -24,8 +40,19 @@ def _rollup_operation(operation_id: str) -> None:
 		cfg = load_config()
 		client = get_opensearch_client()
 		rollup_operation(client, cfg.index_logs, operation_id, refresh=True)
+		# Success - close circuit breaker if it was open
+		if _rollup_circuit_open:
+			_rollup_circuit_open = False
+			print(f"[devlogs] Connection restored, resuming rollup")
 	except Exception as exc:
-		print(f"[devlogs] Failed to roll up operation {operation_id}: {exc}")
+		# Open circuit breaker to prevent further attempts
+		_rollup_circuit_open = True
+		_rollup_circuit_open_until = current_time + _rollup_circuit_breaker_duration
+
+		# Only print error occasionally to avoid log spam
+		if current_time - _rollup_last_error_printed > _rollup_error_print_interval:
+			print(f"[devlogs] Failed to roll up operation, pausing rollup for {_rollup_circuit_breaker_duration}s: {exc}")
+			_rollup_last_error_printed = current_time
 
 
 @contextmanager
