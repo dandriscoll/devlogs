@@ -8,7 +8,7 @@ import time
 import click
 import typer
 
-from .config import load_config
+from .config import load_config, set_dotenv_path
 from .formatting import format_timestamp
 from .opensearch.client import (
 	get_opensearch_client,
@@ -22,6 +22,16 @@ from .opensearch.queries import normalize_log_entries, search_logs, tail_logs
 from .rollup import rollup_operations
 
 app = typer.Typer()
+
+# Global callback to handle --env flag before any command runs
+@app.callback(invoke_without_command=True)
+def main_callback(
+	ctx: typer.Context,
+	env: str = typer.Option(None, "--env", help="Path to .env file to load"),
+):
+	"""devlogs - Developer-focused logging with OpenSearch integration."""
+	if env:
+		set_dotenv_path(env)
 
 
 def _format_features(features):
