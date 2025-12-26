@@ -81,8 +81,42 @@ def tail(
 ):
 	"""Tail logs for a given area/operation."""
 	import urllib.error
+	import traceback
 
 	client, cfg = require_opensearch()
+
+	def _verbose_echo(message, color=typer.colors.BLUE):
+		if verbose:
+			typer.echo(typer.style(message, fg=color), err=True)
+
+	def _log_doc_anomalies(docs):
+		bad_docs = 0
+		bad_entries = 0
+		for doc_index, doc in enumerate(docs):
+			if not isinstance(doc, dict):
+				bad_docs += 1
+				if bad_docs <= 3:
+					_verbose_echo(
+						f"Warning: doc #{doc_index} is {type(doc).__name__}: {doc!r}",
+						color=typer.colors.YELLOW,
+					)
+				continue
+			entries = doc.get("entries")
+			if isinstance(entries, list):
+				for entry_index, entry in enumerate(entries):
+					if not isinstance(entry, dict):
+						bad_entries += 1
+						if bad_entries <= 3:
+							_verbose_echo(
+								f"Warning: doc #{doc_index} entry #{entry_index} is {type(entry).__name__}: {entry!r}",
+								color=typer.colors.YELLOW,
+							)
+		if bad_docs or bad_entries:
+			_verbose_echo(
+				f"Anomalies detected: {bad_docs} non-dict docs, {bad_entries} non-dict entries",
+				color=typer.colors.YELLOW,
+			)
+
 	if verbose:
 		parts = []
 		if operation_id:
@@ -94,6 +128,7 @@ def tail(
 		if since:
 			parts.append(f"since={since}")
 		filter_text = " ".join(parts) if parts else "no filters"
+		_verbose_echo(f"Tailing index '{cfg.index_logs}' ({filter_text}), limit={limit}, follow={follow}")
 
 	search_after = None
 	consecutive_errors = 0
@@ -102,6 +137,7 @@ def tail(
 
 	while True:
 		try:
+			_verbose_echo(f"Polling OpenSearch with cursor={search_after}")
 			docs, search_after = tail_logs(
 				client,
 				cfg.index_logs,
@@ -112,7 +148,26 @@ def tail(
 				limit=limit,
 				search_after=search_after,
 			)
-			entries = normalize_log_entries(docs)
+			_verbose_echo(f"Received {len(docs)} docs, next cursor={search_after}")
+			if verbose and docs:
+				sample = docs[0]
+				if isinstance(sample, dict):
+					keys = ", ".join(sorted(sample.keys()))
+					_verbose_echo(f"Sample doc keys: {keys}")
+				else:
+					_verbose_echo(f"Sample doc type: {type(sample).__name__}")
+				_log_doc_anomalies(docs)
+			try:
+				entries = normalize_log_entries(docs)
+			except Exception as e:
+				_verbose_echo(
+					f"normalize_log_entries failed: {type(e).__name__}: {e}",
+					color=typer.colors.RED,
+				)
+				if docs:
+					_verbose_echo(f"Sample doc repr: {docs[0]!r}", color=typer.colors.RED)
+				raise
+			_verbose_echo(f"Normalized {len(entries)} entries")
 			consecutive_errors = 0  # Reset on success
 		except (ConnectionFailedError, urllib.error.URLError) as e:
 			consecutive_errors += 1
@@ -135,6 +190,9 @@ def tail(
 			), err=True)
 			raise typer.Exit(1)
 		except Exception as e:
+			if verbose:
+				typer.echo(typer.style("Verbose stack trace:", fg=typer.colors.RED), err=True)
+				traceback.print_exc()
 			typer.echo(typer.style(
 				f"Error: Unexpected error: {type(e).__name__}: {e}",
 				fg=typer.colors.RED
@@ -145,17 +203,25 @@ def tail(
 			typer.echo(typer.style("No logs found.", dim=True), err=True)
 		first_poll = False
 
-		for doc in entries:
-			timestamp = format_timestamp(doc.get("timestamp") or "", use_utc=utc)
-			entry_level = doc.get("level") or ""
-			entry_area = doc.get("area") or ""
-			entry_operation = doc.get("operation_id") or ""
-			message = doc.get("message") or ""
-			features = _format_features(doc.get("features"))
-			if features:
-				typer.echo(f"{timestamp} {entry_level} {entry_area} {entry_operation} {features} {message}")
-			else:
-				typer.echo(f"{timestamp} {entry_level} {entry_area} {entry_operation} {message}")
+		for entry_index, doc in enumerate(entries):
+			try:
+				timestamp = format_timestamp(doc.get("timestamp") or "", use_utc=utc)
+				entry_level = doc.get("level") or ""
+				entry_area = doc.get("area") or ""
+				entry_operation = doc.get("operation_id") or ""
+				message = doc.get("message") or ""
+				features = _format_features(doc.get("features"))
+				if features:
+					typer.echo(f"{timestamp} {entry_level} {entry_area} {entry_operation} {features} {message}")
+				else:
+					typer.echo(f"{timestamp} {entry_level} {entry_area} {entry_operation} {message}")
+			except Exception as e:
+				_verbose_echo(
+					f"Failed rendering entry #{entry_index}: {type(e).__name__}: {e}",
+					color=typer.colors.RED,
+				)
+				_verbose_echo(f"Entry repr: {doc!r}", color=typer.colors.RED)
+				raise
 
 		if not follow:
 			break
