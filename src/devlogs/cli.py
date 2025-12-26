@@ -71,9 +71,9 @@ def init():
 	client, cfg = require_opensearch(check_idx=False)
 	# Create or update index templates
 	client.indices.put_index_template(name="devlogs-template", body=LOG_INDEX_TEMPLATE)
-	# Create initial indices if not exist
+	# Create initial index with explicit mappings if it doesn't exist
 	if not client.indices.exists(index=cfg.index_logs):
-		client.indices.create(index=cfg.index_logs)
+		client.indices.create(index=cfg.index_logs, body=LOG_INDEX_TEMPLATE["template"])
 		typer.echo(f"Created index '{cfg.index_logs}'.")
 	typer.echo("OpenSearch indices and templates initialized.")
 
