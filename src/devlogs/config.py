@@ -26,8 +26,12 @@ def load_config() -> DevlogsConfig:
 	global _dotenv_loaded
 	if not _dotenv_loaded:
 		try:
-			from dotenv import load_dotenv
-			load_dotenv()
+			from dotenv import find_dotenv, load_dotenv
+			dotenv_path = find_dotenv(usecwd=True)
+			if dotenv_path:
+				load_dotenv(dotenv_path)
+			else:
+				load_dotenv()
 		except ModuleNotFoundError:
 			pass
 		_dotenv_loaded = True

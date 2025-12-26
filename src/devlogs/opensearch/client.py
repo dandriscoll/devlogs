@@ -49,7 +49,10 @@ class LightweightOpenSearchClient:
 		req = urllib.request.Request(url, data=data, headers=self.headers, method=method)
 		try:
 			with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-				return json.loads(resp.read().decode('utf-8'))
+				raw = resp.read().decode('utf-8')
+				if not raw:
+					return {}
+				return json.loads(raw)
 		except urllib.error.HTTPError as e:
 			if e.code == 401:
 				raise AuthenticationError(f"Authentication failed (HTTP 401)")
@@ -112,16 +115,8 @@ class _IndicesClient:
 
 	def exists(self, index):
 		"""Check if index exists."""
-		try:
-			result = self._client._request("HEAD", f"/{index}")
-			return True
-		except urllib.error.HTTPError as e:
-			if e.code == 404:
-				return False
-			raise
-		except:
-			# HEAD request succeeded
-			return True
+		result = self._client._request("HEAD", f"/{index}")
+		return result is not None
 
 	def create(self, index, body=None):
 		"""Create an index."""

@@ -2,6 +2,7 @@
 
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from ..levels import normalize_level
+from .client import IndexNotFoundError
 
 
 def _normalize_level_terms(level: Optional[str]) -> Optional[List[str]]:
@@ -69,6 +70,20 @@ def _hits_to_docs(hits: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
 		doc["sort"] = hit.get("sort")
 		docs.append(doc)
 	return docs
+
+
+def _require_response(response: Any, context: str, client=None, index=None) -> Dict[str, Any]:
+	if response is None:
+		if client is not None and index is not None:
+			if not client.indices.exists(index=index):
+				raise IndexNotFoundError(
+					f"Index '{index}' does not exist.\n"
+					f"Run 'devlogs init' to create it."
+				)
+		raise ValueError(f"OpenSearch {context} returned None")
+	if not isinstance(response, dict):
+		raise ValueError(f"OpenSearch {context} returned {type(response).__name__}")
+	return response
 
 
 def _looks_like_iso(value: str) -> bool:
@@ -169,7 +184,7 @@ def search_logs(client, index, query=None, area=None, operation_id=None, level=N
 		"sort": [{"timestamp": "desc"}, {"_id": "desc"}],
 		"size": limit,
 	}
-	response = client.search(index=index, body=body)
+	response = _require_response(client.search(index=index, body=body), "search", client=client, index=index)
 	hits = response.get("hits", {}).get("hits", [])
 	return _hits_to_docs(hits)
 
@@ -195,7 +210,7 @@ def tail_logs(client, index, query=None, operation_id=None, area=None, level=Non
 	}
 	if search_after:
 		body["search_after"] = search_after
-	response = client.search(index=index, body=body)
+	response = _require_response(client.search(index=index, body=body), "tail", client=client, index=index)
 	hits = response.get("hits", {}).get("hits", [])
 	docs = _hits_to_docs(hits)
 

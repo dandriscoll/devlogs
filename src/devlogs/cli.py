@@ -189,6 +189,12 @@ def tail(
 				fg=typer.colors.RED
 			), err=True)
 			raise typer.Exit(1)
+		except OpenSearchError as e:
+			typer.echo(typer.style(
+				f"Error: {e}",
+				fg=typer.colors.RED
+			), err=True)
+			raise typer.Exit(1)
 		except Exception as e:
 			if verbose:
 				typer.echo(typer.style("Verbose stack trace:", fg=typer.colors.RED), err=True)
@@ -292,6 +298,12 @@ def search(
 		except urllib.error.HTTPError as e:
 			typer.echo(typer.style(
 				f"Error: OpenSearch error: HTTP {e.code} - {e.reason}",
+				fg=typer.colors.RED
+			), err=True)
+			raise typer.Exit(1)
+		except OpenSearchError as e:
+			typer.echo(typer.style(
+				f"Error: {e}",
 				fg=typer.colors.RED
 			), err=True)
 			raise typer.Exit(1)
