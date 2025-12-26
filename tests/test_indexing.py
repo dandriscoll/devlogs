@@ -3,7 +3,7 @@ import time
 
 from devlogs.context import operation
 from devlogs.handler import DiagnosticsHandler, OpenSearchHandler
-from devlogs.opensearch.queries import search_logs, tail_logs
+from devlogs.opensearch.queries import normalize_log_entries, search_logs, tail_logs
 
 
 def _get_logger(name, handler):
@@ -103,8 +103,14 @@ def test_nested_contexts_are_distinct(opensearch_client, test_index):
 	assert "outer start" in (results[0].get("message") or "")
 	assert "outer end" in (results[0].get("message") or "")
 	results = search_logs(opensearch_client, test_index, operation_id="inner")
-	assert len(results) == 1
-	assert "inner" in (results[0].get("message") or "")
+	assert len(results) == 0
+	entries = normalize_log_entries(search_logs(opensearch_client, test_index, operation_id="outer"))
+	assert any(
+		entry.get("operation_id") == "inner"
+		and entry.get("area") == "jobs"
+		and "inner" in (entry.get("message") or "")
+		for entry in entries
+	)
 
 
 def test_tail_logs_pagination(opensearch_client, test_index):
@@ -156,3 +162,25 @@ def test_tail_logs_finds_opensearch_handler_entries(opensearch_client, test_inde
 	opensearch_client.indices.refresh(index=test_index)
 	results, _ = tail_logs(opensearch_client, test_index, operation_id="op-basic", limit=5)
 	assert any("basic message" in (doc.get("message") or "") for doc in results)
+
+
+def test_features_are_indexed_and_normalized(opensearch_client, test_index):
+	handler = DiagnosticsHandler(opensearch_client=opensearch_client, index_name=test_index)
+	logger = _get_logger("devlogs-features", handler)
+
+	with operation(operation_id="op-features", area="api"):
+		logger.info(
+			"feature log",
+			extra={"features": {"user": "alice", "plan": "pro", "count": 3}},
+		)
+
+	opensearch_client.indices.refresh(index=test_index)
+	results = search_logs(opensearch_client, test_index, operation_id="op-features")
+	assert results
+	entries = normalize_log_entries(results)
+	assert any(
+		entry.get("features", {}).get("user") == "alice"
+		and entry.get("features", {}).get("plan") == "pro"
+		and entry.get("features", {}).get("count") == 3
+		for entry in entries
+	)

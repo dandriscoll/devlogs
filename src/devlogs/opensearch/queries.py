@@ -45,7 +45,14 @@ def _build_log_query(query=None, area=None, operation_id=None, level=None, since
 			{
 					"simple_query_string": {
 						"query": query,
-						"fields": ["message^2", "logger_name", "operation_id", "parent_operation_id", "area"],
+						"fields": [
+							"message^2",
+							"logger_name",
+							"operation_id",
+							"parent_operation_id",
+							"area",
+							"features.*",
+						],
 						"default_operator": "and",
 					}
 				}
@@ -98,6 +105,7 @@ def _normalize_entry(doc: Dict[str, Any]) -> Dict[str, Any]:
 		"pathname": doc.get("pathname"),
 		"lineno": doc.get("lineno"),
 		"exception": doc.get("exception"),
+		"features": doc.get("features"),
 	}
 
 

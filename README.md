@@ -29,7 +29,7 @@ A developer-focused logging library for Python with OpenSearch integration.
 	logging.getLogger().setLevel(logging.DEBUG)
 
 	with operation(area="web"):
-		 logging.info("Hello from devlogs!")
+		 logging.info("Hello from devlogs!", extra={"features": {"user": "alice", "plan": "pro"}})
 	```
 
 4. **Tail logs from CLI:**
@@ -83,6 +83,7 @@ A developer-focused logging library for Python with OpenSearch integration.
 
 - Standard `logging.Handler` for OpenSearch
 - Context manager for operation_id/area
+- Structured feature pairs on log entries (`extra={"features": {...}}`)
 - CLI and Linux shell wrapper
 - Minimal embeddable web UI
 - Robust tests (pytest)

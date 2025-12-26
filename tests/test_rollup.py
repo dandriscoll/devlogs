@@ -104,3 +104,26 @@ def test_rollup_operations_handles_multiple_operations(opensearch_client, test_i
 
 	assert _count_children(opensearch_client, test_index, "op-a") == 0
 	assert _count_children(opensearch_client, test_index, "op-b") == 0
+
+
+def test_rollup_preserves_features(opensearch_client, test_index):
+	handler = DiagnosticsHandler(opensearch_client=opensearch_client, index_name=test_index)
+	handler.setFormatter(logging.Formatter("%(message)s"))
+	logger = _get_logger("rollup-features", handler)
+
+	with operation(operation_id="op-rollup-features", area="api", rollup=False):
+		logger.info("feature message", extra={"features": {"user": "alice", "tier": "gold"}})
+
+	opensearch_client.indices.refresh(index=test_index)
+	assert _count_children(opensearch_client, test_index, "op-rollup-features") == 1
+
+	assert rollup_operation(opensearch_client, test_index, "op-rollup-features") == 1
+	opensearch_client.indices.refresh(index=test_index)
+
+	parent = _get_parent_doc(opensearch_client, test_index, "op-rollup-features")
+	assert parent is not None
+	assert any(
+		entry.get("features", {}).get("user") == "alice"
+		and entry.get("features", {}).get("tier") == "gold"
+		for entry in parent.get("entries", [])
+	)

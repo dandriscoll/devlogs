@@ -249,6 +249,34 @@ button.ghost {
 	color: var(--muted);
 }
 
+.entry-features {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin: 8px 0 0;
+}
+
+.entry-feature {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 4px 10px;
+	border-radius: 999px;
+	border: 1px solid rgba(30, 111, 92, 0.2);
+	background: rgba(30, 111, 92, 0.08);
+	font-size: 12px;
+	font-family: "JetBrains Mono", "Courier New", monospace;
+}
+
+.entry-feature-key {
+	color: var(--accent-2);
+	font-weight: 600;
+}
+
+.entry-feature-value {
+	color: var(--ink);
+}
+
 .entry-message {
 	margin: 10px 0;
 	font-size: 15px;

@@ -197,6 +197,7 @@ def _compact_child_doc(doc: Dict[str, Any]) -> Dict[str, Any]:
 		"pathname": doc.get("pathname"),
 		"lineno": doc.get("lineno"),
 		"exception": doc.get("exception"),
+		"features": doc.get("features"),
 	}
 
 

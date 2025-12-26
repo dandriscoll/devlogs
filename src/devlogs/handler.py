@@ -3,8 +3,49 @@
 import logging
 import uuid
 from datetime import datetime, timezone
+from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 from .context import get_area, get_operation_id, get_parent_operation_id
 from .levels import normalize_level
+
+_FEATURE_VALUE_TYPES = (str, int, float, bool, type(None))
+
+
+def _coerce_feature_value(value: Any) -> Any:
+	if isinstance(value, _FEATURE_VALUE_TYPES):
+		return value
+	return str(value)
+
+
+def _normalize_features(value: Any) -> Optional[Dict[str, Any]]:
+	if value is None:
+		return None
+	features: Dict[str, Any] = {}
+	items: Sequence[Tuple[Any, Any]]
+	if isinstance(value, Mapping):
+		items = list(value.items())
+	elif isinstance(value, (list, tuple, set)):
+		items = list(value)
+	else:
+		return None
+	for item in items:
+		if isinstance(value, Mapping):
+			key, val = item
+		else:
+			if not isinstance(item, (list, tuple)) or len(item) != 2:
+				continue
+			key, val = item
+		if key is None:
+			continue
+		key_text = str(key).strip()
+		if not key_text:
+			continue
+		features[key_text] = _coerce_feature_value(val)
+	return features or None
+
+
+def _extract_features(record: logging.LogRecord) -> Optional[Dict[str, Any]]:
+	return _normalize_features(getattr(record, "features", None))
+
 
 class OpenSearchHandler(logging.Handler):
 	"""Logging handler that writes log records to OpenSearch."""
@@ -35,7 +76,7 @@ class OpenSearchHandler(logging.Handler):
 		timestamp = None
 		if getattr(record, "created", None) is not None:
 			timestamp = datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat().replace("+00:00", "Z")
-		return {
+		doc = {
 			"timestamp": timestamp,
 			"level": normalize_level(record.levelname),
 			"levelno": record.levelno,
@@ -51,6 +92,10 @@ class OpenSearchHandler(logging.Handler):
 			"operation_id": get_operation_id(),
 			"parent_operation_id": get_parent_operation_id(),
 		}
+		features = _extract_features(record)
+		if features:
+			doc["features"] = features
+		return doc
 
 
 class DiagnosticsHandler(OpenSearchHandler):

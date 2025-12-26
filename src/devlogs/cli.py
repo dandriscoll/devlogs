@@ -24,6 +24,23 @@ from .rollup import rollup_operations
 app = typer.Typer()
 
 
+def _format_features(features):
+	if not features:
+		return ""
+	if isinstance(features, dict):
+		items = sorted(features.items(), key=lambda item: str(item[0]))
+		parts = []
+		for key, value in items:
+			key_text = str(key)
+			if value is None:
+				value_text = "null"
+			else:
+				value_text = str(value)
+			parts.append(f"{key_text}={value_text}")
+		return f"[{' '.join(parts)}]" if parts else ""
+	return f"[{features}]"
+
+
 def require_opensearch(check_idx=True):
 	"""Get client and verify OpenSearch is accessible. Optionally check index exists."""
 	cfg = load_config()
@@ -126,7 +143,11 @@ def tail(
 			entry_area = doc.get("area") or ""
 			entry_operation = doc.get("operation_id") or ""
 			message = doc.get("message") or ""
-			typer.echo(f"{timestamp} {entry_level} {entry_area} {entry_operation} {message}")
+			features = _format_features(doc.get("features"))
+			if features:
+				typer.echo(f"{timestamp} {entry_level} {entry_area} {entry_operation} {features} {message}")
+			else:
+				typer.echo(f"{timestamp} {entry_level} {entry_area} {entry_operation} {message}")
 
 		if not follow:
 			break
@@ -217,7 +238,11 @@ def search(
 			entry_area = doc.get("area") or ""
 			entry_operation = doc.get("operation_id") or ""
 			message = doc.get("message") or ""
-			typer.echo(f"{timestamp} {entry_level} {entry_area} {entry_operation} {message}")
+			features = _format_features(doc.get("features"))
+			if features:
+				typer.echo(f"{timestamp} {entry_level} {entry_area} {entry_operation} {features} {message}")
+			else:
+				typer.echo(f"{timestamp} {entry_level} {entry_area} {entry_operation} {message}")
 
 		if not follow:
 			break

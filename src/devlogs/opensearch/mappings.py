@@ -18,6 +18,7 @@ LOG_INDEX_TEMPLATE = {
 				"message": {"type": "text"},
 				"area": {"type": "keyword"},
 				"operation_id": {"type": "keyword"},
+				"features": {"type": "object", "dynamic": True},
 				"start_time": {"type": "date"},
 				"end_time": {"type": "date"},
 				"counts_by_level": {"type": "object"},
@@ -27,4 +28,3 @@ LOG_INDEX_TEMPLATE = {
 		}
 	}
 }
-

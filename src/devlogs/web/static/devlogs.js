@@ -34,6 +34,60 @@ function escapeHtml(value) {
 		.replace(/'/g, '&#039;');
 }
 
+function formatFeatureValue(value) {
+	if (value === null || value === undefined) {
+		return 'null';
+	}
+	if (typeof value === 'object') {
+		try {
+			return JSON.stringify(value);
+		} catch (err) {
+			return String(value);
+		}
+	}
+	return String(value);
+}
+
+function getFeatureEntries(features) {
+	if (!features || typeof features !== 'object' || Array.isArray(features)) {
+		return [];
+	}
+	const entries = Object.entries(features).filter(([key]) => key);
+	entries.sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+	return entries;
+}
+
+function featureKey(features) {
+	const entries = getFeatureEntries(features);
+	if (!entries.length) {
+		return '';
+	}
+	return entries.map(([key, value]) => `${key}=${formatFeatureValue(value)}`).join('|');
+}
+
+function renderFeatures(features) {
+	const entries = getFeatureEntries(features);
+	if (!entries.length) {
+		return '';
+	}
+	const chips = entries.map(([key, value]) => `
+		<span class="entry-feature">
+			<span class="entry-feature-key">${escapeHtml(key)}</span>
+			<span class="entry-feature-value">${escapeHtml(formatFeatureValue(value))}</span>
+		</span>
+	`).join('');
+	return `<div class="entry-features">${chips}</div>`;
+}
+
+function formatFeaturesInline(features) {
+	const entries = getFeatureEntries(features);
+	if (!entries.length) {
+		return '';
+	}
+	const parts = entries.map(([key, value]) => `${key}=${formatFeatureValue(value)}`);
+	return parts.join(' ');
+}
+
 function formatTimestamp(value) {
 	if (!value) {
 		return '—';
@@ -54,7 +108,8 @@ function formatTimestamp(value) {
 }
 
 function entryKey(entry) {
-	return `${entry.timestamp || ''}|${entry.level || ''}|${entry.operation_id || ''}|${entry.parent_operation_id || ''}|${entry.message || ''}`;
+	const features = featureKey(entry.features);
+	return `${entry.timestamp || ''}|${entry.level || ''}|${entry.operation_id || ''}|${entry.parent_operation_id || ''}|${entry.message || ''}|${features}`;
 }
 
 function latestTimestamp(entries) {
@@ -179,7 +234,8 @@ function renderEntries(entries, { highlightKeys } = {}) {
 			const timestamp = formatTimestamp(entry.timestamp);
 			if (isChild) {
 				const messageText = String(entry.message || '').replace(/\r?\n/g, ' ').trim();
-				const lineParts = [timestamp, level, entry.area || '', entry.operation_id || '', messageText];
+				const featureText = formatFeaturesInline(entry.features);
+				const lineParts = [timestamp, level, entry.area || '', entry.operation_id || '', featureText, messageText];
 				const lineText = escapeHtml(lineParts.filter(Boolean).join(' ').trim());
 				return `
 					<div class="${entryClass} ${levelClass}">
@@ -187,6 +243,7 @@ function renderEntries(entries, { highlightKeys } = {}) {
 					</div>
 				`;
 			}
+			const features = renderFeatures(entry.features);
 			return `
 				<div class="${entryClass} ${levelClass}">
 					<div class="entry-meta">
@@ -194,6 +251,7 @@ function renderEntries(entries, { highlightKeys } = {}) {
 						<span class="entry-level">${level}</span>
 						<span class="entry-area">${area}</span>
 					</div>
+					${features}
 					<div class="entry-message">${message}</div>
 					<div class="entry-extra">
 						<span class="entry-logger">${loggerName}</span>
