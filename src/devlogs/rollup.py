@@ -5,6 +5,19 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence
 from .levels import normalize_level
 
 
+def _normalize_operation_id(value: Any) -> Optional[str]:
+	if value is None:
+		return None
+	if isinstance(value, str):
+		value = value.strip()
+		return value or None
+	try:
+		text = str(value).strip()
+	except Exception:
+		return None
+	return text or None
+
+
 def _parse_timestamp(value: Any) -> Optional[datetime]:
 	if value is None:
 		return None
@@ -57,8 +70,8 @@ def _collect_all_child_docs(client, index_logs, since: Optional[str] = None) -> 
 def _build_parent_map(docs: Sequence[Dict[str, Any]]) -> Dict[str, str]:
 	parent_map: Dict[str, str] = {}
 	for doc in docs:
-		operation_id = doc.get("operation_id")
-		parent_operation_id = doc.get("parent_operation_id")
+		operation_id = _normalize_operation_id(doc.get("operation_id"))
+		parent_operation_id = _normalize_operation_id(doc.get("parent_operation_id"))
 		if operation_id and parent_operation_id and operation_id not in parent_map:
 			parent_map[operation_id] = parent_operation_id
 	return parent_map
@@ -77,7 +90,7 @@ def _group_child_docs(docs: Sequence[Dict[str, Any]]) -> Dict[str, Dict[str, Any
 	parent_map = _build_parent_map(docs)
 	groups: Dict[str, Dict[str, Any]] = {}
 	for doc in docs:
-		operation_id = doc.get("operation_id")
+		operation_id = _normalize_operation_id(doc.get("operation_id"))
 		if not operation_id:
 			continue
 		root_id = _resolve_root(operation_id, parent_map) or operation_id
@@ -151,10 +164,11 @@ def _summarize_docs(docs: Sequence[Dict[str, Any]], root_operation_id: Optional[
 		doc_area = doc.get("area")
 		if doc_area and area is None:
 			area = doc_area
-		if root_operation_id and doc.get("operation_id") == root_operation_id:
+		doc_operation_id = _normalize_operation_id(doc.get("operation_id"))
+		if root_operation_id and doc_operation_id == root_operation_id:
 			if doc_area and root_area is None:
 				root_area = doc_area
-			doc_parent = doc.get("parent_operation_id")
+			doc_parent = _normalize_operation_id(doc.get("parent_operation_id"))
 			if doc_parent is not None and parent_operation_id is None:
 				parent_operation_id = doc_parent
 
@@ -192,8 +206,8 @@ def _compact_child_doc(doc: Dict[str, Any]) -> Dict[str, Any]:
 		"logger_name": doc.get("logger_name"),
 		"message": doc.get("message"),
 		"area": doc.get("area"),
-		"operation_id": doc.get("operation_id"),
-		"parent_operation_id": doc.get("parent_operation_id"),
+		"operation_id": _normalize_operation_id(doc.get("operation_id")),
+		"parent_operation_id": _normalize_operation_id(doc.get("parent_operation_id")),
 		"pathname": doc.get("pathname"),
 		"lineno": doc.get("lineno"),
 		"exception": doc.get("exception"),
@@ -248,6 +262,9 @@ def rollup_operation(client, index_logs, operation_id: str, refresh: bool = Fals
 			client.indices.refresh(index=index_logs)
 		except Exception:
 			pass
+	operation_id = _normalize_operation_id(operation_id)
+	if not operation_id:
+		return 0
 	docs = _collect_all_child_docs(client, index_logs)
 	if not docs:
 		return 0
