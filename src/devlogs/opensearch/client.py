@@ -28,6 +28,11 @@ class AuthenticationError(OpenSearchError):
 	pass
 
 
+class QueryError(OpenSearchError):
+	"""Raised when a query is malformed or invalid."""
+	pass
+
+
 class LightweightOpenSearchClient:
 	"""Minimal OpenSearch client using stdlib urllib for fast imports."""
 
@@ -58,6 +63,18 @@ class LightweightOpenSearchClient:
 				raise AuthenticationError(f"Authentication failed (HTTP 401)")
 			if e.code == 404:
 				return None
+			if e.code == 400:
+				# Try to extract error details from response body
+				try:
+					error_body = e.read().decode('utf-8')
+					error_json = json.loads(error_body)
+					reason = error_json.get("error", {}).get("reason", "Bad Request")
+					root_cause = error_json.get("error", {}).get("root_cause", [])
+					if root_cause:
+						reason = root_cause[0].get("reason", reason)
+					raise QueryError(f"Query error: {reason}")
+				except (json.JSONDecodeError, KeyError):
+					raise QueryError(f"Query error: Bad Request")
 			raise
 		except urllib.error.URLError as e:
 			raise ConnectionFailedError(f"Cannot connect: {e.reason}")

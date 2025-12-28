@@ -13,6 +13,7 @@ from ..opensearch.client import (
     AuthenticationError,
     ConnectionFailedError,
     IndexNotFoundError,
+    QueryError,
     get_opensearch_client,
 )
 from ..opensearch.queries import normalize_log_entries, search_logs, tail_logs
@@ -196,6 +197,8 @@ async def main():
 
             except IndexNotFoundError as e:
                 return [types.TextContent(type="text", text=f"Error: {e}")]
+            except QueryError as e:
+                return [types.TextContent(type="text", text=f"Error: {e}")]
             except Exception as e:
                 return [types.TextContent(type="text", text=f"Search error: {e}")]
 
@@ -228,6 +231,8 @@ async def main():
                 return [types.TextContent(type="text", text=summary)]
 
             except IndexNotFoundError as e:
+                return [types.TextContent(type="text", text=f"Error: {e}")]
+            except QueryError as e:
                 return [types.TextContent(type="text", text=f"Error: {e}")]
             except Exception as e:
                 return [types.TextContent(type="text", text=f"Tail error: {e}")]
