@@ -156,6 +156,10 @@ def _summarize_docs(docs: Sequence[Dict[str, Any]], root_operation_id: Optional[
 	lines: List[str] = []
 
 	for doc in docs:
+		# Defensive: skip non-dict docs
+		if not isinstance(doc, dict):
+			continue
+
 		level = normalize_level(doc.get("level"))
 		if level:
 			counts_by_level[level] = counts_by_level.get(level, 0) + 1
@@ -174,6 +178,13 @@ def _summarize_docs(docs: Sequence[Dict[str, Any]], root_operation_id: Optional[
 
 		ts = _parse_timestamp(doc.get("timestamp"))
 		if ts:
+			# Defensive: ensure start_time and end_time are datetime objects before comparison
+			from datetime import datetime
+			if not isinstance(start_time, (type(None), datetime)):
+				start_time = None  # Reset if corrupted
+			if not isinstance(end_time, (type(None), datetime)):
+				end_time = None  # Reset if corrupted
+
 			if start_time is None or ts < start_time:
 				start_time = ts
 			if end_time is None or ts > end_time:
@@ -256,7 +267,11 @@ def _rollup_group(client, index_logs, root_id: str, docs: Sequence[Dict[str, Any
 
 
 def rollup_operation(client, index_logs, operation_id: str, refresh: bool = False) -> int:
-	"""Aggregate child docs for the root operation, then delete children."""
+	"""Aggregate child docs for the root operation, then delete children.
+
+	Returns:
+		int: Number of child documents rolled up into the parent
+	"""
 	if refresh:
 		try:
 			client.indices.refresh(index=index_logs)
@@ -274,12 +289,19 @@ def rollup_operation(client, index_logs, operation_id: str, refresh: bool = Fals
 	group = groups.get(root_id)
 	if not group:
 		return 0
+	# Defensive: validate group structure
+	if not isinstance(group, dict) or "docs" not in group or "operation_ids" not in group:
+		return 0
 	operation_ids = sorted(group["operation_ids"])
 	return _rollup_group(client, index_logs, root_id, group["docs"], operation_ids)
 
 
 def rollup_operations(client, index_logs, since=None):
-	"""Aggregate log entry children into parent operation docs, then delete children."""
+	"""Aggregate log entry children into parent operation docs, then delete children.
+
+	Returns:
+		tuple[int, int]: (child_count, parent_count) - number of children rolled up and parents created
+	"""
 	docs = _collect_all_child_docs(client, index_logs, since=since)
 	if not docs:
 		return 0, 0
@@ -289,6 +311,9 @@ def rollup_operations(client, index_logs, since=None):
 	parent_total = 0
 	for root_id in sorted(groups.keys()):
 		group = groups[root_id]
+		# Defensive: validate group structure
+		if not isinstance(group, dict) or "docs" not in group or "operation_ids" not in group:
+			continue
 		operation_ids = sorted(group["operation_ids"])
 		rolled_children = _rollup_group(client, index_logs, root_id, group["docs"], operation_ids)
 		if rolled_children:
