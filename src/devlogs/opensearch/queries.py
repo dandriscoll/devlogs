@@ -55,6 +55,7 @@ def _build_log_query(query=None, area=None, operation_id=None, level=None, since
 							"features.*",
 						],
 						"default_operator": "and",
+						"lenient": True,
 					}
 				}
 			]
