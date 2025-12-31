@@ -87,28 +87,6 @@ def _require_response(response: Any, context: str, client=None, index=None) -> D
 	return response
 
 
-def _looks_like_iso(value: str) -> bool:
-	return "T" in value and ("Z" in value or "+" in value)
-
-
-def _parse_rollup_line(line: str) -> Optional[Dict[str, Any]]:
-	parts = line.split(" ", 3)
-	if len(parts) < 4:
-		return None
-	timestamp, level, logger_name, message = parts
-	level = normalize_level(level)
-	if not _looks_like_iso(timestamp):
-		return None
-	if not level:
-		return None
-	return {
-		"timestamp": timestamp,
-		"level": level,
-		"logger_name": logger_name,
-		"message": message,
-	}
-
-
 def _normalize_entry(doc: Dict[str, Any]) -> Dict[str, Any]:
 	return {
 		"timestamp": doc.get("timestamp"),
@@ -125,48 +103,11 @@ def _normalize_entry(doc: Dict[str, Any]) -> Dict[str, Any]:
 	}
 
 
-def _is_rollup_doc(doc: Dict[str, Any]) -> bool:
-	return bool(doc.get("entries") or doc.get("counts_by_level") or doc.get("start_time") or doc.get("end_time"))
-
-
-def _expand_doc(doc: Dict[str, Any]) -> List[Dict[str, Any]]:
-	doc_type = doc.get("doc_type")
-	if doc_type == "operation" and doc.get("entries"):
-		entries: List[Dict[str, Any]] = []
-		for entry in doc.get("entries", []):
-			normalized = _normalize_entry(entry)
-			if not normalized.get("area"):
-				normalized["area"] = doc.get("area")
-			if not normalized.get("operation_id"):
-				normalized["operation_id"] = doc.get("operation_id")
-			if not normalized.get("parent_operation_id"):
-				normalized["parent_operation_id"] = doc.get("parent_operation_id")
-			entries.append(normalized)
-		return entries
-	if doc_type == "operation" and _is_rollup_doc(doc) and doc.get("message"):
-		entries: List[Dict[str, Any]] = []
-		for line in str(doc.get("message", "")).splitlines():
-			parsed = _parse_rollup_line(line.strip())
-			if parsed:
-				parsed["area"] = doc.get("area")
-				parsed["operation_id"] = doc.get("operation_id")
-				parsed["parent_operation_id"] = doc.get("parent_operation_id")
-				parsed["pathname"] = None
-				parsed["lineno"] = None
-				parsed["exception"] = None
-				entries.append(parsed)
-			elif line.strip():
-				entry = _normalize_entry(doc)
-				entry["message"] = line.strip()
-				entries.append(entry)
-		return entries
-	return [_normalize_entry(doc)]
-
-
 def normalize_log_entries(docs: Iterable[Dict[str, Any]], limit: Optional[int] = None) -> List[Dict[str, Any]]:
+	"""Normalize log entries from OpenSearch documents."""
 	entries: List[Dict[str, Any]] = []
 	for doc in docs:
-		entries.extend(_expand_doc(doc))
+		entries.append(_normalize_entry(doc))
 		if limit is not None and len(entries) >= limit:
 			return entries[:limit]
 	return entries
@@ -193,11 +134,9 @@ def search_logs(client, index, query=None, area=None, operation_id=None, level=N
 def tail_logs(client, index, query=None, operation_id=None, area=None, level=None, since=None, limit=20, search_after=None):
 	"""Tail log entries for an operation.
 
-	On initial call (no search_after): fetches the most recent logs in descending order,
-	then reverses them for chronological display.
-	On subsequent calls: continues forward from the cursor in ascending order.
+	Always fetches in descending order (newest first), reverses for chronological display.
+	Pagination continues from oldest fetched, going backwards in time.
 	"""
-	is_initial = search_after is None
 	body = {
 		"query": _build_log_query(
 			query=query,
@@ -206,7 +145,7 @@ def tail_logs(client, index, query=None, operation_id=None, area=None, level=Non
 			level=level,
 			since=since,
 		),
-		"sort": [{"timestamp": "desc" if is_initial else "asc"}, {"_id": "desc" if is_initial else "asc"}],
+		"sort": [{"timestamp": "desc"}, {"_id": "desc"}],
 		"size": limit,
 	}
 	if search_after:
@@ -215,17 +154,204 @@ def tail_logs(client, index, query=None, operation_id=None, area=None, level=Non
 	hits = response.get("hits", {}).get("hits", [])
 	docs = _hits_to_docs(hits)
 
-	if is_initial and docs:
-		# Reverse to chronological order for display, use the last (most recent) as cursor
-		docs = list(reversed(docs))
+	if docs:
+		# Fetch is in DESC order (newest first)
+		# Cursor points to oldest fetched (last in DESC list) for next page
 		next_search_after = docs[-1]["sort"]
+		# Reverse to chronological order for display (oldest first)
+		docs = list(reversed(docs))
 	else:
-		next_search_after = docs[-1]["sort"] if docs else search_after
+		next_search_after = search_after
 
 	return docs, next_search_after
 
 
 def get_operation_summary(client, index, operation_id):
-	"""Get summary for an operation."""
-	# Stub: build query dict
-	return {}
+	"""Get summary for an operation using aggregations."""
+	body = {
+		"query": {"term": {"operation_id": operation_id}},
+		"size": 0,  # No documents, aggregations only
+		"aggs": {
+			"by_level": {
+				"terms": {"field": "level", "size": 10}
+			},
+			"time_range": {
+				"stats": {"field": "timestamp"}
+			},
+			"sample_logs": {
+				"top_hits": {
+					"size": 10,
+					"sort": [{"timestamp": "asc"}],
+					"_source": ["timestamp", "level", "message", "logger_name", "exception", "features"]
+				}
+			},
+			"total_count": {
+				"value_count": {"field": "timestamp"}
+			}
+		}
+	}
+
+	try:
+		response = _require_response(client.search(index=index, body=body), "get_operation_summary", client=client, index=index)
+	except Exception:
+		return None
+
+	aggs = response.get("aggregations", {})
+
+	# Extract level counts
+	counts_by_level = {}
+	for bucket in aggs.get("by_level", {}).get("buckets", []):
+		counts_by_level[bucket["key"]] = bucket["doc_count"]
+
+	# Extract time range
+	time_stats = aggs.get("time_range", {})
+	start_time = time_stats.get("min_as_string")
+	end_time = time_stats.get("max_as_string")
+
+	# Extract sample logs
+	sample_hits = aggs.get("sample_logs", {}).get("hits", {}).get("hits", [])
+	sample_logs = [hit["_source"] for hit in sample_hits]
+
+	# Calculate error count
+	error_count = counts_by_level.get("error", 0) + counts_by_level.get("critical", 0)
+
+	# Total count
+	total_count = aggs.get("total_count", {}).get("value", 0)
+
+	return {
+		"operation_id": operation_id,
+		"counts_by_level": counts_by_level,
+		"error_count": error_count,
+		"start_time": start_time,
+		"end_time": end_time,
+		"total_entries": total_count,
+		"sample_logs": sample_logs
+	}
+
+
+def list_operations(client, index, area=None, since=None, limit=20, with_errors_only=False):
+	"""List recent operations with summary stats."""
+	query_filters = []
+	if area:
+		query_filters.append({"term": {"area": area}})
+	if since:
+		query_filters.append({"range": {"timestamp": {"gte": since}}})
+
+	body = {
+		"query": {"bool": {"filter": query_filters}} if query_filters else {"match_all": {}},
+		"size": 0,
+		"aggs": {
+			"by_operation": {
+				"terms": {"field": "operation_id", "size": limit},
+				"aggs": {
+					"area": {"terms": {"field": "area", "size": 1}},
+					"time_range": {"stats": {"field": "timestamp"}},
+					"by_level": {"terms": {"field": "level", "size": 10}},
+					"error_count": {
+						"filter": {
+							"terms": {"level": ["error", "critical"]}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	try:
+		response = _require_response(client.search(index=index, body=body), "list_operations", client=client, index=index)
+	except Exception:
+		return []
+
+	# Parse aggregation results
+	operations = []
+	for bucket in response.get("aggregations", {}).get("by_operation", {}).get("buckets", []):
+		area_buckets = bucket.get("area", {}).get("buckets", [])
+		op_area = area_buckets[0]["key"] if area_buckets else None
+
+		time_stats = bucket.get("time_range", {})
+		start_time = time_stats.get("min_as_string")
+		end_time = time_stats.get("max_as_string")
+
+		# Calculate duration if we have both timestamps
+		duration_ms = None
+		if time_stats.get("min") and time_stats.get("max"):
+			duration_ms = int(time_stats["max"] - time_stats["min"])
+
+		counts_by_level = {}
+		for level_bucket in bucket.get("by_level", {}).get("buckets", []):
+			counts_by_level[level_bucket["key"]] = level_bucket["doc_count"]
+
+		error_count = bucket.get("error_count", {}).get("doc_count", 0)
+
+		op = {
+			"operation_id": bucket["key"],
+			"area": op_area,
+			"start_time": start_time,
+			"end_time": end_time,
+			"duration_ms": duration_ms,
+			"total_logs": bucket["doc_count"],
+			"error_count": error_count,
+			"log_levels": counts_by_level
+		}
+		operations.append(op)
+
+	# Filter by error count if requested
+	if with_errors_only:
+		operations = [op for op in operations if op["error_count"] > 0]
+
+	return operations
+
+
+def list_areas(client, index, since=None, min_operations=1):
+	"""List all application areas with activity counts."""
+	query_filters = []
+	if since:
+		query_filters.append({"range": {"timestamp": {"gte": since}}})
+
+	body = {
+		"query": {"bool": {"filter": query_filters}} if query_filters else {"match_all": {}},
+		"size": 0,
+		"aggs": {
+			"by_area": {
+				"terms": {"field": "area", "size": 100},
+				"aggs": {
+					"operation_count": {
+						"cardinality": {"field": "operation_id"}
+					},
+					"error_count": {
+						"filter": {
+							"terms": {"level": ["error", "critical"]}
+						}
+					},
+					"last_activity": {
+						"max": {"field": "timestamp"}
+					}
+				}
+			}
+		}
+	}
+
+	try:
+		response = _require_response(client.search(index=index, body=body), "list_areas", client=client, index=index)
+	except Exception:
+		return []
+
+	# Parse aggregation results
+	areas = []
+	for bucket in response.get("aggregations", {}).get("by_area", {}).get("buckets", []):
+		operation_count = bucket.get("operation_count", {}).get("value", 0)
+
+		# Filter by min_operations
+		if operation_count < min_operations:
+			continue
+
+		area = {
+			"area": bucket["key"],
+			"operation_count": int(operation_count),
+			"log_count": bucket["doc_count"],
+			"error_count": bucket.get("error_count", {}).get("doc_count", 0),
+			"last_activity": bucket.get("last_activity", {}).get("value_as_string")
+		}
+		areas.append(area)
+
+	return areas

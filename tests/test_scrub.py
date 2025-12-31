@@ -58,4 +58,5 @@ def test_scrub_defaults_to_24h(monkeypatch):
     client = FakeClient()
     scrub.scrub_debug_logs(client, "devlogs-test")
     assert len(client.calls) == 1
-    _assert_cutoff(client.calls[0]["body"], "2025-01-01T00:00:00Z")
+    # Default changed from 24h to 6h in new architecture
+    _assert_cutoff(client.calls[0]["body"], "2025-01-01T18:00:00Z")

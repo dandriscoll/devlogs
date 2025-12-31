@@ -19,7 +19,10 @@ class DevlogsConfig:
 		self.opensearch_pass = _getenv("DEVLOGS_OPENSEARCH_PASS", "admin")
 		self.opensearch_timeout = int(_getenv("DEVLOGS_OPENSEARCH_TIMEOUT", "30"))
 		self.index_logs = _getenv("DEVLOGS_INDEX_LOGS", "devlogs-0001")
-		self.retention_debug_hours = int(_getenv("DEVLOGS_RETENTION_DEBUG_HOURS", "24"))
+		# Retention configuration (time-based cleanup)
+		self.retention_debug_hours = int(_getenv("DEVLOGS_RETENTION_DEBUG_HOURS", "6"))
+		self.retention_info_days = int(_getenv("DEVLOGS_RETENTION_INFO_DAYS", "7"))
+		self.retention_warning_days = int(_getenv("DEVLOGS_RETENTION_WARNING_DAYS", "30"))
 		self.area_default = _getenv("DEVLOGS_AREA_DEFAULT", "general")
 
 def set_dotenv_path(path: str):

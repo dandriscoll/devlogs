@@ -19,7 +19,7 @@ from .opensearch.client import (
 )
 from .opensearch.mappings import LOG_INDEX_TEMPLATE
 from .opensearch.queries import normalize_log_entries, search_logs, tail_logs
-from .rollup import rollup_operations
+from .retention import cleanup_old_logs, get_retention_stats
 
 app = typer.Typer()
 
@@ -346,24 +346,58 @@ def search(
 
 
 @app.command()
-def rollup(
-	since: str = typer.Option(None, "--since", help="Only roll up logs since timestamp"),
+def cleanup(
+	dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be deleted without actually deleting"),
+	stats: bool = typer.Option(False, "--stats", help="Show retention statistics only"),
 ):
-	"""Roll up any dangling child logs into their parent operations."""
+	"""Clean up old logs based on retention policy.
+
+	Retention tiers:
+	- DEBUG logs: Deleted after DEVLOGS_RETENTION_DEBUG_HOURS (default: 6 hours)
+	- INFO logs: Deleted after DEVLOGS_RETENTION_INFO_DAYS (default: 7 days)
+	- WARNING/ERROR/CRITICAL: Deleted after DEVLOGS_RETENTION_WARNING_DAYS (default: 30 days)
+	"""
 	client, cfg = require_opensearch()
-	child_total, parent_total = rollup_operations(client, cfg.index_logs, since=since)
-	typer.echo(f"Rollup complete: {child_total} children into {parent_total} parents.")
+
+	if stats:
+		# Show retention statistics
+		stats_result = get_retention_stats(client, cfg)
+		typer.echo("Retention Statistics:")
+		typer.echo(f"  Total logs: {stats_result['total_logs']}")
+		typer.echo(f"  Hot tier (recent): {stats_result['hot_tier']}")
+		typer.echo()
+		typer.echo("Eligible for deletion:")
+		typer.echo(f"  DEBUG logs (older than {cfg.retention_debug_hours}h): {stats_result['eligible_for_deletion']['debug']}")
+		typer.echo(f"  INFO logs (older than {cfg.retention_info_days}d): {stats_result['eligible_for_deletion']['info']}")
+		typer.echo(f"  All logs (older than {cfg.retention_warning_days}d): {stats_result['eligible_for_deletion']['all']}")
+		return
+
+	# Run cleanup
+	if dry_run:
+		typer.echo("DRY RUN: No logs will be deleted")
+		typer.echo()
+
+	results = cleanup_old_logs(client, cfg, dry_run=dry_run)
+
+	action = "Would delete" if dry_run else "Deleted"
+	typer.echo(f"Cleanup results:")
+	typer.echo(f"  {action} {results['debug_deleted']} DEBUG logs (older than {cfg.retention_debug_hours}h)")
+	typer.echo(f"  {action} {results['info_deleted']} INFO logs (older than {cfg.retention_info_days}d)")
+	typer.echo(f"  {action} {results['warning_deleted']} WARNING+ logs (older than {cfg.retention_warning_days}d)")
+	typer.echo(f"  Total: {action} {results['debug_deleted'] + results['info_deleted'] + results['warning_deleted']} logs")
+
+	if not dry_run:
+		typer.echo(typer.style("Cleanup complete.", fg=typer.colors.GREEN))
 
 
 @app.command()
 def demo(
 	duration: int = typer.Option(10, "--duration", "-t", help="Duration in seconds"),
 	count: int = typer.Option(50, "--count", "-n", help="Number of log entries to generate"),
-	defer_rollup: bool = typer.Option(False, "--defer-rollup", help="Defer rollup until you run devlogs rollup"),
 ):
 	"""Generate demo logs to illustrate devlogs capabilities."""
 	from .demo import run_demo
-	run_demo(duration, count, require_opensearch, defer_rollup)
+	run_demo(duration, count, require_opensearch)
 
 
 @app.command()

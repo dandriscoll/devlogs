@@ -6,12 +6,8 @@ LOG_INDEX_TEMPLATE = {
 		"settings": {"number_of_shards": 1},
 		"mappings": {
 			"properties": {
-				"doc_type": {
-					"type": "join",
-					"relations": {
-						"operation": "log_entry"
-					}
-				},
+				# Core log entry fields (flat schema)
+				"doc_type": {"type": "keyword"},  # Always "log_entry"
 				"timestamp": {"type": "date"},
 				"level": {"type": "keyword"},
 				"levelno": {"type": "integer"},
@@ -27,12 +23,6 @@ LOG_INDEX_TEMPLATE = {
 				"process": {"type": "integer"},
 				"exception": {"type": "text"},
 				"features": {"type": "object", "dynamic": True},
-				"start_time": {"type": "date"},
-				"end_time": {"type": "date"},
-				"counts_by_level": {"type": "object"},
-				"error_count": {"type": "integer"},
-				"last_message": {"type": "text"},
-				"entries": {"type": "nested"},
 			}
 		}
 	}

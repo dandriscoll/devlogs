@@ -72,16 +72,12 @@ class OpenSearchHandler(logging.Handler):
 			# Silently fail - circuit is open
 			return
 
-		# Index document
+		# Index document (flat schema - no routing, no parent-child relationship)
 		try:
 			if self.client:
-				operation_id = doc.get("operation_id")
-				if operation_id:
-					doc["doc_type"] = {"name": "log_entry", "parent": operation_id}
-					self.client.index(index=self.index_name, body=doc, routing=operation_id)
-				else:
-					doc["doc_type"] = "operation"
-					self.client.index(index=self.index_name, body=doc)
+				# All logs are flat "log_entry" documents
+				doc["doc_type"] = "log_entry"
+				self.client.index(index=self.index_name, body=doc)
 				# Success - close circuit breaker if it was open
 				if OpenSearchHandler._circuit_open:
 					OpenSearchHandler._circuit_open = False
@@ -141,16 +137,12 @@ class DiagnosticsHandler(OpenSearchHandler):
 			operation_id = str(uuid.uuid4())
 			doc["operation_id"] = operation_id
 
-		if operation_id and (get_operation_id() or getattr(record, "operation_id", None)):
-			doc["doc_type"] = {"name": "log_entry", "parent": operation_id}
-			routing = operation_id
-		else:
-			doc["doc_type"] = "operation"
-			routing = operation_id
+		# All logs are flat "log_entry" documents (no routing)
+		doc["doc_type"] = "log_entry"
 
 		try:
 			if self.client:
-				self.client.index(index=self.index_name, body=doc, routing=routing)
+				self.client.index(index=self.index_name, body=doc)
 				# Success - close circuit breaker if it was open
 				if OpenSearchHandler._circuit_open:
 					OpenSearchHandler._circuit_open = False

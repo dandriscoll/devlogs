@@ -54,27 +54,20 @@ class TestCreateClientAndIndex:
 
     def test_create_client_success(self, monkeypatch):
         """Test successful client creation."""
-        # Create temporary env file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.env', delete=False) as f:
-            f.write("DEVLOGS_OPENSEARCH_HOST=localhost\n")
-            f.write("DEVLOGS_OPENSEARCH_PORT=9200\n")
-            f.write("DEVLOGS_OPENSEARCH_USER=admin\n")
-            f.write("DEVLOGS_OPENSEARCH_PASS=admin\n")
-            f.write("DEVLOGS_INDEX_LOGS=test-index\n")
-            temp_path = f.name
+        # Set environment variables directly
+        monkeypatch.setenv("DEVLOGS_OPENSEARCH_HOST", "localhost")
+        monkeypatch.setenv("DEVLOGS_OPENSEARCH_PORT", "9200")
+        monkeypatch.setenv("DEVLOGS_OPENSEARCH_USER", "admin")
+        monkeypatch.setenv("DEVLOGS_OPENSEARCH_PASS", "admin")
+        monkeypatch.setenv("DEVLOGS_INDEX_LOGS", "test-index")
 
-        try:
-            monkeypatch.setenv("DOTENV_PATH", temp_path)
-            # Reset config state
-            from devlogs import config
-            monkeypatch.setattr(config, "_dotenv_loaded", False)
-            monkeypatch.setattr(config, "_custom_dotenv_path", None)
+        # Reset config state to force reload
+        from devlogs import config
+        monkeypatch.setattr(config, "_dotenv_loaded", False)
 
-            client, index = _create_client_and_index()
-            assert client is not None
-            assert index == "test-index"
-        finally:
-            os.unlink(temp_path)
+        client, index = _create_client_and_index()
+        assert client is not None
+        assert index == "test-index"
 
     def test_create_client_missing_config(self, monkeypatch):
         """Test client creation with missing config."""

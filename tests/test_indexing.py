@@ -25,7 +25,7 @@ def test_diagnostics_handler_child_with_context(opensearch_client, test_index):
 	results = search_logs(opensearch_client, test_index, operation_id="op-1")
 	assert results
 	doc = results[0]
-	assert doc["doc_type"] == "operation"
+	assert doc["doc_type"] == "log_entry"
 	assert doc["area"] == "web"
 	assert "child log" in (doc.get("message") or "")
 
@@ -39,12 +39,12 @@ def test_diagnostics_handler_parent_without_context(opensearch_client, test_inde
 	opensearch_client.indices.refresh(index=test_index)
 	resp = opensearch_client.search(
 		index=test_index,
-		body={"query": {"term": {"doc_type": "operation"}}},
+		body={"query": {"term": {"doc_type": "log_entry"}}},
 	)
 	hits = resp.get("hits", {}).get("hits", [])
 	assert hits
 	doc = hits[0]["_source"]
-	assert doc["doc_type"] == "operation"
+	assert doc["doc_type"] == "log_entry"
 
 
 def test_diagnostics_handler_extra_context_child(opensearch_client, test_index):
@@ -57,8 +57,8 @@ def test_diagnostics_handler_extra_context_child(opensearch_client, test_index):
 	results = search_logs(opensearch_client, test_index, operation_id="op-extra")
 	assert results
 	doc = results[0]
-	assert doc["doc_type"]["name"] == "log_entry"
-	assert doc["doc_type"]["parent"] == "op-extra"
+	assert doc["doc_type"] == "log_entry"
+	assert doc["operation_id"] == "op-extra"
 	assert doc["area"] == "jobs"
 
 
@@ -98,19 +98,20 @@ def test_nested_contexts_are_distinct(opensearch_client, test_index):
 		logger.info("outer end")
 
 	opensearch_client.indices.refresh(index=test_index)
-	results = search_logs(opensearch_client, test_index, operation_id="outer")
-	assert len(results) == 1
-	assert "outer start" in (results[0].get("message") or "")
-	assert "outer end" in (results[0].get("message") or "")
-	results = search_logs(opensearch_client, test_index, operation_id="inner")
-	assert len(results) == 0
-	entries = normalize_log_entries(search_logs(opensearch_client, test_index, operation_id="outer"))
-	assert any(
-		entry.get("operation_id") == "inner"
-		and entry.get("area") == "jobs"
-		and "inner" in (entry.get("message") or "")
-		for entry in entries
-	)
+	# With flat documents, we get 2 separate log entries for outer
+	outer_results = search_logs(opensearch_client, test_index, operation_id="outer")
+	assert len(outer_results) == 2
+	outer_entries = normalize_log_entries(outer_results)
+	assert any("outer start" in (entry.get("message") or "") for entry in outer_entries)
+	assert any("outer end" in (entry.get("message") or "") for entry in outer_entries)
+
+	# Inner operation has its own log entry
+	inner_results = search_logs(opensearch_client, test_index, operation_id="inner")
+	assert len(inner_results) == 1
+	inner_entry = normalize_log_entries(inner_results)[0]
+	assert inner_entry.get("operation_id") == "inner"
+	assert inner_entry.get("area") == "jobs"
+	assert "inner" in (inner_entry.get("message") or "")
 
 
 def test_tail_logs_pagination(opensearch_client, test_index):
@@ -144,11 +145,12 @@ def test_tail_logs_pagination(opensearch_client, test_index):
 		search_after=cursor2,
 	)
 
-	rollup_docs = page1 + page2 + page3
-	assert len(rollup_docs) == 1
-	message = rollup_docs[0].get("message") or ""
+	# With flat documents, we get 5 separate log entries (2+2+1)
+	all_docs = page1 + page2 + page3
+	assert len(all_docs) == 5
+	entries = normalize_log_entries(all_docs)
 	for i in range(5):
-		assert f"msg {i}" in message
+		assert any(f"msg {i}" in (entry.get("message") or "") for entry in entries)
 
 
 def test_tail_logs_finds_opensearch_handler_entries(opensearch_client, test_index):

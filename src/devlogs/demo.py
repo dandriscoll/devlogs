@@ -6,7 +6,7 @@ import time
 import typer
 
 from .config import load_config
-from .context import operation, set_rollup_default
+from .context import operation
 from .handler import OpenSearchHandler
 
 
@@ -14,11 +14,9 @@ def run_demo(
 	duration: int,
 	count: int,
 	require_opensearch,
-	defer_rollup: bool,
 ):
 	"""Generate demo logs to illustrate devlogs capabilities."""
 	cfg = load_config()
-	set_rollup_default(not defer_rollup)
 
 	# Show loaded configuration
 	typer.echo("=== DevLogs Demo ===\n")

@@ -16,7 +16,14 @@ from ..opensearch.client import (
     QueryError,
     get_opensearch_client,
 )
-from ..opensearch.queries import normalize_log_entries, search_logs, tail_logs
+from ..opensearch.queries import (
+    get_operation_summary,
+    list_areas,
+    list_operations,
+    normalize_log_entries,
+    search_logs,
+    tail_logs,
+)
 
 
 def _format_log_entry(entry: dict[str, Any]) -> str:
@@ -148,6 +155,51 @@ async def main():
                     "required": ["operation_id"],
                 },
             ),
+            types.Tool(
+                name="list_operations",
+                description="List recent operations with summary stats. Use this to discover operations without knowing their IDs.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "area": {
+                            "type": "string",
+                            "description": "Filter by application area",
+                        },
+                        "since": {
+                            "type": "string",
+                            "description": "ISO timestamp to filter operations after this time",
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of operations to return (default: 20)",
+                            "default": 20,
+                        },
+                        "with_errors_only": {
+                            "type": "boolean",
+                            "description": "Only show operations that had errors",
+                            "default": False,
+                        },
+                    },
+                },
+            ),
+            types.Tool(
+                name="list_areas",
+                description="List all application areas with activity counts. Use this to discover what subsystems exist in the application.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "since": {
+                            "type": "string",
+                            "description": "ISO timestamp to filter activity after this time",
+                        },
+                        "min_operations": {
+                            "type": "integer",
+                            "description": "Minimum number of operations an area must have to be included",
+                            "default": 1,
+                        },
+                    },
+                },
+            ),
         ]
 
     @server.call_tool()
@@ -246,56 +298,127 @@ async def main():
                 )]
 
             try:
-                # Get all logs for this operation
-                docs = search_logs(
-                    client=client,
-                    index=index,
-                    operation_id=operation_id,
-                    limit=100,
-                )
-                entries = normalize_log_entries(docs, limit=100)
+                # Use aggregation-based summary
+                summary = get_operation_summary(client, index, operation_id)
 
-                if not entries:
+                if not summary:
                     return [types.TextContent(
                         type="text",
                         text=f"No logs found for operation {operation_id}",
                     )]
 
-                # Build summary
-                levels = {}
-                for entry in entries:
-                    level = entry.get("level", "UNKNOWN")
-                    levels[level] = levels.get(level, 0) + 1
-
-                first_timestamp = entries[0].get("timestamp", "unknown")
-                last_timestamp = entries[-1].get("timestamp", "unknown")
-                area = entries[0].get("area", "unknown")
-
+                # Format summary
                 summary_lines = [
                     f"Operation Summary: {operation_id}",
-                    f"Area: {area}",
-                    f"First log: {first_timestamp}",
-                    f"Last log: {last_timestamp}",
-                    f"Total entries: {len(entries)}",
+                    f"Start time: {summary.get('start_time', 'unknown')}",
+                    f"End time: {summary.get('end_time', 'unknown')}",
+                    f"Total entries: {summary.get('total_entries', 0)}",
+                    f"Error count: {summary.get('error_count', 0)}",
                     "",
                     "Log levels:",
                 ]
-                for level, count in sorted(levels.items()):
+                for level, count in sorted(summary.get("counts_by_level", {}).items()):
                     summary_lines.append(f"  {level}: {count}")
 
                 summary_lines.append("")
-                summary_lines.append("All logs:")
+                summary_lines.append("Sample logs (first 10):")
                 summary_lines.append("")
 
-                formatted = "\n".join(_format_log_entry(entry) for entry in entries)
-                summary = "\n".join(summary_lines) + formatted
+                # Format sample logs
+                for log in summary.get("sample_logs", []):
+                    summary_lines.append(_format_log_entry(log))
 
-                return [types.TextContent(type="text", text=summary)]
+                return [types.TextContent(type="text", text="\n".join(summary_lines))]
 
             except IndexNotFoundError as e:
                 return [types.TextContent(type="text", text=f"Error: {e}")]
             except Exception as e:
                 return [types.TextContent(type="text", text=f"Summary error: {e}")]
+
+        elif name == "list_operations":
+            area = arguments.get("area")
+            since = arguments.get("since")
+            limit = arguments.get("limit", 20)
+            with_errors_only = arguments.get("with_errors_only", False)
+
+            try:
+                operations = list_operations(
+                    client=client,
+                    index=index,
+                    area=area,
+                    since=since,
+                    limit=limit,
+                    with_errors_only=with_errors_only,
+                )
+
+                if not operations:
+                    return [types.TextContent(
+                        type="text",
+                        text="No operations found matching the criteria.",
+                    )]
+
+                # Format operations list
+                lines = [f"Found {len(operations)} operations:\n"]
+                for op in operations:
+                    duration = ""
+                    if op.get("duration_ms") is not None:
+                        duration_sec = op["duration_ms"] / 1000.0
+                        duration = f" ({duration_sec:.2f}s)"
+
+                    error_info = ""
+                    if op.get("error_count", 0) > 0:
+                        error_info = f" [ERRORS: {op['error_count']}]"
+
+                    lines.append(
+                        f"- {op['operation_id'][:16]} | {op.get('area', 'unknown')} | "
+                        f"{op['total_logs']} logs{duration}{error_info}"
+                    )
+                    lines.append(f"  {op.get('start_time', 'unknown')} to {op.get('end_time', 'unknown')}")
+
+                return [types.TextContent(type="text", text="\n".join(lines))]
+
+            except IndexNotFoundError as e:
+                return [types.TextContent(type="text", text=f"Error: {e}")]
+            except Exception as e:
+                return [types.TextContent(type="text", text=f"List operations error: {e}")]
+
+        elif name == "list_areas":
+            since = arguments.get("since")
+            min_operations = arguments.get("min_operations", 1)
+
+            try:
+                areas = list_areas(
+                    client=client,
+                    index=index,
+                    since=since,
+                    min_operations=min_operations,
+                )
+
+                if not areas:
+                    return [types.TextContent(
+                        type="text",
+                        text="No areas found matching the criteria.",
+                    )]
+
+                # Format areas list
+                lines = [f"Found {len(areas)} application areas:\n"]
+                for area_info in areas:
+                    error_info = ""
+                    if area_info.get("error_count", 0) > 0:
+                        error_info = f" [ERRORS: {area_info['error_count']}]"
+
+                    lines.append(
+                        f"- {area_info['area']}: {area_info['operation_count']} operations, "
+                        f"{area_info['log_count']} logs{error_info}"
+                    )
+                    lines.append(f"  Last activity: {area_info.get('last_activity', 'unknown')}")
+
+                return [types.TextContent(type="text", text="\n".join(lines))]
+
+            except IndexNotFoundError as e:
+                return [types.TextContent(type="text", text=f"Error: {e}")]
+            except Exception as e:
+                return [types.TextContent(type="text", text=f"List areas error: {e}")]
 
         else:
             raise ValueError(f"Unknown tool: {name}")

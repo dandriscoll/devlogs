@@ -5,7 +5,7 @@ from devlogs.handler import DiagnosticsHandler
 from devlogs.opensearch.queries import normalize_log_entries, search_logs
 
 def test_operation_context_sets_and_resets():
-    with context.operation("opid", "web", rollup=False):
+    with context.operation("opid", "web"):
         assert context.get_operation_id() == "opid"
         assert context.get_area() == "web"
     assert context.get_operation_id() is None
@@ -35,7 +35,7 @@ def test_diagnostics_handler_uses_context_for_child_docs(opensearch_client, test
     results = search_logs(opensearch_client, test_index, operation_id="op-ctx")
     assert results
     doc = results[0]
-    assert doc["doc_type"] == "operation"
+    assert doc["doc_type"] == "log_entry"
     assert doc["area"] == "web"
     assert "hello" in (doc.get("message") or "")
 
@@ -51,35 +51,31 @@ def test_diagnostics_handler_nested_contexts(opensearch_client, test_index):
         logger.info("outer-two")
 
     opensearch_client.indices.refresh(index=test_index)
+    # With flat documents, we get 2 separate log entries for outer operation
     outer_docs = search_logs(opensearch_client, test_index, operation_id="outer")
+    assert len(outer_docs) == 2
+    outer_entries = normalize_log_entries(outer_docs)
+    assert any("outer" in (entry.get("message") or "") for entry in outer_entries)
+    assert any("outer-two" in (entry.get("message") or "") for entry in outer_entries)
+
+    # Inner operation has its own log entry
     inner_docs = search_logs(opensearch_client, test_index, operation_id="inner")
-    assert len(outer_docs) == 1
-    assert len(inner_docs) == 0
-    entries = normalize_log_entries(outer_docs)
-    assert any(
-        entry.get("operation_id") == "outer"
-        and entry.get("area") == "api"
-        and "outer" in (entry.get("message") or "")
-        for entry in entries
-    )
-    assert any(
-        entry.get("operation_id") == "inner"
-        and entry.get("area") == "jobs"
-        and "inner" in (entry.get("message") or "")
-        for entry in entries
-    )
+    assert len(inner_docs) == 1
+    inner_entry = normalize_log_entries(inner_docs)[0]
+    assert inner_entry.get("operation_id") == "inner"
+    assert inner_entry.get("area") == "jobs"
+    assert "inner" in (inner_entry.get("message") or "")
 
 
 def test_diagnostics_handler_extra_overrides_context(opensearch_client, test_index):
     handler = DiagnosticsHandler(opensearch_client=opensearch_client, index_name=test_index)
     logger = _get_logger("ctx-extra", handler)
 
-    with context.operation("op-context", "web", rollup=False):
+    with context.operation("op-context", "web"):
         logger.info("override", extra={"operation_id": "op-extra", "area": "jobs"})
 
     opensearch_client.indices.refresh(index=test_index)
     results = search_logs(opensearch_client, test_index, operation_id="op-extra")
     doc = results[0]
-    assert doc["doc_type"]["name"] == "log_entry"
-    assert doc["doc_type"]["parent"] == "op-extra"
+    assert doc["doc_type"] == "log_entry"
     assert doc["area"] == "jobs"
