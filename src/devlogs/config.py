@@ -40,8 +40,9 @@ def load_config() -> DevlogsConfig:
 			# Check for DOTENV_PATH environment variable first
 			dotenv_path = os.getenv("DOTENV_PATH") or _custom_dotenv_path
 			if dotenv_path:
-				# Load from explicitly specified path
-				load_dotenv(dotenv_path)
+				# Load from explicitly specified path with override=True
+				# to ensure custom env file values take precedence
+				load_dotenv(dotenv_path, override=True)
 			else:
 				# Search for .env file in current directory and parents
 				dotenv_path = find_dotenv(usecwd=True)

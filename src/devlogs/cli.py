@@ -391,6 +391,50 @@ def cleanup(
 
 
 @app.command()
+def delete(
+	index: str = typer.Argument(None, help="Index name to delete (defaults to configured index)"),
+	force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
+):
+	"""Delete a devlogs index.
+
+	This command permanently deletes an OpenSearch index. By default, it will prompt
+	for confirmation unless --force is used.
+
+	Examples:
+	  devlogs delete                    # Delete the configured index (with confirmation)
+	  devlogs delete my-index           # Delete a specific index (with confirmation)
+	  devlogs delete --force            # Delete without confirmation
+	  devlogs delete my-index --force   # Delete specific index without confirmation
+	"""
+	client, cfg = require_opensearch(check_idx=False)
+
+	# Use configured index if none provided
+	index_to_delete = index or cfg.index_logs
+
+	# Check if index exists
+	if not client.indices.exists(index=index_to_delete):
+		typer.echo(typer.style(f"Error: Index '{index_to_delete}' does not exist.", fg=typer.colors.RED), err=True)
+		raise typer.Exit(1)
+
+	# Prompt for confirmation unless --force is used
+	if not force:
+		typer.echo(f"You are about to delete index: {typer.style(index_to_delete, fg=typer.colors.YELLOW, bold=True)}")
+		typer.echo(typer.style("This action cannot be undone!", fg=typer.colors.RED, bold=True))
+		confirm = typer.confirm("Are you sure you want to continue?")
+		if not confirm:
+			typer.echo("Delete operation cancelled.")
+			raise typer.Exit(0)
+
+	# Delete the index
+	try:
+		client.indices.delete(index=index_to_delete)
+		typer.echo(typer.style(f"Successfully deleted index '{index_to_delete}'.", fg=typer.colors.GREEN))
+	except OpenSearchError as e:
+		typer.echo(typer.style(f"Error: Failed to delete index: {e}", fg=typer.colors.RED), err=True)
+		raise typer.Exit(1)
+
+
+@app.command()
 def demo(
 	duration: int = typer.Option(10, "--duration", "-t", help="Duration in seconds"),
 	count: int = typer.Option(50, "--count", "-n", help="Number of log entries to generate"),

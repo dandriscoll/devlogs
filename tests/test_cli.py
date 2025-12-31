@@ -103,18 +103,22 @@ def test_cli_env_flag_loads_custom_config(opensearch_client, monkeypatch):
     """Test that --env flag loads custom .env file."""
     runner = CliRunner()
 
+    # Get current config to get the correct credentials (before resetting state)
+    from devlogs.config import load_config
+    current_config = load_config()
+
     # Reset config state to ensure fresh load
     monkeypatch.setattr(config, "_dotenv_loaded", False)
     monkeypatch.setattr(config, "_custom_dotenv_path", None)
 
-    # Create a temporary .env file with custom index name
+    # Create a temporary .env file with custom index name but same credentials
     custom_index = f"devlogs-custom-{uuid.uuid4().hex}"
     with tempfile.NamedTemporaryFile(mode='w', suffix='.env', delete=False) as f:
         f.write(f"DEVLOGS_INDEX_LOGS={custom_index}\n")
-        f.write("DEVLOGS_OPENSEARCH_HOST=localhost\n")
-        f.write("DEVLOGS_OPENSEARCH_PORT=9200\n")
-        f.write("DEVLOGS_OPENSEARCH_USER=admin\n")
-        f.write("DEVLOGS_OPENSEARCH_PASS=admin\n")
+        f.write(f"DEVLOGS_OPENSEARCH_HOST={current_config.opensearch_host}\n")
+        f.write(f"DEVLOGS_OPENSEARCH_PORT={current_config.opensearch_port}\n")
+        f.write(f"DEVLOGS_OPENSEARCH_USER={current_config.opensearch_user}\n")
+        f.write(f"DEVLOGS_OPENSEARCH_PASS={current_config.opensearch_pass}\n")
         temp_env_path = f.name
 
     try:
