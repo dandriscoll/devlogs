@@ -58,7 +58,7 @@ def require_opensearch(check_idx=True):
 	try:
 		check_connection(client)
 		if check_idx:
-			check_index(client, cfg.index_logs)
+			check_index(client, cfg.index)
 	except OpenSearchError as e:
 		typer.echo(typer.style(f"Error: {e}", fg=typer.colors.RED), err=True)
 		raise typer.Exit(1)
@@ -72,9 +72,9 @@ def init():
 	# Create or update index templates
 	client.indices.put_index_template(name="devlogs-template", body=LOG_INDEX_TEMPLATE)
 	# Create initial index with explicit mappings if it doesn't exist
-	if not client.indices.exists(index=cfg.index_logs):
-		client.indices.create(index=cfg.index_logs, body=LOG_INDEX_TEMPLATE["template"])
-		typer.echo(f"Created index '{cfg.index_logs}'.")
+	if not client.indices.exists(index=cfg.index):
+		client.indices.create(index=cfg.index, body=LOG_INDEX_TEMPLATE["template"])
+		typer.echo(f"Created index '{cfg.index}'.")
 	typer.echo("OpenSearch indices and templates initialized.")
 
 
@@ -138,7 +138,7 @@ def tail(
 		if since:
 			parts.append(f"since={since}")
 		filter_text = " ".join(parts) if parts else "no filters"
-		_verbose_echo(f"Tailing index '{cfg.index_logs}' ({filter_text}), limit={limit}, follow={follow}")
+		_verbose_echo(f"Tailing index '{cfg.index}' ({filter_text}), limit={limit}, follow={follow}")
 
 	search_after = None
 	consecutive_errors = 0
@@ -150,7 +150,7 @@ def tail(
 			_verbose_echo(f"Polling OpenSearch with cursor={search_after}")
 			docs, search_after = tail_logs(
 				client,
-				cfg.index_logs,
+				cfg.index,
 				operation_id=operation_id,
 				area=area,
 				level=level,
@@ -269,7 +269,7 @@ def search(
 			if follow:
 				docs, search_after = tail_logs(
 					client,
-					cfg.index_logs,
+					cfg.index,
 					query=q,
 					operation_id=operation_id,
 					area=area,
@@ -281,7 +281,7 @@ def search(
 			else:
 				docs = search_logs(
 					client,
-					cfg.index_logs,
+					cfg.index,
 					query=q,
 					area=area,
 					operation_id=operation_id,
@@ -409,7 +409,7 @@ def delete(
 	client, cfg = require_opensearch(check_idx=False)
 
 	# Use configured index if none provided
-	index_to_delete = index or cfg.index_logs
+	index_to_delete = index or cfg.index
 
 	# Check if index exists
 	if not client.indices.exists(index=index_to_delete):

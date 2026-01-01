@@ -64,7 +64,7 @@ def _create_client_and_index():
     try:
         client = get_opensearch_client()
         cfg = load_config()
-        return client, cfg.index_logs
+        return client, cfg.index
     except ConnectionFailedError as e:
         raise RuntimeError(f"OpenSearch connection failed: {e}")
     except AuthenticationError as e:

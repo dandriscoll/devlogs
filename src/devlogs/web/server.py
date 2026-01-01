@@ -27,7 +27,7 @@ def _try_client() -> Tuple[Optional[object], Optional[str]]:
 	client = get_opensearch_client()
 	try:
 		check_connection(client)
-		check_index(client, cfg.index_logs)
+		check_index(client, cfg.index)
 		return client, None
 	except OpenSearchError as exc:
 		return None, str(exc)
@@ -41,7 +41,7 @@ def search(q: Optional[str] = None, area: Optional[str] = None, level: Optional[
 	cfg = load_config()
 	docs = search_logs(
 		client,
-		cfg.index_logs,
+		cfg.index,
 		query=q,
 		area=area,
 		operation_id=operation_id,
@@ -60,7 +60,7 @@ def tail(operation_id: Optional[str] = None, area: Optional[str] = None, level: 
 	cfg = load_config()
 	docs, cursor = tail_logs(
 		client,
-		cfg.index_logs,
+		cfg.index,
 		operation_id=operation_id,
 		area=area,
 		level=level,

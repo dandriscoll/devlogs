@@ -14,7 +14,7 @@ def test_cli_init_idempotent(opensearch_client, monkeypatch):
     """Test the init command is idempotent and creates indices/templates."""
     runner = CliRunner()
     index_name = f"devlogs-logs-cli-{uuid.uuid4().hex}"
-    monkeypatch.setenv("DEVLOGS_INDEX_LOGS", index_name)
+    monkeypatch.setenv("DEVLOGS_INDEX", index_name)
 
     result1 = runner.invoke(cli.app, ["init"])
     assert result1.exit_code == 0
@@ -114,7 +114,7 @@ def test_cli_env_flag_loads_custom_config(opensearch_client, monkeypatch):
     # Create a temporary .env file with custom index name but same credentials
     custom_index = f"devlogs-custom-{uuid.uuid4().hex}"
     with tempfile.NamedTemporaryFile(mode='w', suffix='.env', delete=False) as f:
-        f.write(f"DEVLOGS_INDEX_LOGS={custom_index}\n")
+        f.write(f"DEVLOGS_INDEX={custom_index}\n")
         f.write(f"DEVLOGS_OPENSEARCH_HOST={current_config.opensearch_host}\n")
         f.write(f"DEVLOGS_OPENSEARCH_PORT={current_config.opensearch_port}\n")
         f.write(f"DEVLOGS_OPENSEARCH_USER={current_config.opensearch_user}\n")

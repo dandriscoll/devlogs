@@ -1,6 +1,7 @@
 # Configuration loading for devlogs
 
 import os
+import re
 
 # Lazy load dotenv - only when config is first accessed
 _dotenv_loaded = False
@@ -10,6 +11,57 @@ def _getenv(name, default):
 	value = os.getenv(name)
 	return value if value else default
 
+def parse_duration(value: str, unit: str = 'hours') -> int:
+	"""Parse a duration string like '6h' or '7d' into numeric value.
+
+	Args:
+		value: Duration string (e.g., '6h', '7d', '30') or None
+		unit: Default unit to use - 'hours' or 'days'
+
+	Returns:
+		Numeric value in the requested unit
+
+	Supports:
+		- '6h' or '6H' -> 6 hours
+		- '7d' or '7D' -> 7 days
+		- '30' -> 30 (in default unit)
+	"""
+	if not value:
+		return 0
+
+	value = value.strip()
+
+	# Match duration pattern: number followed by optional h/d suffix
+	match = re.match(r'^(\d+)([hHdD])?$', value)
+	if not match:
+		raise ValueError(f"Invalid duration format: '{value}'. Expected format: '6h', '7d', or '30'")
+
+	number = int(match.group(1))
+	suffix = match.group(2)
+
+	if not suffix:
+		# No suffix, return as-is in default unit
+		return number
+
+	suffix = suffix.lower()
+
+	if suffix == 'h':
+		# Hours requested
+		if unit == 'hours':
+			return number
+		else:  # unit == 'days'
+			# Convert hours to days (round up)
+			return (number + 23) // 24
+	elif suffix == 'd':
+		# Days requested
+		if unit == 'days':
+			return number
+		else:  # unit == 'hours'
+			# Convert days to hours
+			return number * 24
+
+	return number
+
 class DevlogsConfig:
 	"""Loads configuration from environment variables and provides defaults."""
 	def __init__(self):
@@ -18,12 +70,12 @@ class DevlogsConfig:
 		self.opensearch_user = _getenv("DEVLOGS_OPENSEARCH_USER", "admin")
 		self.opensearch_pass = _getenv("DEVLOGS_OPENSEARCH_PASS", "admin")
 		self.opensearch_timeout = int(_getenv("DEVLOGS_OPENSEARCH_TIMEOUT", "30"))
-		self.index_logs = _getenv("DEVLOGS_INDEX_LOGS", "devlogs-0001")
+		self.index = _getenv("DEVLOGS_INDEX", "devlogs-0001")
 		# Retention configuration (time-based cleanup)
-		self.retention_debug_hours = int(_getenv("DEVLOGS_RETENTION_DEBUG_HOURS", "6"))
-		self.retention_info_days = int(_getenv("DEVLOGS_RETENTION_INFO_DAYS", "7"))
-		self.retention_warning_days = int(_getenv("DEVLOGS_RETENTION_WARNING_DAYS", "30"))
-		self.area_default = _getenv("DEVLOGS_AREA_DEFAULT", "general")
+		# Parse duration strings like "6h", "7d", or plain numbers
+		self.retention_debug_hours = parse_duration(_getenv("DEVLOGS_RETENTION_DEBUG", "6h"), unit='hours')
+		self.retention_info_days = parse_duration(_getenv("DEVLOGS_RETENTION_INFO", "7d"), unit='days')
+		self.retention_warning_days = parse_duration(_getenv("DEVLOGS_RETENTION_WARNING", "30d"), unit='days')
 
 def set_dotenv_path(path: str):
 	"""Set a custom .env file path to load. Must be called before load_config()."""

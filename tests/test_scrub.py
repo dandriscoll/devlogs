@@ -34,7 +34,7 @@ def _assert_cutoff(call_body, expected_iso):
 
 
 def test_scrub_runtime_overrides_env(monkeypatch):
-    monkeypatch.setenv("DEVLOGS_RETENTION_DEBUG_HOURS", "48")
+    monkeypatch.setenv("DEVLOGS_RETENTION_DEBUG", "48h")
     monkeypatch.setattr(scrub, "datetime", FixedDateTime)
     client = FakeClient(deleted=3)
     deleted = scrub.scrub_debug_logs(client, "devlogs-test", older_than_hours=12)
@@ -44,7 +44,7 @@ def test_scrub_runtime_overrides_env(monkeypatch):
 
 
 def test_scrub_env_overrides_default(monkeypatch):
-    monkeypatch.setenv("DEVLOGS_RETENTION_DEBUG_HOURS", "36")
+    monkeypatch.setenv("DEVLOGS_RETENTION_DEBUG", "36h")
     monkeypatch.setattr(scrub, "datetime", FixedDateTime)
     client = FakeClient()
     scrub.scrub_debug_logs(client, "devlogs-test")
@@ -52,11 +52,11 @@ def test_scrub_env_overrides_default(monkeypatch):
     _assert_cutoff(client.calls[0]["body"], "2024-12-31T12:00:00Z")
 
 
-def test_scrub_defaults_to_24h(monkeypatch):
-    monkeypatch.delenv("DEVLOGS_RETENTION_DEBUG_HOURS", raising=False)
+def test_scrub_defaults_to_6h(monkeypatch):
+    monkeypatch.delenv("DEVLOGS_RETENTION_DEBUG", raising=False)
     monkeypatch.setattr(scrub, "datetime", FixedDateTime)
     client = FakeClient()
     scrub.scrub_debug_logs(client, "devlogs-test")
     assert len(client.calls) == 1
-    # Default changed from 24h to 6h in new architecture
+    # Default is 6h
     _assert_cutoff(client.calls[0]["body"], "2025-01-01T18:00:00Z")

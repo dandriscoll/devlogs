@@ -22,7 +22,7 @@ def cleanup_old_logs(client, config: DevlogsConfig, dry_run: bool = False) -> di
 		dict with counts of documents deleted per tier
 	"""
 	now = datetime.now(timezone.utc)
-	index = config.index_logs
+	index = config.index
 
 	results = {
 		"debug_deleted": 0,
@@ -111,7 +111,7 @@ def get_retention_stats(client, config: DevlogsConfig) -> dict:
 		dict with counts of documents in each retention tier
 	"""
 	now = datetime.now(timezone.utc)
-	index = config.index_logs
+	index = config.index
 
 	debug_cutoff = now - timedelta(hours=config.retention_debug_hours)
 	info_cutoff = now - timedelta(days=config.retention_info_days)

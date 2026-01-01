@@ -59,7 +59,7 @@ class TestCreateClientAndIndex:
         monkeypatch.setenv("DEVLOGS_OPENSEARCH_PORT", "9200")
         monkeypatch.setenv("DEVLOGS_OPENSEARCH_USER", "admin")
         monkeypatch.setenv("DEVLOGS_OPENSEARCH_PASS", "admin")
-        monkeypatch.setenv("DEVLOGS_INDEX_LOGS", "test-index")
+        monkeypatch.setenv("DEVLOGS_INDEX", "test-index")
 
         # Reset config state to force reload
         from devlogs import config
@@ -78,7 +78,7 @@ class TestCreateClientAndIndex:
             "DEVLOGS_OPENSEARCH_PORT",
             "DEVLOGS_OPENSEARCH_USER",
             "DEVLOGS_OPENSEARCH_PASS",
-            "DEVLOGS_INDEX_LOGS",
+            "DEVLOGS_INDEX",
         ]:
             monkeypatch.delenv(key, raising=False)
 
@@ -328,12 +328,12 @@ class TestMCPServerConfiguration:
             f.write("DEVLOGS_OPENSEARCH_PORT=9200\n")
             f.write("DEVLOGS_OPENSEARCH_USER=admin\n")
             f.write("DEVLOGS_OPENSEARCH_PASS=admin\n")
-            f.write("DEVLOGS_INDEX_LOGS=env-test-index\n")
+            f.write("DEVLOGS_INDEX=env-test-index\n")
             temp_path = f.name
 
         try:
             # Clear existing env vars to avoid pollution
-            for key in ["DEVLOGS_OPENSEARCH_HOST", "DEVLOGS_OPENSEARCH_PORT", "DEVLOGS_INDEX_LOGS"]:
+            for key in ["DEVLOGS_OPENSEARCH_HOST", "DEVLOGS_OPENSEARCH_PORT", "DEVLOGS_INDEX"]:
                 monkeypatch.delenv(key, raising=False)
 
             monkeypatch.setenv("DOTENV_PATH", temp_path)
@@ -354,12 +354,12 @@ class TestMCPServerConfiguration:
             f.write("DEVLOGS_OPENSEARCH_PORT=9999\n")
             f.write("DEVLOGS_OPENSEARCH_USER=testuser\n")
             f.write("DEVLOGS_OPENSEARCH_PASS=testpass\n")
-            f.write("DEVLOGS_INDEX_LOGS=custom-index\n")
+            f.write("DEVLOGS_INDEX=custom-index\n")
             temp_path = f.name
 
         try:
             # Clear existing env vars to avoid pollution
-            for key in ["DEVLOGS_OPENSEARCH_HOST", "DEVLOGS_OPENSEARCH_PORT", "DEVLOGS_OPENSEARCH_USER", "DEVLOGS_OPENSEARCH_PASS", "DEVLOGS_INDEX_LOGS"]:
+            for key in ["DEVLOGS_OPENSEARCH_HOST", "DEVLOGS_OPENSEARCH_PORT", "DEVLOGS_OPENSEARCH_USER", "DEVLOGS_OPENSEARCH_PASS", "DEVLOGS_INDEX"]:
                 monkeypatch.delenv(key, raising=False)
 
             monkeypatch.setenv("DOTENV_PATH", temp_path)

@@ -25,9 +25,8 @@ def run_demo(
 	typer.echo(f"  DEVLOGS_OPENSEARCH_PORT: {cfg.opensearch_port}")
 	typer.echo(f"  DEVLOGS_OPENSEARCH_USER: {cfg.opensearch_user}")
 	typer.echo(f"  DEVLOGS_OPENSEARCH_PASS: {'*' * len(cfg.opensearch_pass)}")
-	typer.echo(f"  DEVLOGS_INDEX_LOGS: {cfg.index_logs}")
-	typer.echo(f"  DEVLOGS_AREA_DEFAULT: {cfg.area_default}")
-	typer.echo(f"  DEVLOGS_RETENTION_DEBUG_HOURS: {cfg.retention_debug_hours}")
+	typer.echo(f"  DEVLOGS_INDEX: {cfg.index}")
+	typer.echo(f"  DEVLOGS_RETENTION_DEBUG: {cfg.retention_debug_hours}h")
 	typer.echo("")
 
 	# Check OpenSearch connection and index
@@ -35,7 +34,7 @@ def run_demo(
 	handler = OpenSearchHandler(
 		level=logging.DEBUG,
 		opensearch_client=client,
-		index_name=cfg.index_logs,
+		index_name=cfg.index,
 	)
 	handler.setFormatter(logging.Formatter("%(message)s"))
 

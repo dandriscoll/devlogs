@@ -91,8 +91,11 @@ A developer-focused logging library for Python with OpenSearch integration.
 ## Configuration
 
 Environment variables:
-- `DEVLOGS_OPENSEARCH_HOST`, `DEVLOGS_OPENSEARCH_PORT`, `DEVLOGS_OPENSEARCH_USER`, `DEVLOGS_OPENSEARCH_PASS`
-- `DEVLOGS_INDEX_LOGS`, `DEVLOGS_RETENTION_DEBUG_HOURS`, `DEVLOGS_AREA_DEFAULT`
+- OpenSearch connection: `DEVLOGS_OPENSEARCH_HOST`, `DEVLOGS_OPENSEARCH_PORT`, `DEVLOGS_OPENSEARCH_USER`, `DEVLOGS_OPENSEARCH_PASS`
+- Index: `DEVLOGS_INDEX`
+- Retention (supports duration strings like `24h`, `7d`): `DEVLOGS_RETENTION_DEBUG`, `DEVLOGS_RETENTION_INFO`, `DEVLOGS_RETENTION_WARNING`
+
+See [.env.example](.env.example) for a complete configuration template.
 
 ## Project Structure
 
