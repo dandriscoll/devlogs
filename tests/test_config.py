@@ -127,8 +127,11 @@ def test_parse_duration_invalid():
         config.parse_duration("abc", unit="hours")
     with pytest.raises(ValueError, match="Invalid duration format"):
         config.parse_duration("12x", unit="hours")
-    with pytest.raises(ValueError, match="Invalid duration format"):
-        config.parse_duration("", unit="hours")
+
+
+def test_parse_duration_empty_returns_zero():
+    """Test parse_duration returns 0 for empty/None values."""
+    assert config.parse_duration("", unit="hours") == 0
 
 def test_retention_duration_strings(monkeypatch):
     """Test that retention config accepts duration strings."""
