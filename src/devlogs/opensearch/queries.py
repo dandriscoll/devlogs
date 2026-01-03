@@ -23,7 +23,6 @@ def _build_log_query(query=None, area=None, operation_id=None, level=None, since
 			"bool": {
 				"should": [
 					{"term": {"doc_type": "log_entry"}},
-					{"term": {"doc_type": "operation"}},
 					{"bool": {"must_not": {"exists": {"field": "doc_type"}}}},
 				],
 				"minimum_should_match": 1,
@@ -50,7 +49,6 @@ def _build_log_query(query=None, area=None, operation_id=None, level=None, since
 							"message^2",
 							"logger_name",
 							"operation_id",
-							"parent_operation_id",
 							"area",
 							"features.*",
 						],
@@ -95,7 +93,6 @@ def _normalize_entry(doc: Dict[str, Any]) -> Dict[str, Any]:
 		"logger_name": doc.get("logger_name"),
 		"area": doc.get("area"),
 		"operation_id": doc.get("operation_id"),
-		"parent_operation_id": doc.get("parent_operation_id"),
 		"pathname": doc.get("pathname"),
 		"lineno": doc.get("lineno"),
 		"exception": doc.get("exception"),

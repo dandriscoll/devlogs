@@ -231,7 +231,7 @@ class TestMCPServerIntegration:
             "message": "Test MCP search",
             "logger_name": "test.mcp",
             "area": "test",
-            "doc_type": "operation",
+            "doc_type": "log_entry",
         }
         opensearch_client.index(index=test_index, body=doc, refresh=True)
 
@@ -259,7 +259,7 @@ class TestMCPServerIntegration:
                 "message": f"Test tail {i}",
                 "logger_name": "test.mcp",
                 "area": "test",
-                "doc_type": "operation",
+                "doc_type": "log_entry",
             }
             opensearch_client.index(index=test_index, body=doc, refresh=True)
 

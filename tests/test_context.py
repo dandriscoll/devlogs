@@ -24,9 +24,9 @@ def _get_logger(name, handler):
     return logger
 
 
-def test_diagnostics_handler_uses_context_for_child_docs(opensearch_client, test_index):
+def test_diagnostics_handler_uses_context(opensearch_client, test_index):
     handler = DiagnosticsHandler(opensearch_client=opensearch_client, index_name=test_index)
-    logger = _get_logger("ctx-child", handler)
+    logger = _get_logger("ctx-context", handler)
 
     with context.operation("op-ctx", "web"):
         logger.info("hello")

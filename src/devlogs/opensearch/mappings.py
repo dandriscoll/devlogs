@@ -15,7 +15,6 @@ LOG_INDEX_TEMPLATE = {
 				"message": {"type": "text"},
 				"area": {"type": "keyword"},
 				"operation_id": {"type": "keyword"},
-				"parent_operation_id": {"type": "keyword"},
 				"pathname": {"type": "keyword"},
 				"lineno": {"type": "integer"},
 				"funcName": {"type": "keyword"},

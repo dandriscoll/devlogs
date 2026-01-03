@@ -5,7 +5,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
-from .context import get_area, get_operation_id, get_parent_operation_id
+from .context import get_area, get_operation_id
 from .levels import normalize_level
 
 _FEATURE_VALUE_TYPES = (str, int, float, bool, type(None))
@@ -72,7 +72,7 @@ class OpenSearchHandler(logging.Handler):
 			# Silently fail - circuit is open
 			return
 
-		# Index document (flat schema - no routing, no parent-child relationship)
+		# Index document (flat schema - no routing)
 		try:
 			if self.client:
 				# All logs are flat "log_entry" documents
@@ -111,7 +111,6 @@ class OpenSearchHandler(logging.Handler):
 			"exception": getattr(record, "exc_text", None),
 			"area": get_area(),
 			"operation_id": get_operation_id(),
-			"parent_operation_id": get_parent_operation_id(),
 		}
 		features = _extract_features(record)
 		if features:
@@ -120,7 +119,7 @@ class OpenSearchHandler(logging.Handler):
 
 
 class DiagnosticsHandler(OpenSearchHandler):
-	"""Diagnostics handler that always accepts DEBUG and routes parent/child docs."""
+	"""Diagnostics handler that always accepts DEBUG."""
 	def __init__(self, opensearch_client=None, index_name=None):
 		super().__init__(level=logging.DEBUG, opensearch_client=opensearch_client, index_name=index_name)
 

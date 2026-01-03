@@ -14,12 +14,12 @@ def _get_logger(name, handler):
 	return logger
 
 
-def test_diagnostics_handler_child_with_context(opensearch_client, test_index):
+def test_diagnostics_handler_with_context(opensearch_client, test_index):
 	handler = DiagnosticsHandler(opensearch_client=opensearch_client, index_name=test_index)
-	logger = _get_logger("devlogs-child", handler)
+	logger = _get_logger("devlogs-context", handler)
 
 	with operation(operation_id="op-1", area="web"):
-		logger.info("child log")
+		logger.info("context log")
 
 	opensearch_client.indices.refresh(index=test_index)
 	results = search_logs(opensearch_client, test_index, operation_id="op-1")
@@ -27,14 +27,14 @@ def test_diagnostics_handler_child_with_context(opensearch_client, test_index):
 	doc = results[0]
 	assert doc["doc_type"] == "log_entry"
 	assert doc["area"] == "web"
-	assert "child log" in (doc.get("message") or "")
+	assert "context log" in (doc.get("message") or "")
 
 
-def test_diagnostics_handler_parent_without_context(opensearch_client, test_index):
+def test_diagnostics_handler_without_context(opensearch_client, test_index):
 	handler = DiagnosticsHandler(opensearch_client=opensearch_client, index_name=test_index)
-	logger = _get_logger("devlogs-parent", handler)
+	logger = _get_logger("devlogs-basic", handler)
 
-	logger.warning("parent log")
+	logger.warning("basic log")
 
 	opensearch_client.indices.refresh(index=test_index)
 	resp = opensearch_client.search(
@@ -47,7 +47,7 @@ def test_diagnostics_handler_parent_without_context(opensearch_client, test_inde
 	assert doc["doc_type"] == "log_entry"
 
 
-def test_diagnostics_handler_extra_context_child(opensearch_client, test_index):
+def test_diagnostics_handler_extra_context(opensearch_client, test_index):
 	handler = DiagnosticsHandler(opensearch_client=opensearch_client, index_name=test_index)
 	logger = _get_logger("devlogs-extra", handler)
 

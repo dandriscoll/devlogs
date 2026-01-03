@@ -12,9 +12,7 @@ Hard requirements
   - Developers should NOT need to pass operation_id on every log call.
   - Provide a context mechanism that sets operation_id at the start of an operation and automatically injects it into all logs within that context.
 - OpenSearch storage model:
-  - Use a **parent-child** style relationship *or equivalent approach* that supports:
-    - Streaming/real-time visibility of individual log entries as they’re written.
-    - A later “roll-up”/aggregation job that summarizes children into a parent operation document.
+  - Store flat log entry documents keyed by operation_id.
   - Expect 1–1000 log entries per operation.
 - Scrubbing/retention:
   - Keep all levels initially (including DEBUG).
@@ -49,9 +47,8 @@ Create a repo with at least:
   - `opensearch/`
     - `client.py` (client factory + retry/backoff)
     - `mappings.py` (index templates/mappings/settings)
-    - `indexing.py` (write log entry docs + parent operation docs)
+    - `indexing.py` (write log entry docs)
     - `queries.py` (search APIs used by CLI and web)
-  - `rollup.py` (aggregate children -> parent summary)
   - `scrub.py` (delete/prune old DEBUG entries)
   - `cli.py` (CLI entrypoint)
   - `web/`
@@ -93,31 +90,15 @@ Library behavior details
       - pathname, lineno, funcName
       - thread, process
       - exception info (if present) as string/stack
-      - area (from contextvar or record.extra)
-      - operation_id (from contextvar or record.extra)
-      - optional tags/extra fields
-    - Index a “log entry” doc as a child of operation_id (or linked via join field).
+    - area (from contextvar or record.extra)
+    - operation_id (from contextvar or record.extra)
+    - optional tags/extra fields
+    - Index a “log entry” doc that includes operation_id.
   - Must be resilient: failures to index should not crash app; implement bounded retry/backoff and a fallback (e.g., drop with internal warning).
 
 OpenSearch design
-- Implement index templates and mappings for `devlogs-*`
-- If using join field:
-  - parent type: `operation`
-  - child type: `log_entry`
-  - route all child docs with routing=operation_id so queries are efficient.
-- Parent operation doc fields:
-  - operation_id
-  - area
-  - start_time, end_time (optional)
-  - counts by level
-  - summary fields: last_message, first_message, error_count, etc.
-  - optional aggregated text blob of recent messages (bounded)
-- Roll-up job:
-  - Periodically query for operations with recent child docs and update parent summary:
-    - counts per level
-    - most recent timestamp
-    - maybe store top N recent messages
-  - Implement as idempotent.
+- Implement index templates and mappings for `devlogs-*` using flat log documents.
+- Keep mappings focused on log entry fields (timestamp, level, area, operation_id, etc.).
 
 MCP server
 - Add a lightweight, read-only MCP (Model Context Protocol) server to allow a coding LLM to query devlogs during development.
@@ -164,7 +145,6 @@ CLI commands (minimum)
 - `devlogs status` (health check, index existence, doc counts)
 - `devlogs tail ...` (see above)
 - `devlogs search ...` (see above)
-- `devlogs rollup --since 1h` (run roll-up once)
 - `devlogs scrub --debug-older-than 24h`
 - `devlogs web --port 8088` (run web server that serves API + static UI)
 All commands must be runnable via:

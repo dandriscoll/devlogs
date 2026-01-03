@@ -79,15 +79,6 @@ function renderFeatures(features) {
 	return `<div class="entry-features">${chips}</div>`;
 }
 
-function formatFeaturesInline(features) {
-	const entries = getFeatureEntries(features);
-	if (!entries.length) {
-		return '';
-	}
-	const parts = entries.map(([key, value]) => `${key}=${formatFeatureValue(value)}`);
-	return parts.join(' ');
-}
-
 function formatTimestamp(value) {
 	if (!value) {
 		return '—';
@@ -109,7 +100,7 @@ function formatTimestamp(value) {
 
 function entryKey(entry) {
 	const features = featureKey(entry.features);
-	return `${entry.timestamp || ''}|${entry.level || ''}|${entry.operation_id || ''}|${entry.parent_operation_id || ''}|${entry.message || ''}|${features}`;
+	return `${entry.timestamp || ''}|${entry.level || ''}|${entry.operation_id || ''}|${entry.message || ''}|${features}`;
 }
 
 function latestTimestamp(entries) {
@@ -129,34 +120,11 @@ function sortEntries(entries) {
 	entries.sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || '') * direction);
 }
 
-function buildParentMap(entries) {
-	const parentMap = new Map();
-	for (const entry of entries) {
-		if (entry.operation_id && entry.parent_operation_id && !parentMap.has(entry.operation_id)) {
-			parentMap.set(entry.operation_id, entry.parent_operation_id);
-		}
-	}
-	return parentMap;
-}
-
-function resolveRootOperation(operationId, parentMap) {
-	if (!operationId) return null;
-	let current = operationId;
-	const seen = new Set();
-	while (parentMap.has(current) && !seen.has(current)) {
-		seen.add(current);
-		current = parentMap.get(current);
-	}
-	return current;
-}
-
 function groupEntries(entries) {
-	const parentMap = buildParentMap(entries);
 	const groups = new Map();
 	for (const entry of entries) {
 		const opId = entry.operation_id || null;
-		const parentId = entry.parent_operation_id || null;
-		const rootId = resolveRootOperation(opId || parentId, parentMap);
+		const rootId = opId;
 		const groupId = rootId || `no-op:${entryKey(entry)}`;
 		if (!groups.has(groupId)) {
 			groups.set(groupId, {
@@ -219,47 +187,34 @@ function renderEntries(entries, { highlightKeys } = {}) {
 		}
 		const areaBadge = groupArea ? `<span class="entry-group-area">${escapeHtml(groupArea)}</span>` : '';
 		const rows = group.entries.map((entry) => {
-			const level = (entry.level || 'info').toUpperCase();
-			const levelClass = `level-${level}`;
-			const key = entryKey(entry);
-			const isNew = highlightKeys && highlightKeys.has(key);
-			const isChild = group.rootId && entry.operation_id && entry.operation_id !== group.rootId;
-			const entryClass = `entry-row${isNew ? ' is-new' : ''}${isChild ? ' is-child' : ''}`;
-			const message = escapeHtml(entry.message || '');
-			const loggerName = escapeHtml(entry.logger_name || 'unknown');
-			const area = escapeHtml(entry.area || 'general');
-			const operationId = escapeHtml(entry.operation_id || 'n/a');
-			const childBadge = isChild ? `<span class="entry-child">child ${operationId}</span>` : '';
-			const fallbackOp = !group.rootId && entry.operation_id ? `<span class="entry-op">${operationId}</span>` : '';
-			const timestamp = formatTimestamp(entry.timestamp);
-			if (isChild) {
-				const messageText = String(entry.message || '').replace(/\r?\n/g, ' ').trim();
-				const featureText = formatFeaturesInline(entry.features);
-				const lineParts = [timestamp, level, entry.area || '', entry.operation_id || '', featureText, messageText];
-				const lineText = escapeHtml(lineParts.filter(Boolean).join(' ').trim());
-				return `
-					<div class="${entryClass} ${levelClass}">
-						<div class="entry-line">${lineText || '&nbsp;'}</div>
-					</div>
-				`;
-			}
-			const features = renderFeatures(entry.features);
-			return `
-				<div class="${entryClass} ${levelClass}">
-					<div class="entry-meta">
-						<span class="entry-time">${timestamp}</span>
+		const level = (entry.level || 'info').toUpperCase();
+		const levelClass = `level-${level}`;
+		const key = entryKey(entry);
+		const isNew = highlightKeys && highlightKeys.has(key);
+		const entryClass = `entry-row${isNew ? ' is-new' : ''}`;
+		const message = escapeHtml(entry.message || '');
+		const loggerName = escapeHtml(entry.logger_name || 'unknown');
+		const area = escapeHtml(entry.area || 'general');
+		const operationId = escapeHtml(entry.operation_id || 'n/a');
+		const fallbackOp = !group.rootId && entry.operation_id ? `<span class="entry-op">${operationId}</span>` : '';
+		const timestamp = formatTimestamp(entry.timestamp);
+		const features = renderFeatures(entry.features);
+		return `
+			<div class="${entryClass} ${levelClass}">
+				<div class="entry-meta">
+					<span class="entry-time">${timestamp}</span>
 						<span class="entry-level">${level}</span>
 						<span class="entry-area">${area}</span>
 					</div>
-					${features}
-					<div class="entry-message">${message}</div>
-					<div class="entry-extra">
-						<span class="entry-logger">${loggerName}</span>
-						${childBadge || fallbackOp}
-					</div>
+				${features}
+				<div class="entry-message">${message}</div>
+				<div class="entry-extra">
+					<span class="entry-logger">${loggerName}</span>
+					${fallbackOp}
 				</div>
-			`;
-		}).join('');
+			</div>
+		`;
+	}).join('');
 		return `
 			<article class="entry-group">
 				<header class="entry-group-header">

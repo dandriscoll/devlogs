@@ -234,11 +234,6 @@ button.ghost {
 	border-top: 1px solid var(--border);
 }
 
-.entry-row.is-child {
-	background: rgba(255, 248, 239, 0.6);
-	padding: 8px 16px 8px 28px;
-}
-
 .entry-meta {
 	display: flex;
 	align-items: center;
@@ -284,13 +279,6 @@ button.ghost {
 	white-space: pre-wrap;
 }
 
-.entry-line {
-	font-size: 13px;
-	font-family: "JetBrains Mono", "Courier New", monospace;
-	white-space: pre-wrap;
-	color: var(--ink);
-}
-
 .entry-extra {
 	display: flex;
 	justify-content: space-between;
@@ -318,11 +306,6 @@ button.ghost {
 
 .entry-op {
 	font-family: "JetBrains Mono", "Courier New", monospace;
-}
-
-.entry-child {
-	font-family: "JetBrains Mono", "Courier New", monospace;
-	color: var(--accent-2);
 }
 
 .entry-row.level-DEBUG { border-left: 4px solid #9aa0a6; }
