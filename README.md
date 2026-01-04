@@ -14,6 +14,17 @@ A developer-focused logging library for Python with OpenSearch integration.
 >    - `logging.getLogger().setLevel(logging.INFO)`
 > 4. Run `devlogs init` (inside the virtualenv if one is set up) and verify the index is healthy.
 
+## OpenSearch Setup (Docker)
+
+If you don't already have OpenSearch running locally:
+1. Install Docker (and Docker Compose) for your OS.
+2. Copy `docker-compose.example.yaml` to `docker-compose.yaml`.
+3. Change the OpenSearch password in the copied file.
+4. Start OpenSearch:
+	```sh
+	docker compose up -d
+	```
+
 ## Quickstart
 
 1. **Install devlogs:**
