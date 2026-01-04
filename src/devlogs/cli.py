@@ -4,9 +4,11 @@ import sys
 # Handle Ctrl+C gracefully before any other imports
 signal.signal(signal.SIGINT, lambda *_: sys.exit(130))
 
+import json
 import time
 import click
 import typer
+from pathlib import Path
 
 from .config import load_config, set_dotenv_path
 from .formatting import format_timestamp
@@ -65,6 +67,65 @@ def require_opensearch(check_idx=True):
 	return client, cfg
 
 
+def _write_json_config(path: Path, root_key: str, server_name: str, server_config: dict) -> None:
+	data = {}
+	if path.is_file():
+		try:
+			data = json.loads(path.read_text(encoding="utf-8"))
+		except json.JSONDecodeError as exc:
+			raise ValueError(f"{path} is not valid JSON: {exc}") from exc
+	if not isinstance(data, dict):
+		raise ValueError(f"{path} must contain a JSON object.")
+	servers = data.get(root_key)
+	if servers is None:
+		servers = {}
+		data[root_key] = servers
+	if not isinstance(servers, dict):
+		raise ValueError(f"{path} field '{root_key}' must be a JSON object.")
+	servers[server_name] = server_config
+	path.parent.mkdir(parents=True, exist_ok=True)
+	path.write_text(json.dumps(data, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+
+
+def _strip_toml_table(text: str, table_name: str) -> str:
+	lines = text.splitlines()
+	output = []
+	skip = False
+	for line in lines:
+		stripped = line.strip()
+		if stripped.startswith("[") and stripped.endswith("]"):
+			if stripped == f"[{table_name}]":
+				skip = True
+				continue
+			if skip:
+				skip = False
+		if not skip:
+			output.append(line)
+	result = "\n".join(output)
+	if text.endswith("\n"):
+		result += "\n"
+	return result
+
+
+def _write_codex_config(path: Path, python_path: str) -> None:
+	block_lines = [
+		"[mcp_servers.devlogs]",
+		f'command = "{python_path}"',
+		'args = ["-m", "devlogs.mcp.server"]',
+	]
+	block = "\n".join(block_lines) + "\n"
+
+	text = ""
+	if path.is_file():
+		text = path.read_text(encoding="utf-8")
+		text = _strip_toml_table(text, "mcp_servers.devlogs")
+		text = _strip_toml_table(text, "mcp_servers.devlogs.env")
+		if text and not text.endswith("\n"):
+			text += "\n"
+	path.parent.mkdir(parents=True, exist_ok=True)
+	path.write_text(text + block, encoding="utf-8")
+
+
 @app.command()
 def init():
 	"""Initialize OpenSearch indices and templates (idempotent)."""
@@ -77,6 +138,61 @@ def init():
 		typer.echo(f"Created index '{cfg.index}'.")
 	typer.echo("OpenSearch indices and templates initialized.")
 
+
+@app.command()
+def initmcp(
+	agent: str = typer.Argument(
+		...,
+		help="Target agent: copilot, claude, codex, or all",
+	),
+):
+	"""Write MCP config for supported agents."""
+	agent_key = agent.strip().lower()
+	valid_agents = {"copilot", "claude", "codex", "all"}
+	if agent_key not in valid_agents:
+		typer.echo(typer.style(f"Error: Unknown agent '{agent}'.", fg=typer.colors.RED), err=True)
+		raise typer.Exit(1)
+
+	python_path = sys.executable
+	root = Path.cwd()
+	results = []
+
+	def _write_claude():
+		path = root / ".mcp.json"
+		config = {
+			"command": python_path,
+			"args": ["-m", "devlogs.mcp.server"],
+		}
+		_write_json_config(path, "mcpServers", "devlogs", config)
+		results.append(f"Claude: {path}")
+
+	def _write_copilot():
+		path = root / ".vscode" / "mcp.json"
+		config = {
+			"command": python_path,
+			"args": ["-m", "devlogs.mcp.server"],
+		}
+		_write_json_config(path, "servers", "devlogs", config)
+		results.append(f"Copilot: {path}")
+
+	def _write_codex():
+		path = Path("~/.codex/config.toml").expanduser()
+		_write_codex_config(path, python_path)
+		results.append(f"Codex: {path}")
+
+	try:
+		if agent_key in {"claude", "all"}:
+			_write_claude()
+		if agent_key in {"copilot", "all"}:
+			_write_copilot()
+		if agent_key in {"codex", "all"}:
+			_write_codex()
+	except ValueError as exc:
+		typer.echo(typer.style(f"Error: {exc}", fg=typer.colors.RED), err=True)
+		raise typer.Exit(1)
+
+	for line in results:
+		typer.echo(f"Wrote {line}")
 
 @app.command()
 def tail(

@@ -73,6 +73,22 @@ If you don't already have OpenSearch running locally:
 	# Then open http://localhost:8088/ui/
 	```
 
+## MCP Agent Setup
+
+Pick your agent and run the matching command from your project root:
+
+```sh
+devlogs initmcp copilot
+devlogs initmcp claude
+devlogs initmcp codex
+devlogs initmcp all
+```
+
+This writes MCP config files in the standard locations:
+- Claude: `.mcp.json`
+- Copilot (VS Code): `.vscode/mcp.json`
+- Codex: `~/.codex/config.toml`
+
 ## Features
 
 - Standard `logging.Handler` for OpenSearch
