@@ -30,38 +30,6 @@ from ..opensearch.queries import (
 )
 
 
-def _format_log_entry(entry: dict[str, Any]) -> str:
-    """Format a log entry for display."""
-    timestamp = entry.get("timestamp", "")
-    level = entry.get("level", "")
-    logger = entry.get("logger_name", "")
-    message = entry.get("message", "")
-    area = entry.get("area", "")
-    operation_id = entry.get("operation_id", "")
-
-    parts = []
-    if timestamp:
-        parts.append(f"[{timestamp}]")
-    if level:
-        parts.append(f"{level}")
-    if area:
-        parts.append(f"({area})")
-    if operation_id:
-        parts.append(f"op:{operation_id[:8]}")
-    if logger:
-        parts.append(f"{logger}:")
-    if message:
-        parts.append(message)
-
-    result = " ".join(parts)
-
-    exception = entry.get("exception")
-    if exception:
-        result += f"\n{exception}"
-
-    return result
-
-
 def _create_client_and_index():
     """Create OpenSearch client and get index name from config."""
     try:

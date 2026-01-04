@@ -1,52 +1,64 @@
 """Tests for the MCP server."""
 
+import json
 import os
 import tempfile
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
-import mcp.types as types
 
-from devlogs.mcp.server import _format_log_entry, _create_client_and_index
+from devlogs.mcp.server import (
+    _coerce_cursor,
+    _create_client_and_index,
+    _error_response,
+    _json_response,
+    _normalize_entries,
+)
 
 
-class TestFormatLogEntry:
-    """Test log entry formatting."""
+class TestMCPServerHelpers:
+    """Test MCP server helpers."""
 
-    def test_format_minimal_entry(self):
-        """Test formatting with minimal fields."""
-        entry = {"message": "Test message"}
-        result = _format_log_entry(entry)
-        assert result == "Test message"
+    def test_coerce_cursor_accepts_sequence(self):
+        """Ensure cursor parsing accepts list/tuple inputs."""
+        assert _coerce_cursor([1, 2]) == [1, 2]
+        assert _coerce_cursor((3, 4)) == [3, 4]
 
-    def test_format_full_entry(self):
-        """Test formatting with all fields."""
-        entry = {
-            "timestamp": "2025-12-26T10:00:00Z",
-            "level": "ERROR",
-            "logger_name": "test.logger",
-            "message": "Test error message",
-            "area": "api",
-            "operation_id": "abcd1234-5678-90ef-ghij-klmnopqrstuv",
-        }
-        result = _format_log_entry(entry)
-        assert "[2025-12-26T10:00:00Z]" in result
-        assert "ERROR" in result
-        assert "(api)" in result
-        assert "op:abcd1234" in result
-        assert "test.logger:" in result
-        assert "Test error message" in result
+    def test_coerce_cursor_accepts_json(self):
+        """Ensure cursor parsing accepts JSON strings."""
+        assert _coerce_cursor("[1, \"abc\"]") == [1, "abc"]
+        assert _coerce_cursor("not-json") is None
 
-    def test_format_with_exception(self):
-        """Test formatting with exception."""
-        entry = {
-            "message": "Error occurred",
-            "exception": "Traceback:\n  File test.py, line 1\nValueError: test",
-        }
-        result = _format_log_entry(entry)
-        assert "Error occurred" in result
-        assert "Traceback:" in result
-        assert "ValueError: test" in result
+    def test_json_response_shape(self):
+        """Ensure JSON response uses expected envelope."""
+        content = _json_response(data={"ok": "yes"})[0]
+        payload = json.loads(content.text)
+        assert payload["ok"] is True
+        assert payload["data"] == {"ok": "yes"}
+
+    def test_error_response_shape(self):
+        """Ensure error response uses expected envelope."""
+        content = _error_response("oops", "TestError")[0]
+        payload = json.loads(content.text)
+        assert payload["ok"] is False
+        assert payload["error"]["type"] == "TestError"
+        assert payload["error"]["message"] == "oops"
+
+    def test_normalize_entries_includes_metadata(self):
+        """Ensure normalized entries keep id and sort metadata."""
+        docs = [
+            {
+                "id": "doc-1",
+                "sort": ["2025-12-26T10:00:00Z", "doc-1"],
+                "timestamp": "2025-12-26T10:00:00Z",
+                "level": "ERROR",
+                "message": "Test entry",
+            }
+        ]
+        entries = _normalize_entries(docs)
+        assert entries[0]["id"] == "doc-1"
+        assert entries[0]["sort"] == ["2025-12-26T10:00:00Z", "doc-1"]
+        assert entries[0]["message"] == "Test entry"
 
 
 class TestCreateClientAndIndex:
@@ -277,25 +289,9 @@ class TestMCPServerIntegration:
 class TestMCPServerErrorHandling:
     """Test error handling in MCP server."""
 
-    def test_format_entry_with_none_values(self):
-        """Test formatting handles None values gracefully."""
-        entry = {
-            "timestamp": None,
-            "level": None,
-            "logger_name": None,
-            "message": "Test",
-            "area": None,
-            "operation_id": None,
-        }
-        result = _format_log_entry(entry)
-        assert "Test" in result
-        assert result == "Test"
-
-    def test_format_entry_empty_dict(self):
-        """Test formatting empty entry."""
-        entry = {}
-        result = _format_log_entry(entry)
-        assert result == ""
+    def test_normalize_entries_handles_empty(self):
+        """Ensure normalization handles empty docs."""
+        assert _normalize_entries([]) == []
 
     @patch('devlogs.mcp.server.get_opensearch_client')
     def test_create_client_connection_error(self, mock_get_client):
