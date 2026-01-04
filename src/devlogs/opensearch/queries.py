@@ -1,6 +1,8 @@
 # Search APIs for OpenSearch
 
 from typing import Any, Dict, Iterable, List, Optional
+
+from ..time_utils import resolve_relative_time
 from ..levels import normalize_level
 from .client import IndexNotFoundError
 
@@ -20,6 +22,8 @@ def _normalize_level_terms(level: Optional[str]) -> Optional[List[str]]:
 def _build_time_range(since: Optional[str], until: Optional[str], since_inclusive: bool, until_inclusive: bool) -> Optional[Dict[str, Any]]:
 	if not since and not until:
 		return None
+	since = resolve_relative_time(since)
+	until = resolve_relative_time(until)
 	range_query: Dict[str, Any] = {}
 	if since:
 		range_query["gte" if since_inclusive else "gt"] = since
@@ -137,6 +141,28 @@ def search_logs(client, index, query=None, area=None, operation_id=None, level=N
 		"size": limit,
 	}
 	response = _require_response(client.search(index=index, body=body), "search", client=client, index=index)
+	hits = response.get("hits", {}).get("hits", [])
+	return _hits_to_docs(hits)
+
+
+def get_last_errors(client, index, query=None, area=None, operation_id=None, since=None, until=None, limit=1):
+	"""Get the most recent error/critical log entries."""
+	base_query = _build_log_query(
+		query=query,
+		area=area,
+		operation_id=operation_id,
+		since=since,
+		until=until,
+	)
+	base_query.get("bool", {}).get("filter", []).append(
+		{"terms": {"level": ["error", "critical"]}}
+	)
+	body = {
+		"query": base_query,
+		"sort": [{"timestamp": "desc"}, {"_id": "desc"}],
+		"size": limit,
+	}
+	response = _require_response(client.search(index=index, body=body), "get_last_errors", client=client, index=index)
 	hits = response.get("hits", {}).get("hits", [])
 	return _hits_to_docs(hits)
 
@@ -327,7 +353,8 @@ def list_operations(client, index, area=None, since=None, limit=20, with_errors_
 	if area:
 		query_filters.append({"term": {"area": area}})
 	if since:
-		query_filters.append({"range": {"timestamp": {"gte": since}}})
+		normalized_since = resolve_relative_time(since)
+		query_filters.append({"range": {"timestamp": {"gte": normalized_since}}})
 
 	body = {
 		"query": {"bool": {"filter": query_filters}} if query_filters else {"match_all": {}},
@@ -620,7 +647,8 @@ def list_areas(client, index, since=None, min_operations=1):
 	"""List all application areas with activity counts."""
 	query_filters = []
 	if since:
-		query_filters.append({"range": {"timestamp": {"gte": since}}})
+		normalized_since = resolve_relative_time(since)
+		query_filters.append({"range": {"timestamp": {"gte": normalized_since}}})
 
 	body = {
 		"query": {"bool": {"filter": query_filters}} if query_filters else {"match_all": {}},

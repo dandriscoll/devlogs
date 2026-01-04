@@ -20,7 +20,7 @@ from .opensearch.client import (
 	ConnectionFailedError,
 )
 from .opensearch.mappings import build_log_index_template, get_template_names
-from .opensearch.queries import normalize_log_entries, search_logs, tail_logs
+from .opensearch.queries import normalize_log_entries, search_logs, tail_logs, get_last_errors
 from .retention import cleanup_old_logs, get_retention_stats
 
 app = typer.Typer()
@@ -495,6 +495,75 @@ def search(
 		if not follow:
 			break
 		time.sleep(2)
+
+
+@app.command()
+def last_error(
+	q: str = typer.Option("", "--q", help="Search query"),
+	area: str = typer.Option(None, "--area"),
+	operation_id: str = typer.Option(None, "--operation", "-o"),
+	since: str = typer.Option(None, "--since"),
+	until: str = typer.Option(None, "--until"),
+	limit: int = typer.Option(1, "--limit"),
+	utc: bool = typer.Option(False, "--utc", help="Display timestamps in UTC instead of local time"),
+):
+	"""Show the most recent error/critical log entries."""
+	import urllib.error
+
+	client, cfg = require_opensearch()
+
+	try:
+		docs = get_last_errors(
+			client,
+			cfg.index,
+			query=q,
+			area=area,
+			operation_id=operation_id,
+			since=since,
+			until=until,
+			limit=limit,
+		)
+		entries = normalize_log_entries(docs, limit=limit)
+	except (ConnectionFailedError, urllib.error.URLError) as e:
+		typer.echo(typer.style(
+			f"Error: Lost connection to OpenSearch ({e})",
+			fg=typer.colors.RED
+		), err=True)
+		raise typer.Exit(1)
+	except urllib.error.HTTPError as e:
+		typer.echo(typer.style(
+			f"Error: OpenSearch error: HTTP {e.code} - {e.reason}",
+			fg=typer.colors.RED
+		), err=True)
+		raise typer.Exit(1)
+	except OpenSearchError as e:
+		typer.echo(typer.style(
+			f"Error: {e}",
+			fg=typer.colors.RED
+		), err=True)
+		raise typer.Exit(1)
+	except Exception as e:
+		typer.echo(typer.style(
+			f"Error: Unexpected error: {type(e).__name__}: {e}",
+			fg=typer.colors.RED
+		), err=True)
+		raise typer.Exit(1)
+
+	if not entries:
+		typer.echo(typer.style("No errors found.", dim=True), err=True)
+		return
+
+	for doc in entries:
+		timestamp = format_timestamp(doc.get("timestamp") or "", use_utc=utc)
+		entry_level = doc.get("level") or ""
+		entry_area = doc.get("area") or ""
+		entry_operation = doc.get("operation_id") or ""
+		message = doc.get("message") or ""
+		features = _format_features(doc.get("features"))
+		if features:
+			typer.echo(f"{timestamp} {entry_level} {entry_area} {entry_operation} {features} {message}")
+		else:
+			typer.echo(f"{timestamp} {entry_level} {entry_area} {entry_operation} {message}")
 
 
 @app.command()

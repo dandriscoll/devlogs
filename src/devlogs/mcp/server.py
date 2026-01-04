@@ -19,6 +19,7 @@ from ..opensearch.client import (
 from ..opensearch.queries import (
     get_operation_summary,
     get_operation_logs,
+    get_last_errors,
     get_error_context,
     list_areas,
     list_error_signatures,
@@ -141,11 +142,11 @@ async def main():
                         },
                         "since": {
                             "type": "string",
-                            "description": "ISO timestamp to filter logs after this time (e.g., '2025-01-01T00:00:00Z')",
+                            "description": "ISO timestamp or relative duration like '1h' to filter logs after this time",
                         },
                         "until": {
                             "type": "string",
-                            "description": "ISO timestamp to filter logs before this time (e.g., '2025-01-01T00:00:00Z')",
+                            "description": "ISO timestamp or relative duration like '1h' to filter logs before this time",
                         },
                         "limit": {
                             "type": "integer",
@@ -184,11 +185,11 @@ async def main():
                         },
                         "since": {
                             "type": "string",
-                            "description": "ISO timestamp to filter logs after this time (e.g., '2025-01-01T00:00:00Z')",
+                            "description": "ISO timestamp or relative duration like '1h' to filter logs after this time",
                         },
                         "until": {
                             "type": "string",
-                            "description": "ISO timestamp to filter logs before this time (e.g., '2025-01-01T00:00:00Z')",
+                            "description": "ISO timestamp or relative duration like '1h' to filter logs before this time",
                         },
                         "limit": {
                             "type": "integer",
@@ -237,11 +238,11 @@ async def main():
                         },
                         "since": {
                             "type": "string",
-                            "description": "ISO timestamp to filter logs after this time (e.g., '2025-01-01T00:00:00Z')",
+                            "description": "ISO timestamp or relative duration like '1h' to filter logs after this time",
                         },
                         "until": {
                             "type": "string",
-                            "description": "ISO timestamp to filter logs before this time (e.g., '2025-01-01T00:00:00Z')",
+                            "description": "ISO timestamp or relative duration like '1h' to filter logs before this time",
                         },
                         "limit": {
                             "type": "integer",
@@ -269,7 +270,7 @@ async def main():
                         },
                         "since": {
                             "type": "string",
-                            "description": "ISO timestamp to filter operations after this time",
+                            "description": "ISO timestamp or relative duration like '1h' to filter operations after this time",
                         },
                         "limit": {
                             "type": "integer",
@@ -296,11 +297,11 @@ async def main():
                         },
                         "since": {
                             "type": "string",
-                            "description": "ISO timestamp to filter operations after this time",
+                            "description": "ISO timestamp or relative duration like '1h' to filter operations after this time",
                         },
                         "until": {
                             "type": "string",
-                            "description": "ISO timestamp to filter operations before this time",
+                            "description": "ISO timestamp or relative duration like '1h' to filter operations before this time",
                         },
                         "limit": {
                             "type": "integer",
@@ -328,7 +329,7 @@ async def main():
                     "properties": {
                         "since": {
                             "type": "string",
-                            "description": "ISO timestamp to filter activity after this time",
+                            "description": "ISO timestamp or relative duration like '1h' to filter activity after this time",
                         },
                         "min_operations": {
                             "type": "integer",
@@ -354,11 +355,11 @@ async def main():
                         },
                         "since": {
                             "type": "string",
-                            "description": "ISO timestamp to filter logs after this time",
+                            "description": "ISO timestamp or relative duration like '1h' to filter logs after this time",
                         },
                         "until": {
                             "type": "string",
-                            "description": "ISO timestamp to filter logs before this time",
+                            "description": "ISO timestamp or relative duration like '1h' to filter logs before this time",
                         },
                         "limit": {
                             "type": "integer",
@@ -374,6 +375,40 @@ async def main():
                             "type": "boolean",
                             "description": "Include logs missing the signature field",
                             "default": False,
+                        },
+                    },
+                },
+            ),
+            types.Tool(
+                name="get_last_error",
+                description="Get the most recent error/critical log entries. Use limit to return more than one.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Text search query to match against log messages, logger names, and features",
+                        },
+                        "area": {
+                            "type": "string",
+                            "description": "Filter by application area",
+                        },
+                        "operation_id": {
+                            "type": "string",
+                            "description": "Filter by specific operation ID",
+                        },
+                        "since": {
+                            "type": "string",
+                            "description": "ISO timestamp or relative duration like '1h' to filter logs after this time",
+                        },
+                        "until": {
+                            "type": "string",
+                            "description": "ISO timestamp or relative duration like '1h' to filter logs before this time",
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of error entries to return (default: 1, max: 100)",
+                            "default": 1,
                         },
                     },
                 },
@@ -673,6 +708,37 @@ async def main():
                 return _error_response(str(e), "IndexNotFoundError")
             except Exception as e:
                 return _error_response(f"List recent errors error: {e}", "ListRecentErrorsError")
+
+        elif name == "get_last_error":
+            query = arguments.get("query")
+            area = arguments.get("area")
+            operation_id = arguments.get("operation_id")
+            since = arguments.get("since")
+            until = arguments.get("until")
+            limit = _coerce_limit(arguments.get("limit"), 1, 100)
+
+            try:
+                docs = get_last_errors(
+                    client=client,
+                    index=index,
+                    query=query,
+                    area=area,
+                    operation_id=operation_id,
+                    since=since,
+                    until=until,
+                    limit=limit,
+                )
+                entries = _normalize_entries(docs, limit=limit)
+                return _json_response(
+                    data={"entries": entries},
+                    meta={"count": len(entries)},
+                )
+            except IndexNotFoundError as e:
+                return _error_response(str(e), "IndexNotFoundError")
+            except QueryError as e:
+                return _error_response(str(e), "QueryError")
+            except Exception as e:
+                return _error_response(f"Get last error error: {e}", "GetLastErrorError")
 
         elif name == "get_error_context":
             anchor_timestamp = arguments.get("anchor_timestamp")

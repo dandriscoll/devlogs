@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 from devlogs.opensearch.queries import (
     get_error_context,
+    get_last_errors,
     get_operation_logs,
     list_error_signatures,
     list_recent_operations,
@@ -159,6 +160,32 @@ def test_list_error_signatures_allows_missing_and_custom_field():
     filters = body["query"]["bool"]["filter"]
     assert {"exists": {"field": "message.keyword"}} not in filters
     assert body["aggs"]["by_signature"]["terms"]["field"] == "message.keyword"
+
+
+def test_get_last_errors_filters_and_sorts():
+    response = {
+        "hits": {
+            "hits": [
+                {
+                    "_source": {"message": "boom", "level": "error"},
+                    "_id": "doc-1",
+                }
+            ]
+        }
+    }
+    client = DummyClient(response)
+    results = get_last_errors(
+        client,
+        "index",
+        area="api",
+        limit=1,
+    )
+
+    body = client.last_call["body"]
+    filters = body["query"]["bool"]["filter"]
+    assert {"terms": {"level": ["error", "critical"]}} in filters
+    assert body["sort"][0]["timestamp"] == "desc"
+    assert results[0]["message"] == "boom"
 
 
 def test_get_error_context_orders_entries():
