@@ -204,10 +204,10 @@ def get_operation_logs(client, index, operation_id, query=None, level=None, sinc
 def tail_logs(client, index, query=None, operation_id=None, area=None, level=None, since=None, until=None, limit=20, search_after=None):
 	"""Tail log entries for an operation.
 
-	Always fetches in descending order (newest first), reverses for chronological display.
-	Pagination continues from oldest fetched, going backwards in time.
+	First call returns the most recent entries (newest first) and reverses for chronological display.
+	Follow-up calls with search_after return only newer entries in ascending order.
 	"""
-	body = {
+	base_body = {
 		"query": _build_log_query(
 			query=query,
 			area=area,
@@ -216,19 +216,29 @@ def tail_logs(client, index, query=None, operation_id=None, area=None, level=Non
 			since=since,
 			until=until,
 		),
-		"sort": [{"timestamp": "desc"}, {"_id": "desc"}],
 		"size": limit,
 	}
+
 	if search_after:
+		body = dict(base_body)
+		body["sort"] = [{"timestamp": "asc"}, {"_id": "asc"}]
 		body["search_after"] = search_after
+		response = _require_response(client.search(index=index, body=body), "tail", client=client, index=index)
+		hits = response.get("hits", {}).get("hits", [])
+		docs = _hits_to_docs(hits)
+		next_search_after = docs[-1]["sort"] if docs else search_after
+		return docs, next_search_after
+
+	body = dict(base_body)
+	body["sort"] = [{"timestamp": "desc"}, {"_id": "desc"}]
 	response = _require_response(client.search(index=index, body=body), "tail", client=client, index=index)
 	hits = response.get("hits", {}).get("hits", [])
 	docs = _hits_to_docs(hits)
 
 	if docs:
 		# Fetch is in DESC order (newest first)
-		# Cursor points to oldest fetched (last in DESC list) for next page
-		next_search_after = docs[-1]["sort"]
+		# Cursor points to newest fetched (first in DESC list) for follow-up polling
+		next_search_after = docs[0]["sort"]
 		# Reverse to chronological order for display (oldest first)
 		docs = list(reversed(docs))
 	else:

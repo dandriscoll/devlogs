@@ -114,12 +114,12 @@ def test_nested_contexts_are_distinct(opensearch_client, test_index):
 	assert "inner" in (inner_entry.get("message") or "")
 
 
-def test_tail_logs_pagination(opensearch_client, test_index):
+def test_tail_logs_follow_returns_new_entries(opensearch_client, test_index):
 	handler = DiagnosticsHandler(opensearch_client=opensearch_client, index_name=test_index)
 	logger = _get_logger("devlogs-tail", handler)
 
 	with operation(operation_id="op-tail", area="web"):
-		for i in range(5):
+		for i in range(3):
 			logger.info(f"msg {i}")
 			time.sleep(0.001)
 
@@ -130,27 +130,24 @@ def test_tail_logs_pagination(opensearch_client, test_index):
 		operation_id="op-tail",
 		limit=2,
 	)
-	page2, cursor2 = tail_logs(
+	entries1 = normalize_log_entries(page1)
+	assert [entry.get("message") for entry in entries1] == ["msg 1", "msg 2"]
+
+	with operation(operation_id="op-tail", area="web"):
+		for i in range(3, 5):
+			logger.info(f"msg {i}")
+			time.sleep(0.001)
+
+	opensearch_client.indices.refresh(index=test_index)
+	page2, _ = tail_logs(
 		opensearch_client,
 		test_index,
 		operation_id="op-tail",
-		limit=2,
+		limit=5,
 		search_after=cursor,
 	)
-	page3, _ = tail_logs(
-		opensearch_client,
-		test_index,
-		operation_id="op-tail",
-		limit=2,
-		search_after=cursor2,
-	)
-
-	# With flat documents, we get 5 separate log entries (2+2+1)
-	all_docs = page1 + page2 + page3
-	assert len(all_docs) == 5
-	entries = normalize_log_entries(all_docs)
-	for i in range(5):
-		assert any(f"msg {i}" in (entry.get("message") or "") for entry in entries)
+	entries2 = normalize_log_entries(page2)
+	assert [entry.get("message") for entry in entries2] == ["msg 3", "msg 4"]
 
 
 def test_tail_logs_finds_opensearch_handler_entries(opensearch_client, test_index):
