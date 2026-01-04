@@ -7,6 +7,11 @@ typer = pytest.importorskip("typer")
 from typer.testing import CliRunner
 from devlogs import cli
 from devlogs import config
+from devlogs.opensearch.mappings import (
+    build_log_index_template,
+    build_legacy_log_template,
+    get_template_names,
+)
 
 
 @pytest.mark.integration
@@ -436,3 +441,70 @@ class TestDeleteCommand:
 
         # Verify index is gone
         assert not opensearch_client.indices.exists(index=temp_index)
+
+
+@pytest.mark.integration
+class TestCleanCommand:
+    """Integration tests for clean command."""
+
+    def test_clean_deletes_index_and_templates(self, opensearch_client, monkeypatch):
+        """Test clean command drops index and templates after confirmation."""
+        runner = CliRunner()
+        temp_index = f"devlogs-clean-test-{uuid.uuid4().hex}"
+        opensearch_client.indices.create(index=temp_index)
+        monkeypatch.setenv("DEVLOGS_INDEX", temp_index)
+
+        template_body = build_log_index_template(temp_index)
+        legacy_body = build_legacy_log_template(temp_index)
+        template_name, legacy_template_name = get_template_names(temp_index)
+        created_index_template = False
+        created_legacy_template = False
+        try:
+            opensearch_client.indices.put_index_template(
+                name=template_name,
+                body=template_body,
+            )
+            created_index_template = True
+        except Exception:
+            pass
+        try:
+            opensearch_client.indices.put_template(
+                name=legacy_template_name,
+                body=legacy_body,
+            )
+            created_legacy_template = True
+        except Exception:
+            pass
+
+        try:
+            result = runner.invoke(cli.app, ["clean"], input="y\n")
+            assert result.exit_code == 0
+            assert "Clean operation complete" in result.output
+            assert not opensearch_client.indices.exists(index=temp_index)
+            if created_index_template:
+                assert opensearch_client.indices.delete_index_template(
+                    name=template_name
+                ) is None
+            if created_legacy_template:
+                assert opensearch_client.indices.delete_template(
+                    name=legacy_template_name
+                ) is None
+        finally:
+            if created_index_template:
+                try:
+                    opensearch_client.indices.put_index_template(
+                        name=template_name,
+                        body=template_body,
+                    )
+                except Exception:
+                    pass
+            if created_legacy_template:
+                try:
+                    opensearch_client.indices.put_template(
+                        name=legacy_template_name,
+                        body=legacy_body,
+                    )
+                except Exception:
+                    pass
+            if opensearch_client.indices.exists(index=temp_index):
+                opensearch_client.indices.delete(index=temp_index)

@@ -12,7 +12,11 @@ if SRC_DIR not in sys.path:
 	sys.path.insert(0, SRC_DIR)
 
 from devlogs.opensearch.client import get_opensearch_client
-from devlogs.opensearch.mappings import LOG_INDEX_TEMPLATE
+from devlogs.opensearch.mappings import (
+	build_log_index_template,
+	build_legacy_log_template,
+	get_template_names,
+)
 
 
 @pytest.fixture(scope="session")
@@ -28,27 +32,31 @@ def opensearch_client():
 @pytest.fixture()
 def test_index(opensearch_client):
 	legacy_template_created = False
+	composable_template_created = False
+	index_name = f"devlogs-logs-test-{uuid.uuid4().hex}"
+	template_body = build_log_index_template(index_name)
+	legacy_body = build_legacy_log_template(index_name)
+	template_name, legacy_template_name = get_template_names(index_name)
 	try:
-		opensearch_client.indices.delete_template(name="devlogs-logs-template")
+		opensearch_client.indices.delete_index_template(name=template_name)
+	except Exception:
+		pass
+	try:
+		opensearch_client.indices.delete_template(name=legacy_template_name)
 	except Exception:
 		pass
 	try:
 		opensearch_client.indices.put_index_template(
-			name="devlogs-logs-template",
-			body=LOG_INDEX_TEMPLATE,
+			name=template_name,
+			body=template_body,
 		)
+		composable_template_created = True
 	except Exception:
-		legacy_body = {
-			"index_patterns": LOG_INDEX_TEMPLATE["index_patterns"],
-			"settings": LOG_INDEX_TEMPLATE["template"]["settings"],
-			"mappings": LOG_INDEX_TEMPLATE["template"]["mappings"],
-		}
 		opensearch_client.indices.put_template(
-			name="devlogs-logs-template",
+			name=legacy_template_name,
 			body=legacy_body,
 		)
 		legacy_template_created = True
-	index_name = f"devlogs-logs-test-{uuid.uuid4().hex}"
 	if not opensearch_client.indices.exists(index=index_name):
 		opensearch_client.indices.create(index=index_name)
 	previous_index = os.getenv("DEVLOGS_INDEX")
@@ -60,8 +68,13 @@ def test_index(opensearch_client):
 		os.environ["DEVLOGS_INDEX"] = previous_index
 	if opensearch_client.indices.exists(index=index_name):
 		opensearch_client.indices.delete(index=index_name)
+	if composable_template_created:
+		try:
+			opensearch_client.indices.delete_index_template(name=template_name)
+		except Exception:
+			pass
 	if legacy_template_created:
 		try:
-			opensearch_client.indices.delete_template(name="devlogs-logs-template")
+			opensearch_client.indices.delete_template(name=legacy_template_name)
 		except Exception:
 			pass

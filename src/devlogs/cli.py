@@ -19,11 +19,13 @@ from .opensearch.client import (
 	OpenSearchError,
 	ConnectionFailedError,
 )
-from .opensearch.mappings import LOG_INDEX_TEMPLATE
+from .opensearch.mappings import build_log_index_template, get_template_names
 from .opensearch.queries import normalize_log_entries, search_logs, tail_logs
 from .retention import cleanup_old_logs, get_retention_stats
 
 app = typer.Typer()
+
+OLD_TEMPLATE_NAMES = ("devlogs-template", "devlogs-logs-template")
 
 # Global callback to handle --env flag before any command runs
 @app.callback(invoke_without_command=True)
@@ -65,6 +67,24 @@ def require_opensearch(check_idx=True):
 		typer.echo(typer.style(f"Error: {e}", fg=typer.colors.RED), err=True)
 		raise typer.Exit(1)
 	return client, cfg
+
+
+def _delete_template_any_variant(client, template_name):
+	"""Attempt to delete both composable and legacy templates with the given name."""
+	errors = []
+	for variant_label, deleter in (
+		("composable", client.indices.delete_index_template),
+		("legacy", client.indices.delete_template),
+	):
+		try:
+			result = deleter(name=template_name)
+			if result:
+				return variant_label, []
+		except OpenSearchError as exc:
+			errors.append((variant_label, exc))
+		except Exception as exc:  # pragma: no cover - unexpected errors
+			errors.append((variant_label, exc))
+	return None, errors
 
 
 def _write_json_config(path: Path, root_key: str, server_name: str, server_config: dict) -> None:
@@ -131,10 +151,26 @@ def init():
 	"""Initialize OpenSearch indices and templates (idempotent)."""
 	client, cfg = require_opensearch(check_idx=False)
 	# Create or update index templates
-	client.indices.put_index_template(name="devlogs-template", body=LOG_INDEX_TEMPLATE)
+	template_body = build_log_index_template(cfg.index)
+	template_name, legacy_template_name = get_template_names(cfg.index)
+	# Remove any conflicting templates before creating a new one
+	names_to_remove = {template_name, legacy_template_name}
+	names_to_remove.update(OLD_TEMPLATE_NAMES)
+	for name in names_to_remove:
+		variant, errors = _delete_template_any_variant(client, name)
+		if errors:
+			for variant_label, exc in errors:
+				typer.echo(
+					typer.style(
+						f"Warning: failed to remove {variant_label} template '{name}': {exc}",
+						fg=typer.colors.YELLOW,
+					),
+					err=True,
+				)
+	client.indices.put_index_template(name=template_name, body=template_body)
 	# Create initial index with explicit mappings if it doesn't exist
 	if not client.indices.exists(index=cfg.index):
-		client.indices.create(index=cfg.index, body=LOG_INDEX_TEMPLATE["template"])
+		client.indices.create(index=cfg.index, body=template_body["template"])
 		typer.echo(f"Created index '{cfg.index}'.")
 	typer.echo("OpenSearch indices and templates initialized.")
 
@@ -504,6 +540,79 @@ def cleanup(
 
 	if not dry_run:
 		typer.echo(typer.style("Cleanup complete.", fg=typer.colors.GREEN))
+
+
+@app.command()
+def clean(
+	force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
+):
+	"""Delete the devlogs index and templates (destructive)."""
+	client, cfg = require_opensearch(check_idx=False)
+	template_name, legacy_template_name = get_template_names(cfg.index)
+	warning_text = (
+		"This action permanently deletes all devlogs data by removing the index and its templates."
+	)
+	typer.echo(typer.style("WARNING: " + warning_text, fg=typer.colors.RED, bold=True))
+	if not force:
+		confirmed = typer.confirm("Do you want to continue?")
+		if not confirmed:
+			typer.echo("Clean operation cancelled.")
+			raise typer.Exit(0)
+
+	status_code = 0
+
+	try:
+		if client.indices.exists(index=cfg.index):
+			client.indices.delete(index=cfg.index)
+			typer.echo(typer.style(f"Deleted index '{cfg.index}'.", fg=typer.colors.GREEN))
+		else:
+			typer.echo(typer.style(f"Index '{cfg.index}' not found.", fg=typer.colors.YELLOW))
+	except OpenSearchError as e:
+		typer.echo(
+			typer.style(f"Error deleting index '{cfg.index}': {e}", fg=typer.colors.RED),
+			err=True,
+		)
+		status_code = 1
+	except Exception as e:  # pragma: no cover - unexpected errors
+		typer.echo(
+			typer.style(f"Unexpected error deleting index '{cfg.index}': {e}", fg=typer.colors.RED),
+			err=True,
+		)
+		status_code = 1
+
+	all_template_names = [template_name, legacy_template_name, *OLD_TEMPLATE_NAMES]
+	for template in all_template_names:
+		variant, errors = _delete_template_any_variant(client, template)
+		if variant:
+			variant_label = "composable" if variant == "composable" else "legacy"
+			typer.echo(
+				typer.style(
+					f"Deleted {variant_label} template '{template}'.",
+					fg=typer.colors.GREEN,
+				),
+			)
+		elif errors:
+			for variant_label, exc in errors:
+				typer.echo(
+					typer.style(
+						f"Error deleting {variant_label} template '{template}': {exc}",
+						fg=typer.colors.RED,
+					),
+					err=True,
+				)
+			status_code = 1
+		else:
+			typer.echo(
+				typer.style(
+					f"Template '{template}' not found.",
+					fg=typer.colors.YELLOW,
+				),
+			)
+
+	if status_code != 0:
+		raise typer.Exit(status_code)
+
+	typer.echo(typer.style("Clean operation complete.", fg=typer.colors.GREEN))
 
 
 @app.command()

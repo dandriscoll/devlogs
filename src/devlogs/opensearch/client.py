@@ -123,6 +123,13 @@ class LightweightOpenSearchClient:
 			path += "?" + "&".join(params)
 		return self._request("POST", path, body)
 
+	def count(self, index, body=None):
+		"""Count documents matching an optional query."""
+		path = f"/{index}/_count"
+		if body:
+			return self._request("POST", path, body)
+		return self._request("GET", path)
+
 
 class _IndicesClient:
 	"""Minimal indices operations."""
@@ -155,6 +162,15 @@ class _IndicesClient:
 		"""Delete a legacy index template."""
 		try:
 			return self._client._request("DELETE", f"/_template/{name}")
+		except urllib.error.HTTPError as e:
+			if e.code == 404:
+				return None
+			raise
+
+	def delete_index_template(self, name):
+		"""Delete a composable index template."""
+		try:
+			return self._client._request("DELETE", f"/_index_template/{name}")
 		except urllib.error.HTTPError as e:
 			if e.code == 404:
 				return None
