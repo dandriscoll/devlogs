@@ -19,7 +19,7 @@ services:
       - "127.0.0.1:9200:9200"
       - "127.0.0.1:9600:9600"
     volumes:
-      - ./opensearch-data:/usr/share/opensearch/data
+      - opensearch-data:/usr/share/opensearch/data
     networks:
       - opensearchnet
 
@@ -33,6 +33,10 @@ services:
       - ELASTICVUE_DEFAULT_URL=http://opensearch:9200
     networks:
       - opensearchnet
+
+volumes:
+  opensearch-data:
+    driver: local
 
 networks:
   opensearchnet:
