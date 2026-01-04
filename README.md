@@ -7,12 +7,13 @@ A developer-focused logging library for Python with OpenSearch integration.
 > Please do the following in this project:
 > 1. Install `devlogs` (`pip install devlogs` or add it to `requirements.txt`/`pyproject.toml`).
 > 2. Add `DEVLOGS_OPENSEARCH_HOST`, `DEVLOGS_OPENSEARCH_PORT`, `DEVLOGS_OPENSEARCH_USER`, `DEVLOGS_OPENSEARCH_PASS`, and `DEVLOGS_INDEX` to the project `.env` file (or equivalent config). Defaults are `localhost`, `9200`, `admin`, and `devlogs-<projectname>`.
-> 3. Add logging setup in the main app entrypoint (or startup/init module) to attach the handler:
+> 3. Add devlogs hooks immediately at the beginning of the application (main entrypoint/startup module) to attach the handler:
 >    - `from devlogs.handler import OpenSearchHandler`
 >    - `handler = OpenSearchHandler(level=logging.INFO)`
 >    - `logging.getLogger().addHandler(handler)`
 >    - `logging.getLogger().setLevel(logging.INFO)`
 > 4. Run `devlogs init` (inside the virtualenv if one is set up) and verify the index is healthy.
+> 5. Ask the user if they want MCP set up; if yes, state which agent you are (`copilot`, `claude`, or `codex`) and run `devlogs initmcp <agent>`.
 
 ## OpenSearch Setup (Docker)
 
@@ -75,7 +76,7 @@ If you don't already have OpenSearch running locally:
 
 ## MCP Agent Setup
 
-Pick your agent and run the matching command from your project root:
+If you want MCP set up, identify your agent type and run the matching command from your project root:
 
 ```sh
 devlogs initmcp copilot
