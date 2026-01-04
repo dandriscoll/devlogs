@@ -4,21 +4,23 @@ A developer-focused logging library for Python with OpenSearch integration.
 
 ## Quickstart
 
-1. **Start OpenSearch:**
+1. **Install devlogs:**
 	```sh
-	./scripts/opensearch_up.sh
+	pip install devlogs
 	```
-	Or with Docker Compose:
+
+2. **Start OpenSearch:**
 	```sh
 	docker-compose up -d opensearch
 	```
+	Or point `DEVLOGS_OPENSEARCH_*` at an existing cluster.
 
-2. **Initialize indices/templates:**
+3. **Initialize indices/templates:**
 	```sh
-	./scripts/opensearch_init.sh
+	devlogs init
 	```
 
-3. **Use in Python code:**
+4. **Use in Python code:**
 	```python
 	import logging
 	from devlogs.handler import OpenSearchHandler
@@ -32,25 +34,17 @@ A developer-focused logging library for Python with OpenSearch integration.
 		 logging.info("Hello from devlogs!", extra={"features": {"user": "alice", "plan": "pro"}})
 	```
 
-4. **Tail logs from CLI:**
+5. **Tail logs from CLI:**
 	```sh
-	PYTHONPATH=src python -m devlogs.cli tail --area web --follow
-	# or
-	./devlogs tail --area web --follow
-	```
-
-	Optional install (enables `devlogs` without the wrapper):
-	```sh
-	pip install -e .
 	devlogs tail --area web --follow
 	```
 
-5. **Search logs from CLI:**
+6. **Search logs from CLI:**
 	```sh
-	python -m devlogs.cli search --q "error" --area web
+	devlogs search --q "error" --area web
 	```
 
-6. **Run the web UI:**
+7. **Run the web UI:**
 	```sh
 	uvicorn devlogs.web.server:app --port 8088
 	# Then open http://localhost:8088/ui/
@@ -58,9 +52,9 @@ A developer-focused logging library for Python with OpenSearch integration.
 
 ## Using devlogs in another project
 
-1. **Install devlogs from this repo:**
+1. **Install devlogs:**
 	```sh
-	pip install -e /path/to/devlogs
+	pip install devlogs
 	```
 
 2. **Add the diagnostics handler:**
@@ -99,8 +93,8 @@ See [.env.example](.env.example) for a complete configuration template.
 
 ## Project Structure
 
-- `devlogs/` - Python library
-- `scripts/` - Shell scripts for OpenSearch and CLI
+- `src/devlogs/` - Python library, CLI, MCP server, and web UI
+- `devlogs` - Shell wrapper for local development
 - `tests/` - Pytest-based tests
 
 ## See Also

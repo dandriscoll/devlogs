@@ -5,7 +5,7 @@ The devlogs MCP server allows AI assistants like Claude Code, GitHub Copilot, an
 ## Prerequisites
 
 1. **OpenSearch running** with devlogs configured
-2. **devlogs installed**: `pip install -e /path/to/devlogs`
+2. **devlogs installed**: `pip install devlogs`
 3. **Logs indexed**: Your application should be sending logs to devlogs
 
 ## Setup
@@ -19,7 +19,7 @@ DEVLOGS_OPENSEARCH_HOST=localhost
 DEVLOGS_OPENSEARCH_PORT=9200
 DEVLOGS_OPENSEARCH_USER=admin
 DEVLOGS_OPENSEARCH_PASS=YourPassword123!
-DEVLOGS_INDEX_LOGS=devlogs-0001
+DEVLOGS_INDEX=devlogs-0001
 ```
 
 You can have multiple `.env` files for different environments (e.g., `production.env`, `staging.env`).
@@ -136,7 +136,7 @@ Replace the `env` section with inline credentials:
   "DEVLOGS_OPENSEARCH_PORT": "9200",
   "DEVLOGS_OPENSEARCH_USER": "admin",
   "DEVLOGS_OPENSEARCH_PASS": "YourPassword123!",
-  "DEVLOGS_INDEX_LOGS": "devlogs-0001"
+  "DEVLOGS_INDEX": "devlogs-0001"
 }
 ```
 

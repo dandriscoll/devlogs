@@ -6,7 +6,7 @@ Quick guide for adding devlogs to your Python project.
 
 ### 1. Install
 ```bash
-pip install -e /path/to/devlogs
+pip install devlogs
 ```
 
 ### 2. Start OpenSearch
@@ -20,7 +20,7 @@ DEVLOGS_OPENSEARCH_HOST=localhost
 DEVLOGS_OPENSEARCH_PORT=9200
 DEVLOGS_OPENSEARCH_USER=admin
 DEVLOGS_OPENSEARCH_PASS=YourPassword123!
-DEVLOGS_INDEX_LOGS=devlogs-myproject
+DEVLOGS_INDEX=devlogs-myproject
 ```
 
 ### 4. Initialize
@@ -40,7 +40,7 @@ from devlogs.config import load_config
 # Setup handler
 config = load_config()
 client = get_opensearch_client()
-handler = DiagnosticsHandler(opensearch_client=client, index_name=config.index_logs)
+handler = DiagnosticsHandler(opensearch_client=client, index_name=config.index)
 
 logging.getLogger().addHandler(handler)
 logging.getLogger().setLevel(logging.DEBUG)

@@ -33,7 +33,7 @@ def get_client():
     client = get_opensearch_client()
     try:
         check_connection(client)
-        check_index(client, cfg.index_logs)
+        check_index(client, cfg.index)
         return client, cfg, None
     except Exception as e:
         return None, None, str(e)
@@ -45,7 +45,7 @@ def search(q: str = None, area: str = None, level: str = None,
     if error:
         return {"results": [], "error": error}
 
-    docs = search_logs(client, cfg.index_logs, query=q, area=area,
+    docs = search_logs(client, cfg.index, query=q, area=area,
                        operation_id=operation_id, level=level,
                        since=since, limit=limit)
     return {"results": normalize_log_entries(docs, limit=limit)}
@@ -57,7 +57,7 @@ def tail(operation_id: str = None, area: str = None, level: str = None,
     if error:
         return {"results": [], "error": error}
 
-    docs, cursor = tail_logs(client, cfg.index_logs, operation_id=operation_id,
+    docs, cursor = tail_logs(client, cfg.index, operation_id=operation_id,
                               area=area, level=level, since=since, limit=limit)
     return {"results": normalize_log_entries(docs, limit=limit), "cursor": cursor}
 

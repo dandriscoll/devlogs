@@ -1,6 +1,6 @@
 # Search APIs for OpenSearch
 
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional
 from ..levels import normalize_level
 from .client import IndexNotFoundError
 
@@ -17,7 +17,18 @@ def _normalize_level_terms(level: Optional[str]) -> Optional[List[str]]:
 	return sorted(terms)
 
 
-def _build_log_query(query=None, area=None, operation_id=None, level=None, since=None):
+def _build_time_range(since: Optional[str], until: Optional[str], since_inclusive: bool, until_inclusive: bool) -> Optional[Dict[str, Any]]:
+	if not since and not until:
+		return None
+	range_query: Dict[str, Any] = {}
+	if since:
+		range_query["gte" if since_inclusive else "gt"] = since
+	if until:
+		range_query["lte" if until_inclusive else "lt"] = until
+	return {"range": {"timestamp": range_query}}
+
+
+def _build_log_query(query=None, area=None, operation_id=None, level=None, since=None, until=None, since_inclusive: bool = True, until_inclusive: bool = True):
 	filters = [
 		{
 			"bool": {
@@ -36,8 +47,9 @@ def _build_log_query(query=None, area=None, operation_id=None, level=None, since
 	level_terms = _normalize_level_terms(level)
 	if level_terms:
 		filters.append({"terms": {"level": level_terms}})
-	if since:
-		filters.append({"range": {"timestamp": {"gte": since}}})
+	time_range = _build_time_range(since, until, since_inclusive, until_inclusive)
+	if time_range:
+		filters.append(time_range)
 
 	bool_query: Dict[str, Any] = {"filter": filters}
 	if query:
@@ -110,7 +122,7 @@ def normalize_log_entries(docs: Iterable[Dict[str, Any]], limit: Optional[int] =
 	return entries
 
 
-def search_logs(client, index, query=None, area=None, operation_id=None, level=None, since=None, limit=50):
+def search_logs(client, index, query=None, area=None, operation_id=None, level=None, since=None, until=None, limit=50):
 	"""Search log entries with filters."""
 	body = {
 		"query": _build_log_query(
@@ -119,6 +131,7 @@ def search_logs(client, index, query=None, area=None, operation_id=None, level=N
 			operation_id=operation_id,
 			level=level,
 			since=since,
+			until=until,
 		),
 		"sort": [{"timestamp": "desc"}, {"_id": "desc"}],
 		"size": limit,
@@ -128,7 +141,67 @@ def search_logs(client, index, query=None, area=None, operation_id=None, level=N
 	return _hits_to_docs(hits)
 
 
-def tail_logs(client, index, query=None, operation_id=None, area=None, level=None, since=None, limit=20, search_after=None):
+def _build_sort(sort_order: str) -> List[Dict[str, str]]:
+	order = "asc" if sort_order == "asc" else "desc"
+	return [{"timestamp": order}, {"_id": order}]
+
+
+def search_logs_page(
+	client,
+	index,
+	query=None,
+	area=None,
+	operation_id=None,
+	level=None,
+	since=None,
+	until=None,
+	limit=50,
+	cursor=None,
+	sort_order: str = "desc",
+	since_inclusive: bool = True,
+	until_inclusive: bool = True,
+):
+	"""Search log entries with pagination support."""
+	body = {
+		"query": _build_log_query(
+			query=query,
+			area=area,
+			operation_id=operation_id,
+			level=level,
+			since=since,
+			until=until,
+			since_inclusive=since_inclusive,
+			until_inclusive=until_inclusive,
+		),
+		"sort": _build_sort(sort_order),
+		"size": limit,
+	}
+	if cursor:
+		body["search_after"] = cursor
+	response = _require_response(client.search(index=index, body=body), "search", client=client, index=index)
+	hits = response.get("hits", {}).get("hits", [])
+	docs = _hits_to_docs(hits)
+	next_cursor = docs[-1]["sort"] if docs else cursor
+	return docs, next_cursor
+
+
+def get_operation_logs(client, index, operation_id, query=None, level=None, since=None, until=None, limit=100, cursor=None):
+	"""Get logs for an operation in chronological order."""
+	return search_logs_page(
+		client=client,
+		index=index,
+		query=query,
+		operation_id=operation_id,
+		level=level,
+		since=since,
+		until=until,
+		limit=limit,
+		cursor=cursor,
+		sort_order="asc",
+	)
+
+
+def tail_logs(client, index, query=None, operation_id=None, area=None, level=None, since=None, until=None, limit=20, search_after=None):
 	"""Tail log entries for an operation.
 
 	Always fetches in descending order (newest first), reverses for chronological display.
@@ -141,6 +214,7 @@ def tail_logs(client, index, query=None, operation_id=None, area=None, level=Non
 			operation_id=operation_id,
 			level=level,
 			since=since,
+			until=until,
 		),
 		"sort": [{"timestamp": "desc"}, {"_id": "desc"}],
 		"size": limit,
@@ -179,7 +253,18 @@ def get_operation_summary(client, index, operation_id):
 				"top_hits": {
 					"size": 10,
 					"sort": [{"timestamp": "asc"}],
-					"_source": ["timestamp", "level", "message", "logger_name", "exception", "features"]
+					"_source": [
+						"timestamp",
+						"level",
+						"message",
+						"logger_name",
+						"exception",
+						"features",
+						"operation_id",
+						"area",
+						"pathname",
+						"lineno",
+					]
 				}
 			},
 			"total_count": {
@@ -297,6 +382,228 @@ def list_operations(client, index, area=None, since=None, limit=20, with_errors_
 		operations = [op for op in operations if op["error_count"] > 0]
 
 	return operations
+
+
+def list_recent_operations(client, index, area=None, since=None, until=None, limit=20, order_by: str = "last_activity", with_errors_only: bool = False):
+	"""List recent operations ordered by last activity or error count."""
+	base_query = _build_log_query(area=area, since=since, until=until)
+	if order_by not in ("last_activity", "error_count"):
+		order_by = "last_activity"
+
+	body = {
+		"query": base_query,
+		"size": 0,
+		"aggs": {
+			"by_operation": {
+				"terms": {"field": "operation_id", "size": limit, "order": {order_by: "desc"}},
+				"aggs": {
+					"area": {"terms": {"field": "area", "size": 1}},
+					"time_range": {"stats": {"field": "timestamp"}},
+					"by_level": {"terms": {"field": "level", "size": 10}},
+					"error_count": {
+						"filter": {
+							"terms": {"level": ["error", "critical"]}
+						}
+					},
+					"last_activity": {
+						"max": {"field": "timestamp"}
+					},
+					"last_error": {
+						"filter": {
+							"terms": {"level": ["error", "critical"]}
+						},
+						"aggs": {
+							"last_error_hit": {
+								"top_hits": {
+									"size": 1,
+									"sort": [{"timestamp": "desc"}, {"_id": "desc"}],
+									"_source": [
+										"timestamp",
+										"level",
+										"message",
+										"logger_name",
+										"exception",
+										"operation_id",
+										"area",
+										"pathname",
+										"lineno",
+									],
+								}
+							}
+						}
+					},
+				}
+			}
+		}
+	}
+
+	try:
+		response = _require_response(client.search(index=index, body=body), "list_recent_operations", client=client, index=index)
+	except Exception:
+		return []
+
+	operations = []
+	for bucket in response.get("aggregations", {}).get("by_operation", {}).get("buckets", []):
+		area_buckets = bucket.get("area", {}).get("buckets", [])
+		op_area = area_buckets[0]["key"] if area_buckets else None
+
+		time_stats = bucket.get("time_range", {})
+		start_time = time_stats.get("min_as_string")
+		end_time = time_stats.get("max_as_string")
+
+		duration_ms = None
+		if time_stats.get("min") and time_stats.get("max"):
+			duration_ms = int(time_stats["max"] - time_stats["min"])
+
+		counts_by_level = {}
+		for level_bucket in bucket.get("by_level", {}).get("buckets", []):
+			counts_by_level[level_bucket["key"]] = level_bucket["doc_count"]
+
+		error_count = bucket.get("error_count", {}).get("doc_count", 0)
+		last_activity = bucket.get("last_activity", {}).get("value_as_string")
+
+		last_error_hit = (
+			bucket.get("last_error", {})
+			.get("last_error_hit", {})
+			.get("hits", {})
+			.get("hits", [])
+		)
+		last_error = last_error_hit[0].get("_source") if last_error_hit else None
+
+		op = {
+			"operation_id": bucket["key"],
+			"area": op_area,
+			"start_time": start_time,
+			"end_time": end_time,
+			"duration_ms": duration_ms,
+			"total_logs": bucket["doc_count"],
+			"error_count": error_count,
+			"log_levels": counts_by_level,
+			"last_activity": last_activity,
+			"last_error": last_error,
+		}
+		operations.append(op)
+
+	if with_errors_only:
+		operations = [op for op in operations if op["error_count"] > 0]
+
+	return operations
+
+
+def list_error_signatures(
+	client,
+	index,
+	field: str = "exception",
+	area=None,
+	since=None,
+	until=None,
+	limit=20,
+	min_count: int = 1,
+	include_missing: bool = False,
+):
+	"""Aggregate error signatures by exception/message."""
+	if not field:
+		field = "exception"
+	field_name = field if field.endswith(".keyword") else f"{field}.keyword"
+
+	base_query = _build_log_query(area=area, since=since, until=until)
+	base_filters = base_query.get("bool", {}).get("filter", [])
+	base_filters.append({"terms": {"level": ["error", "critical"]}})
+	if not include_missing:
+		base_filters.append({"exists": {"field": field}})
+
+	body = {
+		"query": base_query,
+		"size": 0,
+		"aggs": {
+			"by_signature": {
+				"terms": {"field": field_name, "size": limit, "min_doc_count": min_count},
+				"aggs": {
+					"last_seen": {"max": {"field": "timestamp"}},
+					"sample": {
+						"top_hits": {
+							"size": 1,
+							"sort": [{"timestamp": "desc"}, {"_id": "desc"}],
+							"_source": [
+								"timestamp",
+								"level",
+								"message",
+								"logger_name",
+								"exception",
+								"operation_id",
+								"area",
+								"pathname",
+								"lineno",
+							],
+						}
+					},
+				}
+			}
+		}
+	}
+
+	try:
+		response = _require_response(client.search(index=index, body=body), "list_error_signatures", client=client, index=index)
+	except Exception:
+		return []
+
+	signatures = []
+	for bucket in response.get("aggregations", {}).get("by_signature", {}).get("buckets", []):
+		sample_hit = bucket.get("sample", {}).get("hits", {}).get("hits", [])
+		sample = sample_hit[0].get("_source") if sample_hit else None
+		signatures.append({
+			"signature": bucket.get("key"),
+			"count": bucket.get("doc_count", 0),
+			"last_seen": bucket.get("last_seen", {}).get("value_as_string"),
+			"sample": sample,
+		})
+
+	return signatures
+
+
+def get_error_context(
+	client,
+	index,
+	anchor_timestamp: str,
+	operation_id=None,
+	area=None,
+	query=None,
+	level=None,
+	before: int = 20,
+	after: int = 20,
+):
+	"""Fetch logs around an anchor timestamp."""
+	before_count = max(int(before or 0), 0)
+	after_count = max(int(after or 0), 0)
+	before_limit = before_count + 1 if before_count >= 0 else 1
+
+	before_docs, _ = search_logs_page(
+		client=client,
+		index=index,
+		query=query,
+		area=area,
+		operation_id=operation_id,
+		level=level,
+		until=anchor_timestamp,
+		limit=before_limit,
+		sort_order="desc",
+		until_inclusive=True,
+	)
+	after_docs, _ = search_logs_page(
+		client=client,
+		index=index,
+		query=query,
+		area=area,
+		operation_id=operation_id,
+		level=level,
+		since=anchor_timestamp,
+		limit=after_count,
+		sort_order="asc",
+		since_inclusive=False,
+	)
+	before_docs = list(reversed(before_docs))
+
+	return before_docs + after_docs
 
 
 def list_areas(client, index, since=None, min_operations=1):

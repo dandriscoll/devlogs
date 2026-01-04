@@ -12,6 +12,7 @@ license = {file = "LICENSE"}
 authors = [{name = "devlogs"}]
 dependencies = [
   "opensearch-py>=2.4.0",
+  "click>=8.1.0",
   "typer>=0.9.0",
   "fastapi>=0.110.0",
   "uvicorn>=0.24.0",
@@ -31,9 +32,13 @@ devlogs = "devlogs.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
+include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"devlogs.web" = ["static/*.html", "static/*.css", "static/*.js"]
 
 [tool.pytest.ini_options]
 markers = [

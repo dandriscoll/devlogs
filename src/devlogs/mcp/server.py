@@ -1,12 +1,12 @@
 """MCP server for devlogs - allows AI assistants to search and analyze logs."""
 
 import asyncio
-import os
-from typing import Any, Optional
+import json
+from typing import Any
 
 import mcp.server.stdio
 import mcp.types as types
-from mcp.server import NotificationOptions, Server
+from mcp.server import Server
 
 from ..config import load_config
 from ..opensearch.client import (
@@ -18,45 +18,16 @@ from ..opensearch.client import (
 )
 from ..opensearch.queries import (
     get_operation_summary,
+    get_operation_logs,
+    get_error_context,
     list_areas,
+    list_error_signatures,
     list_operations,
+    list_recent_operations,
     normalize_log_entries,
-    search_logs,
+    search_logs_page,
     tail_logs,
 )
-
-
-def _format_log_entry(entry: dict[str, Any]) -> str:
-    """Format a log entry for display."""
-    timestamp = entry.get("timestamp", "")
-    level = entry.get("level", "")
-    logger = entry.get("logger_name", "")
-    message = entry.get("message", "")
-    area = entry.get("area", "")
-    operation_id = entry.get("operation_id", "")
-
-    parts = []
-    if timestamp:
-        parts.append(f"[{timestamp}]")
-    if level:
-        parts.append(f"{level}")
-    if area:
-        parts.append(f"({area})")
-    if operation_id:
-        parts.append(f"op:{operation_id[:8]}")
-    if logger:
-        parts.append(f"{logger}:")
-    if message:
-        parts.append(message)
-
-    result = " ".join(parts)
-
-    # Add exception info if present
-    exception = entry.get("exception")
-    if exception:
-        result += f"\n{exception}"
-
-    return result
 
 
 def _create_client_and_index():
@@ -73,6 +44,71 @@ def _create_client_and_index():
         raise RuntimeError(f"Failed to initialize devlogs: {e}")
 
 
+def _coerce_limit(value: Any, default: int, max_value: int) -> int:
+    try:
+        limit = int(value)
+    except (TypeError, ValueError):
+        return default
+    if limit <= 0:
+        return default
+    return min(limit, max_value)
+
+
+def _coerce_nonnegative_int(value: Any, default: int) -> int:
+    try:
+        count = int(value)
+    except (TypeError, ValueError):
+        return default
+    if count < 0:
+        return default
+    return count
+
+
+def _coerce_cursor(value: Any) -> list | None:
+    if value is None:
+        return None
+    if isinstance(value, list):
+        return value
+    if isinstance(value, tuple):
+        return list(value)
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return None
+        if isinstance(parsed, list):
+            return parsed
+    return None
+
+
+def _normalize_entries(docs: list[dict[str, Any]], limit: int | None = None) -> list[dict[str, Any]]:
+    entries = normalize_log_entries(docs, limit=limit)
+    results = []
+    for doc, entry in zip(docs, entries):
+        item = dict(entry)
+        if doc.get("id"):
+            item["id"] = doc["id"]
+        if doc.get("sort") is not None:
+            item["sort"] = doc["sort"]
+        results.append(item)
+    return results
+
+
+def _json_response(data: Any = None, error: dict | None = None, meta: dict | None = None) -> list[types.TextContent]:
+    payload: dict[str, Any] = {"ok": error is None}
+    if error is not None:
+        payload["error"] = error
+    if data is not None:
+        payload["data"] = data
+    if meta is not None:
+        payload["meta"] = meta
+    return [types.TextContent(type="text", text=json.dumps(payload, ensure_ascii=True))]
+
+
+def _error_response(message: str, error_type: str = "Error") -> list[types.TextContent]:
+    return _json_response(error={"type": error_type, "message": message})
+
+
 async def main():
     """Run the MCP server."""
     server = Server("devlogs")
@@ -83,7 +119,7 @@ async def main():
         return [
             types.Tool(
                 name="search_logs",
-                description="Search log entries with filters. Use this to find specific logs by keyword, area, operation ID, log level, or time range.",
+                description="Search log entries with filters. Supports pagination via cursor.",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -107,20 +143,33 @@ async def main():
                             "type": "string",
                             "description": "ISO timestamp to filter logs after this time (e.g., '2025-01-01T00:00:00Z')",
                         },
+                        "until": {
+                            "type": "string",
+                            "description": "ISO timestamp to filter logs before this time (e.g., '2025-01-01T00:00:00Z')",
+                        },
                         "limit": {
                             "type": "integer",
                             "description": "Maximum number of log entries to return (default: 50, max: 100)",
                             "default": 50,
+                        },
+                        "cursor": {
+                            "type": "array",
+                            "items": {"type": ["string", "number"]},
+                            "description": "Cursor from a previous response for pagination",
                         },
                     },
                 },
             ),
             types.Tool(
                 name="tail_logs",
-                description="Get the most recent logs, optionally filtered. Use this to see what's happening right now in your application.",
+                description="Get the most recent logs, optionally filtered. Supports pagination via cursor.",
                 inputSchema={
                     "type": "object",
                     "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Text search query to match against log messages, logger names, and features",
+                        },
                         "operation_id": {
                             "type": "string",
                             "description": "Filter by specific operation ID",
@@ -133,10 +182,23 @@ async def main():
                             "type": "string",
                             "description": "Filter by log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
                         },
+                        "since": {
+                            "type": "string",
+                            "description": "ISO timestamp to filter logs after this time (e.g., '2025-01-01T00:00:00Z')",
+                        },
+                        "until": {
+                            "type": "string",
+                            "description": "ISO timestamp to filter logs before this time (e.g., '2025-01-01T00:00:00Z')",
+                        },
                         "limit": {
                             "type": "integer",
                             "description": "Maximum number of log entries to return (default: 20, max: 100)",
                             "default": 20,
+                        },
+                        "cursor": {
+                            "type": "array",
+                            "items": {"type": ["string", "number"]},
+                            "description": "Cursor from a previous response for pagination",
                         },
                     },
                 },
@@ -150,6 +212,46 @@ async def main():
                         "operation_id": {
                             "type": "string",
                             "description": "The operation ID to summarize",
+                        },
+                    },
+                    "required": ["operation_id"],
+                },
+            ),
+            types.Tool(
+                name="get_operation_logs",
+                description="Get logs for an operation in chronological order. Supports pagination via cursor.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "operation_id": {
+                            "type": "string",
+                            "description": "The operation ID to fetch logs for",
+                        },
+                        "query": {
+                            "type": "string",
+                            "description": "Text search query to match against log messages, logger names, and features",
+                        },
+                        "level": {
+                            "type": "string",
+                            "description": "Filter by log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
+                        },
+                        "since": {
+                            "type": "string",
+                            "description": "ISO timestamp to filter logs after this time (e.g., '2025-01-01T00:00:00Z')",
+                        },
+                        "until": {
+                            "type": "string",
+                            "description": "ISO timestamp to filter logs before this time (e.g., '2025-01-01T00:00:00Z')",
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of log entries to return (default: 50, max: 100)",
+                            "default": 50,
+                        },
+                        "cursor": {
+                            "type": "array",
+                            "items": {"type": ["string", "number"]},
+                            "description": "Cursor from a previous response for pagination",
                         },
                     },
                     "required": ["operation_id"],
@@ -183,6 +285,42 @@ async def main():
                 },
             ),
             types.Tool(
+                name="list_recent_operations",
+                description="List recent operations ordered by last activity or error count. Includes last error sample when available.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "area": {
+                            "type": "string",
+                            "description": "Filter by application area",
+                        },
+                        "since": {
+                            "type": "string",
+                            "description": "ISO timestamp to filter operations after this time",
+                        },
+                        "until": {
+                            "type": "string",
+                            "description": "ISO timestamp to filter operations before this time",
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of operations to return (default: 20)",
+                            "default": 20,
+                        },
+                        "order_by": {
+                            "type": "string",
+                            "description": "Order by 'last_activity' or 'error_count'",
+                            "default": "last_activity",
+                        },
+                        "with_errors_only": {
+                            "type": "boolean",
+                            "description": "Only show operations that had errors",
+                            "default": False,
+                        },
+                    },
+                },
+            ),
+            types.Tool(
                 name="list_areas",
                 description="List all application areas with activity counts. Use this to discover what subsystems exist in the application.",
                 inputSchema={
@@ -200,6 +338,86 @@ async def main():
                     },
                 },
             ),
+            types.Tool(
+                name="list_recent_errors",
+                description="Aggregate error signatures (exception/message) with counts and samples.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "field": {
+                            "type": "string",
+                            "description": "Signature field to aggregate by (e.g., 'exception' or 'message')",
+                        },
+                        "area": {
+                            "type": "string",
+                            "description": "Filter by application area",
+                        },
+                        "since": {
+                            "type": "string",
+                            "description": "ISO timestamp to filter logs after this time",
+                        },
+                        "until": {
+                            "type": "string",
+                            "description": "ISO timestamp to filter logs before this time",
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of signatures to return (default: 20, max: 100)",
+                            "default": 20,
+                        },
+                        "min_count": {
+                            "type": "integer",
+                            "description": "Minimum number of occurrences to include",
+                            "default": 1,
+                        },
+                        "include_missing": {
+                            "type": "boolean",
+                            "description": "Include logs missing the signature field",
+                            "default": False,
+                        },
+                    },
+                },
+            ),
+            types.Tool(
+                name="get_error_context",
+                description="Fetch logs around an anchor timestamp for diagnosis.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "anchor_timestamp": {
+                            "type": "string",
+                            "description": "ISO timestamp to center the context around",
+                        },
+                        "operation_id": {
+                            "type": "string",
+                            "description": "Filter by specific operation ID",
+                        },
+                        "area": {
+                            "type": "string",
+                            "description": "Filter by application area",
+                        },
+                        "query": {
+                            "type": "string",
+                            "description": "Text search query to match against log messages, logger names, and features",
+                        },
+                        "level": {
+                            "type": "string",
+                            "description": "Filter by log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
+                        },
+                        "before": {
+                            "type": "integer",
+                            "description": "Number of entries before the anchor (default: 20)",
+                            "default": 20,
+                        },
+                        "after": {
+                            "type": "integer",
+                            "description": "Number of entries after the anchor (default: 20)",
+                            "default": 20,
+                        },
+                    },
+                    "required": ["anchor_timestamp"],
+                },
+            ),
         ]
 
     @server.call_tool()
@@ -213,7 +431,7 @@ async def main():
         try:
             client, index = _create_client_and_index()
         except RuntimeError as e:
-            return [types.TextContent(type="text", text=f"Error: {e}")]
+            return _error_response(str(e), "InitializationError")
 
         if name == "search_logs":
             query = arguments.get("query")
@@ -221,10 +439,12 @@ async def main():
             operation_id = arguments.get("operation_id")
             level = arguments.get("level")
             since = arguments.get("since")
-            limit = min(arguments.get("limit", 50), 100)
+            until = arguments.get("until")
+            limit = _coerce_limit(arguments.get("limit"), 50, 100)
+            cursor = _coerce_cursor(arguments.get("cursor"))
 
             try:
-                docs = search_logs(
+                docs, next_cursor = search_logs_page(
                     client=client,
                     index=index,
                     query=query,
@@ -232,113 +452,125 @@ async def main():
                     operation_id=operation_id,
                     level=level,
                     since=since,
+                    until=until,
                     limit=limit,
+                    cursor=cursor,
+                    sort_order="desc",
                 )
-                entries = normalize_log_entries(docs, limit=limit)
+                entries = _normalize_entries(docs, limit=limit)
 
-                if not entries:
-                    return [types.TextContent(
-                        type="text",
-                        text="No logs found matching the search criteria.",
-                    )]
-
-                formatted = "\n".join(_format_log_entry(entry) for entry in entries)
-                summary = f"Found {len(entries)} log entries:\n\n{formatted}"
-
-                return [types.TextContent(type="text", text=summary)]
+                return _json_response(
+                    data={"entries": entries},
+                    meta={"count": len(entries), "next_cursor": next_cursor},
+                )
 
             except IndexNotFoundError as e:
-                return [types.TextContent(type="text", text=f"Error: {e}")]
+                return _error_response(str(e), "IndexNotFoundError")
             except QueryError as e:
-                return [types.TextContent(type="text", text=f"Error: {e}")]
+                return _error_response(str(e), "QueryError")
             except Exception as e:
-                return [types.TextContent(type="text", text=f"Search error: {e}")]
+                return _error_response(f"Search error: {e}", "SearchError")
 
         elif name == "tail_logs":
+            query = arguments.get("query")
             operation_id = arguments.get("operation_id")
             area = arguments.get("area")
             level = arguments.get("level")
-            limit = min(arguments.get("limit", 20), 100)
+            since = arguments.get("since")
+            until = arguments.get("until")
+            limit = _coerce_limit(arguments.get("limit"), 20, 100)
+            cursor = _coerce_cursor(arguments.get("cursor"))
 
             try:
-                docs, _ = tail_logs(
+                docs, next_cursor = tail_logs(
                     client=client,
                     index=index,
+                    query=query,
                     operation_id=operation_id,
                     area=area,
                     level=level,
+                    since=since,
+                    until=until,
                     limit=limit,
+                    search_after=cursor,
                 )
-                entries = normalize_log_entries(docs, limit=limit)
+                entries = _normalize_entries(docs, limit=limit)
 
-                if not entries:
-                    return [types.TextContent(
-                        type="text",
-                        text="No recent logs found.",
-                    )]
-
-                formatted = "\n".join(_format_log_entry(entry) for entry in entries)
-                summary = f"Most recent {len(entries)} log entries:\n\n{formatted}"
-
-                return [types.TextContent(type="text", text=summary)]
+                return _json_response(
+                    data={"entries": entries},
+                    meta={"count": len(entries), "next_cursor": next_cursor},
+                )
 
             except IndexNotFoundError as e:
-                return [types.TextContent(type="text", text=f"Error: {e}")]
+                return _error_response(str(e), "IndexNotFoundError")
             except QueryError as e:
-                return [types.TextContent(type="text", text=f"Error: {e}")]
+                return _error_response(str(e), "QueryError")
             except Exception as e:
-                return [types.TextContent(type="text", text=f"Tail error: {e}")]
+                return _error_response(f"Tail error: {e}", "TailError")
 
         elif name == "get_operation_summary":
             operation_id = arguments.get("operation_id")
             if not operation_id:
-                return [types.TextContent(
-                    type="text",
-                    text="Error: operation_id is required",
-                )]
+                return _error_response("operation_id is required", "ValidationError")
 
             try:
-                # Use aggregation-based summary
                 summary = get_operation_summary(client, index, operation_id)
 
                 if not summary:
-                    return [types.TextContent(
-                        type="text",
-                        text=f"No logs found for operation {operation_id}",
-                    )]
+                    return _json_response(
+                        data={"operation_id": operation_id, "found": False},
+                        meta={"count": 0},
+                    )
 
-                # Format summary
-                summary_lines = [
-                    f"Operation Summary: {operation_id}",
-                    f"Start time: {summary.get('start_time', 'unknown')}",
-                    f"End time: {summary.get('end_time', 'unknown')}",
-                    f"Total entries: {summary.get('total_entries', 0)}",
-                    f"Error count: {summary.get('error_count', 0)}",
-                    "",
-                    "Log levels:",
-                ]
-                for level, count in sorted(summary.get("counts_by_level", {}).items()):
-                    summary_lines.append(f"  {level}: {count}")
-
-                summary_lines.append("")
-                summary_lines.append("Sample logs (first 10):")
-                summary_lines.append("")
-
-                # Format sample logs
-                for log in summary.get("sample_logs", []):
-                    summary_lines.append(_format_log_entry(log))
-
-                return [types.TextContent(type="text", text="\n".join(summary_lines))]
+                summary["found"] = True
+                return _json_response(data=summary)
 
             except IndexNotFoundError as e:
-                return [types.TextContent(type="text", text=f"Error: {e}")]
+                return _error_response(str(e), "IndexNotFoundError")
             except Exception as e:
-                return [types.TextContent(type="text", text=f"Summary error: {e}")]
+                return _error_response(f"Summary error: {e}", "SummaryError")
+
+        elif name == "get_operation_logs":
+            operation_id = arguments.get("operation_id")
+            if not operation_id:
+                return _error_response("operation_id is required", "ValidationError")
+
+            query = arguments.get("query")
+            level = arguments.get("level")
+            since = arguments.get("since")
+            until = arguments.get("until")
+            limit = _coerce_limit(arguments.get("limit"), 50, 100)
+            cursor = _coerce_cursor(arguments.get("cursor"))
+
+            try:
+                docs, next_cursor = get_operation_logs(
+                    client=client,
+                    index=index,
+                    operation_id=operation_id,
+                    query=query,
+                    level=level,
+                    since=since,
+                    until=until,
+                    limit=limit,
+                    cursor=cursor,
+                )
+                entries = _normalize_entries(docs, limit=limit)
+
+                return _json_response(
+                    data={"operation_id": operation_id, "entries": entries},
+                    meta={"count": len(entries), "next_cursor": next_cursor},
+                )
+            except IndexNotFoundError as e:
+                return _error_response(str(e), "IndexNotFoundError")
+            except QueryError as e:
+                return _error_response(str(e), "QueryError")
+            except Exception as e:
+                return _error_response(f"Operation logs error: {e}", "OperationLogsError")
 
         elif name == "list_operations":
             area = arguments.get("area")
             since = arguments.get("since")
-            limit = arguments.get("limit", 20)
+            limit = _coerce_limit(arguments.get("limit"), 20, 100)
             with_errors_only = arguments.get("with_errors_only", False)
 
             try:
@@ -351,36 +583,44 @@ async def main():
                     with_errors_only=with_errors_only,
                 )
 
-                if not operations:
-                    return [types.TextContent(
-                        type="text",
-                        text="No operations found matching the criteria.",
-                    )]
-
-                # Format operations list
-                lines = [f"Found {len(operations)} operations:\n"]
-                for op in operations:
-                    duration = ""
-                    if op.get("duration_ms") is not None:
-                        duration_sec = op["duration_ms"] / 1000.0
-                        duration = f" ({duration_sec:.2f}s)"
-
-                    error_info = ""
-                    if op.get("error_count", 0) > 0:
-                        error_info = f" [ERRORS: {op['error_count']}]"
-
-                    lines.append(
-                        f"- {op['operation_id'][:16]} | {op.get('area', 'unknown')} | "
-                        f"{op['total_logs']} logs{duration}{error_info}"
-                    )
-                    lines.append(f"  {op.get('start_time', 'unknown')} to {op.get('end_time', 'unknown')}")
-
-                return [types.TextContent(type="text", text="\n".join(lines))]
+                return _json_response(
+                    data={"operations": operations},
+                    meta={"count": len(operations)},
+                )
 
             except IndexNotFoundError as e:
-                return [types.TextContent(type="text", text=f"Error: {e}")]
+                return _error_response(str(e), "IndexNotFoundError")
             except Exception as e:
-                return [types.TextContent(type="text", text=f"List operations error: {e}")]
+                return _error_response(f"List operations error: {e}", "ListOperationsError")
+
+        elif name == "list_recent_operations":
+            area = arguments.get("area")
+            since = arguments.get("since")
+            until = arguments.get("until")
+            limit = _coerce_limit(arguments.get("limit"), 20, 100)
+            order_by = arguments.get("order_by", "last_activity")
+            with_errors_only = arguments.get("with_errors_only", False)
+
+            try:
+                operations = list_recent_operations(
+                    client=client,
+                    index=index,
+                    area=area,
+                    since=since,
+                    until=until,
+                    limit=limit,
+                    order_by=order_by,
+                    with_errors_only=with_errors_only,
+                )
+
+                return _json_response(
+                    data={"operations": operations},
+                    meta={"count": len(operations)},
+                )
+            except IndexNotFoundError as e:
+                return _error_response(str(e), "IndexNotFoundError")
+            except Exception as e:
+                return _error_response(f"List recent operations error: {e}", "ListRecentOperationsError")
 
         elif name == "list_areas":
             since = arguments.get("since")
@@ -394,31 +634,81 @@ async def main():
                     min_operations=min_operations,
                 )
 
-                if not areas:
-                    return [types.TextContent(
-                        type="text",
-                        text="No areas found matching the criteria.",
-                    )]
-
-                # Format areas list
-                lines = [f"Found {len(areas)} application areas:\n"]
-                for area_info in areas:
-                    error_info = ""
-                    if area_info.get("error_count", 0) > 0:
-                        error_info = f" [ERRORS: {area_info['error_count']}]"
-
-                    lines.append(
-                        f"- {area_info['area']}: {area_info['operation_count']} operations, "
-                        f"{area_info['log_count']} logs{error_info}"
-                    )
-                    lines.append(f"  Last activity: {area_info.get('last_activity', 'unknown')}")
-
-                return [types.TextContent(type="text", text="\n".join(lines))]
+                return _json_response(
+                    data={"areas": areas},
+                    meta={"count": len(areas)},
+                )
 
             except IndexNotFoundError as e:
-                return [types.TextContent(type="text", text=f"Error: {e}")]
+                return _error_response(str(e), "IndexNotFoundError")
             except Exception as e:
-                return [types.TextContent(type="text", text=f"List areas error: {e}")]
+                return _error_response(f"List areas error: {e}", "ListAreasError")
+
+        elif name == "list_recent_errors":
+            field = arguments.get("field") or "exception"
+            area = arguments.get("area")
+            since = arguments.get("since")
+            until = arguments.get("until")
+            limit = _coerce_limit(arguments.get("limit"), 20, 100)
+            min_count = _coerce_nonnegative_int(arguments.get("min_count"), 1)
+            include_missing = bool(arguments.get("include_missing", False))
+
+            try:
+                signatures = list_error_signatures(
+                    client=client,
+                    index=index,
+                    field=field,
+                    area=area,
+                    since=since,
+                    until=until,
+                    limit=limit,
+                    min_count=min_count,
+                    include_missing=include_missing,
+                )
+                return _json_response(
+                    data={"signatures": signatures},
+                    meta={"count": len(signatures)},
+                )
+            except IndexNotFoundError as e:
+                return _error_response(str(e), "IndexNotFoundError")
+            except Exception as e:
+                return _error_response(f"List recent errors error: {e}", "ListRecentErrorsError")
+
+        elif name == "get_error_context":
+            anchor_timestamp = arguments.get("anchor_timestamp")
+            if not anchor_timestamp:
+                return _error_response("anchor_timestamp is required", "ValidationError")
+
+            operation_id = arguments.get("operation_id")
+            area = arguments.get("area")
+            query = arguments.get("query")
+            level = arguments.get("level")
+            before = _coerce_nonnegative_int(arguments.get("before"), 20)
+            after = _coerce_nonnegative_int(arguments.get("after"), 20)
+
+            try:
+                docs = get_error_context(
+                    client=client,
+                    index=index,
+                    anchor_timestamp=anchor_timestamp,
+                    operation_id=operation_id,
+                    area=area,
+                    query=query,
+                    level=level,
+                    before=before,
+                    after=after,
+                )
+                entries = _normalize_entries(docs)
+                return _json_response(
+                    data={"anchor_timestamp": anchor_timestamp, "entries": entries},
+                    meta={"count": len(entries), "before": before, "after": after},
+                )
+            except IndexNotFoundError as e:
+                return _error_response(str(e), "IndexNotFoundError")
+            except QueryError as e:
+                return _error_response(str(e), "QueryError")
+            except Exception as e:
+                return _error_response(f"Error context error: {e}", "ErrorContextError")
 
         else:
             raise ValueError(f"Unknown tool: {name}")
