@@ -2,6 +2,18 @@
 
 A developer-focused logging library for Python with OpenSearch integration.
 
+## Agent Instructions (Copy/Paste)
+
+> Please do the following in this project:
+> 1. Install `devlogs` (`pip install devlogs` or add it to `requirements.txt`/`pyproject.toml`).
+> 2. Add `DEVLOGS_OPENSEARCH_HOST`, `DEVLOGS_OPENSEARCH_PORT`, `DEVLOGS_OPENSEARCH_USER`, `DEVLOGS_OPENSEARCH_PASS`, and `DEVLOGS_INDEX` to the project `.env` file (or equivalent config). Defaults are `localhost`, `9200`, `admin`, and `devlogs-<projectname>`.
+> 3. Add logging setup in the main app entrypoint (or startup/init module) to attach the handler:
+>    - `from devlogs.handler import OpenSearchHandler`
+>    - `handler = OpenSearchHandler(level=logging.INFO)`
+>    - `logging.getLogger().addHandler(handler)`
+>    - `logging.getLogger().setLevel(logging.INFO)`
+> 4. Run `devlogs init` (inside the virtualenv if one is set up) and verify the index is healthy.
+
 ## Quickstart
 
 1. **Install devlogs:**
@@ -48,29 +60,6 @@ A developer-focused logging library for Python with OpenSearch integration.
 	```sh
 	uvicorn devlogs.web.server:app --port 8088
 	# Then open http://localhost:8088/ui/
-	```
-
-## Using devlogs in another project
-
-1. **Install devlogs:**
-	```sh
-	pip install devlogs
-	```
-
-2. **Add the diagnostics handler:**
-	```python
-	import logging
-	from devlogs.handler import DiagnosticsHandler
-	from devlogs.opensearch.client import get_opensearch_client
-	from devlogs.context import operation
-
-	client = get_opensearch_client()
-	handler = DiagnosticsHandler(opensearch_client=client, index_name="devlogs-0001")
-	logging.getLogger().addHandler(handler)
-	logging.getLogger().setLevel(logging.DEBUG)
-
-	with operation(area="web"):
-		 logging.info("request started")
 	```
 
 ## Features
