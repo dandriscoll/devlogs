@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "devlogs"
-version = "1.0.0"
+version = "1.0.1"
 description = "Developer-focused logging library for Python with OpenSearch integration."
 requires-python = ">=3.11"
 readme = "README.md"
@@ -28,7 +28,8 @@ dev = [
 ]
 
 [project.scripts]
-devlogs = "devlogs.cli:main"
+devlogs = "devlogs.wrapper:main"
+devlogs-cli = "devlogs.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
