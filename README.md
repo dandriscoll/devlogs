@@ -1,8 +1,19 @@
 # devlogs
 
-A developer-focused logging library for Python with OpenSearch integration.
+A developer-focused logging library for Python based on OpenSearch.
 
-## Agent Instructions (Copy/Paste)
+## Step 1: Get OpenSearch running
+
+If you don't have OpenSearch running and you want to stand one up:
+1. Install Docker (and Docker Compose) for your OS.
+2. Copy `docker-compose.example.yaml` to `docker-compose.yaml`.
+3. Change the OpenSearch password in the copied file.
+4. Start OpenSearch:
+	```sh
+	docker compose up -d
+	```
+
+## Step 2: Copy/paste these instructions into your coding agent
 
 > Please do the following in this project:
 > 1. Install `devlogs` (`pip install devlogs` or add it to `requirements.txt`/`pyproject.toml`).
@@ -15,18 +26,13 @@ A developer-focused logging library for Python with OpenSearch integration.
 > 4. Run `devlogs init` (inside the virtualenv if one is set up) and verify the index is healthy.
 > 5. Ask the user if they want MCP set up; if yes, state which agent you are (`copilot`, `claude`, or `codex`) and run `devlogs initmcp <agent>`.
 
-## OpenSearch Setup (Docker)
+## Step 3: Use devlogs
 
-If you don't already have OpenSearch running locally:
-1. Install Docker (and Docker Compose) for your OS.
-2. Copy `docker-compose.example.yaml` to `docker-compose.yaml`.
-3. Change the OpenSearch password in the copied file.
-4. Start OpenSearch:
-	```sh
-	docker compose up -d
-	```
+1. Run `devlogs initmcp <agent>` to set up the MCP server.
+2. Then run `devlogs tail` to see the last logs, or `devlogs tail -f` to follow along
+3. Finally, ask your agent to query devlogs for errors. Watch it solve problems on its own!
 
-## Quickstart
+## If you want to install it by hand
 
 1. **Install devlogs:**
 	```sh
