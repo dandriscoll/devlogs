@@ -18,6 +18,7 @@ from .opensearch.client import (
 	check_index,
 	OpenSearchError,
 	ConnectionFailedError,
+	DevlogsDisabledError,
 )
 from .opensearch.mappings import build_log_index_template, get_template_names
 from .opensearch.queries import normalize_log_entries, search_logs, tail_logs, get_last_errors
@@ -57,9 +58,9 @@ def _format_features(features):
 
 def require_opensearch(check_idx=True):
 	"""Get client and verify OpenSearch is accessible. Optionally check index exists."""
-	cfg = load_config()
-	client = get_opensearch_client()
 	try:
+		cfg = load_config()
+		client = get_opensearch_client()
 		check_connection(client)
 		if check_idx:
 			check_index(client, cfg.index)
@@ -87,7 +88,12 @@ def _delete_template_any_variant(client, template_name):
 	return None, errors
 
 
-def _write_json_config(path: Path, root_key: str, server_name: str, server_config: dict) -> None:
+def _write_json_config(
+	path: Path,
+	root_key: str,
+	server_name: str,
+	server_config: dict,
+) -> str:
 	data = {}
 	if path.is_file():
 		try:
@@ -102,48 +108,62 @@ def _write_json_config(path: Path, root_key: str, server_name: str, server_confi
 		data[root_key] = servers
 	if not isinstance(servers, dict):
 		raise ValueError(f"{path} field '{root_key}' must be a JSON object.")
+	existing = servers.get(server_name)
+	if existing is not None:
+		if existing == server_config:
+			return "skipped"
+		raise ValueError(
+			f"{path} already defines '{server_name}' under '{root_key}'. Update it manually to avoid overwriting."
+		)
 	servers[server_name] = server_config
 	path.parent.mkdir(parents=True, exist_ok=True)
 	path.write_text(json.dumps(data, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+	return "written"
 
 
-def _strip_toml_table(text: str, table_name: str) -> str:
-	lines = text.splitlines()
-	output = []
-	skip = False
-	for line in lines:
-		stripped = line.strip()
-		if stripped.startswith("[") and stripped.endswith("]"):
-			if stripped == f"[{table_name}]":
-				skip = True
-				continue
-			if skip:
-				skip = False
-		if not skip:
-			output.append(line)
-	result = "\n".join(output)
-	if text.endswith("\n"):
-		result += "\n"
-	return result
+def _write_codex_config(path: Path, python_path: str) -> str:
+	import tomllib
 
-
-def _write_codex_config(path: Path, python_path: str) -> None:
 	block_lines = [
 		"[mcp_servers.devlogs]",
 		f'command = "{python_path}"',
 		'args = ["-m", "devlogs.mcp.server"]',
 	]
 	block = "\n".join(block_lines) + "\n"
+	desired = {
+		"command": python_path,
+		"args": ["-m", "devlogs.mcp.server"],
+	}
 
 	text = ""
 	if path.is_file():
 		text = path.read_text(encoding="utf-8")
-		text = _strip_toml_table(text, "mcp_servers.devlogs")
-		text = _strip_toml_table(text, "mcp_servers.devlogs.env")
+		if text.strip():
+			try:
+				data = tomllib.loads(text)
+			except tomllib.TOMLDecodeError as exc:
+				raise ValueError(f"{path} is not valid TOML: {exc}") from exc
+		else:
+			data = {}
+		if not isinstance(data, dict):
+			raise ValueError(f"{path} must contain a TOML table.")
+		existing = data.get("mcp_servers", {}).get("devlogs")
+		if existing is not None:
+			if (
+				isinstance(existing, dict)
+				and existing.get("command") == desired["command"]
+				and existing.get("args") == desired["args"]
+			):
+				return "skipped"
+			raise ValueError(
+				f"{path} already defines mcp_servers.devlogs. Update it manually to avoid overwriting."
+			)
 		if text and not text.endswith("\n"):
 			text += "\n"
 	path.parent.mkdir(parents=True, exist_ok=True)
-	path.write_text(text + block, encoding="utf-8")
+	separator = "\n" if text else ""
+	path.write_text(text + separator + block, encoding="utf-8")
+	return "written"
 
 
 @app.command()
@@ -199,8 +219,8 @@ def initmcp(
 			"command": python_path,
 			"args": ["-m", "devlogs.mcp.server"],
 		}
-		_write_json_config(path, "mcpServers", "devlogs", config)
-		results.append(f"Claude: {path}")
+		status = _write_json_config(path, "mcpServers", "devlogs", config)
+		results.append((status, "Claude", path))
 
 	def _write_copilot():
 		path = root / ".vscode" / "mcp.json"
@@ -208,13 +228,13 @@ def initmcp(
 			"command": python_path,
 			"args": ["-m", "devlogs.mcp.server"],
 		}
-		_write_json_config(path, "servers", "devlogs", config)
-		results.append(f"Copilot: {path}")
+		status = _write_json_config(path, "servers", "devlogs", config)
+		results.append((status, "Copilot", path))
 
 	def _write_codex():
 		path = Path("~/.codex/config.toml").expanduser()
-		_write_codex_config(path, python_path)
-		results.append(f"Codex: {path}")
+		status = _write_codex_config(path, python_path)
+		results.append((status, "Codex", path))
 
 	try:
 		if agent_key in {"claude", "all"}:
@@ -227,8 +247,199 @@ def initmcp(
 		typer.echo(typer.style(f"Error: {exc}", fg=typer.colors.RED), err=True)
 		raise typer.Exit(1)
 
-	for line in results:
-		typer.echo(f"Wrote {line}")
+	for status, label, path in results:
+		if status == "written":
+			typer.echo(f"Wrote {label}: {path}")
+		else:
+			typer.echo(f"Skipped {label}: {path} already configured")
+
+@app.command()
+def diagnose():
+	"""Diagnose common devlogs setup issues."""
+	import os
+	import tomllib
+	from . import config as config_module
+
+	errors = 0
+
+	def _emit(status: str, message: str) -> None:
+		nonlocal errors
+		label = {"ok": "OK", "warn": "WARN", "error": "ERROR"}[status]
+		color = {
+			"ok": typer.colors.GREEN,
+			"warn": typer.colors.YELLOW,
+			"error": typer.colors.RED,
+		}[status]
+		if status == "error":
+			errors += 1
+		typer.echo(f"{typer.style(f'[{label}]', fg=color)} {message}")
+
+	def _resolve_dotenv_path():
+		explicit = os.getenv("DOTENV_PATH")
+		if explicit:
+			return Path(explicit).expanduser(), "DOTENV_PATH"
+		custom = getattr(config_module, "_custom_dotenv_path", None)
+		if custom:
+			return Path(custom).expanduser(), "--env"
+		try:
+			from dotenv import find_dotenv
+		except ModuleNotFoundError:
+			return None, None
+		found = find_dotenv(usecwd=True)
+		if found:
+			return Path(found), "auto-discovered"
+		return None, None
+
+	def _env_has_devlogs_settings(env: dict) -> bool:
+		if not isinstance(env, dict):
+			return False
+		for key in env.keys():
+			if key == "DOTENV_PATH" or key.startswith("DEVLOGS_"):
+				return True
+		return False
+
+	def _args_has_mcp_module(args) -> bool:
+		if isinstance(args, list):
+			return "devlogs.mcp.server" in args
+		if isinstance(args, str):
+			return "devlogs.mcp.server" in args
+		return False
+
+	def _check_json_mcp(path: Path, root_key: str, label: str) -> None:
+		if not path.is_file():
+			_emit("warn", f"MCP ({label}): {path} not found")
+			return
+		try:
+			data = json.loads(path.read_text(encoding="utf-8"))
+		except json.JSONDecodeError as exc:
+			_emit("error", f"MCP ({label}): invalid JSON in {path}: {exc}")
+			return
+		if not isinstance(data, dict):
+			_emit("error", f"MCP ({label}): {path} must contain a JSON object")
+			return
+		servers = data.get(root_key)
+		if not isinstance(servers, dict):
+			_emit("warn", f"MCP ({label}): missing '{root_key}' in {path}")
+			return
+		server = servers.get("devlogs")
+		if not isinstance(server, dict):
+			_emit("warn", f"MCP ({label}): devlogs server not configured in {path}")
+			return
+		issues = []
+		if not server.get("command"):
+			issues.append("missing command")
+		if not _args_has_mcp_module(server.get("args")):
+			issues.append("missing devlogs.mcp.server args")
+		if not _env_has_devlogs_settings(server.get("env", {})):
+			issues.append("missing DOTENV_PATH or DEVLOGS_* env")
+		if issues:
+			_emit("warn", f"MCP ({label}): devlogs config incomplete in {path} ({', '.join(issues)})")
+		else:
+			_emit("ok", f"MCP ({label}): devlogs configured in {path}")
+
+	def _check_toml_mcp(path: Path, label: str) -> None:
+		if not path.is_file():
+			_emit("warn", f"MCP ({label}): {path} not found")
+			return
+		try:
+			data = tomllib.loads(path.read_text(encoding="utf-8"))
+		except tomllib.TOMLDecodeError as exc:
+			_emit("error", f"MCP ({label}): invalid TOML in {path}: {exc}")
+			return
+		if not isinstance(data, dict):
+			_emit("error", f"MCP ({label}): {path} must contain a TOML table")
+			return
+		servers = data.get("mcp_servers")
+		if not isinstance(servers, dict):
+			_emit("warn", f"MCP ({label}): missing 'mcp_servers' in {path}")
+			return
+		server = servers.get("devlogs")
+		if not isinstance(server, dict):
+			_emit("warn", f"MCP ({label}): devlogs server not configured in {path}")
+			return
+		issues = []
+		if not server.get("command"):
+			issues.append("missing command")
+		if not _args_has_mcp_module(server.get("args")):
+			issues.append("missing devlogs.mcp.server args")
+		if not _env_has_devlogs_settings(server.get("env", {})):
+			issues.append("missing DOTENV_PATH or DEVLOGS_* env")
+		if issues:
+			_emit("warn", f"MCP ({label}): devlogs config incomplete in {path} ({', '.join(issues)})")
+		else:
+			_emit("ok", f"MCP ({label}): devlogs configured in {path}")
+
+	typer.echo("Devlogs diagnostics:")
+
+	cfg = load_config()
+	dotenv_path, dotenv_source = _resolve_dotenv_path()
+	if dotenv_path:
+		if dotenv_path.is_file():
+			if cfg.enabled:
+				_emit("ok", f".env: {dotenv_path} ({dotenv_source})")
+			else:
+				_emit("warn", f".env: {dotenv_path} ({dotenv_source}) found, but no DEVLOGS_* settings detected")
+		else:
+			_emit("error", f".env: {dotenv_path} ({dotenv_source}) not found")
+	else:
+		if cfg.enabled:
+			_emit("warn", ".env: not found, using environment variables only")
+		else:
+			_emit("warn", ".env: not found and no DEVLOGS_* settings detected")
+
+	client = None
+	connection_ok = False
+	try:
+		client = get_opensearch_client()
+	except DevlogsDisabledError as exc:
+		_emit("error", f"OpenSearch: {exc}")
+	except OpenSearchError as exc:
+		_emit("error", f"OpenSearch: {exc}")
+	else:
+		try:
+			check_connection(client)
+			connection_ok = True
+			_emit("ok", f"OpenSearch: connected to {cfg.opensearch_host}:{cfg.opensearch_port}")
+		except OpenSearchError as exc:
+			_emit("error", f"OpenSearch: {exc}")
+
+	index_exists = False
+	if client and connection_ok:
+		try:
+			if client.indices.exists(index=cfg.index):
+				_emit("ok", f"Index: {cfg.index} exists")
+				index_exists = True
+			else:
+				_emit("error", f"Index: {cfg.index} does not exist (run 'devlogs init')")
+		except OpenSearchError as exc:
+			_emit("error", f"Index: {exc}")
+		except Exception as exc:
+			_emit("error", f"Index: unexpected error: {type(exc).__name__}: {exc}")
+	else:
+		_emit("warn", "Index: skipped (OpenSearch connection unavailable)")
+
+	if client and connection_ok and index_exists:
+		try:
+			response = client.count(index=cfg.index)
+			count = response.get("count", 0) if isinstance(response, dict) else 0
+			if count:
+				_emit("ok", f"Logs: found {count} entries")
+			else:
+				_emit("warn", "Logs: no entries found (index is empty)")
+		except OpenSearchError as exc:
+			_emit("error", f"Logs: {exc}")
+		except Exception as exc:
+			_emit("error", f"Logs: unexpected error: {type(exc).__name__}: {exc}")
+	else:
+		_emit("warn", "Logs: skipped (index unavailable)")
+
+	_check_json_mcp(Path.cwd() / ".mcp.json", "mcpServers", "Claude")
+	_check_json_mcp(Path.cwd() / ".vscode" / "mcp.json", "servers", "Copilot")
+	_check_toml_mcp(Path.home() / ".codex" / "config.toml", "Codex")
+
+	if errors:
+		raise typer.Exit(1)
+
 
 @app.command()
 def tail(

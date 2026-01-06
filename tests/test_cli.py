@@ -1,3 +1,4 @@
+import json
 import os
 import uuid
 import tempfile
@@ -192,6 +193,124 @@ class TestRequireOpensearch:
                 result = runner.invoke(cli.app, ["tail"])
                 assert result.exit_code == 1
                 assert "Error" in result.output or "Cannot connect" in result.output
+
+
+class TestDiagnoseCommand:
+    """Tests for diagnose command."""
+
+    def test_diagnose_reports_disabled(self, tmp_path, monkeypatch):
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+
+        for key in config._DEVLOGS_CONFIG_KEYS:
+            monkeypatch.delenv(key, raising=False)
+        monkeypatch.delenv("DOTENV_PATH", raising=False)
+        monkeypatch.setattr(config, "_dotenv_loaded", False)
+        monkeypatch.setattr(config, "_custom_dotenv_path", None)
+
+        result = runner.invoke(cli.app, ["diagnose"], color=False)
+        assert result.exit_code == 1
+        assert "Devlogs is disabled" in result.output
+
+    def test_diagnose_reports_ok_with_mcp(self, tmp_path, monkeypatch):
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+
+        for key in config._DEVLOGS_CONFIG_KEYS:
+            monkeypatch.delenv(key, raising=False)
+        monkeypatch.setattr(config, "_dotenv_loaded", False)
+        monkeypatch.setattr(config, "_custom_dotenv_path", None)
+
+        env_path = tmp_path / ".env"
+        env_path.write_text(
+            "DEVLOGS_OPENSEARCH_HOST=localhost\n"
+            "DEVLOGS_INDEX=diagnose-test-index\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("DOTENV_PATH", str(env_path))
+
+        mcp_path = tmp_path / ".mcp.json"
+        mcp_path.write_text(
+            json.dumps(
+                {
+                    "mcpServers": {
+                        "devlogs": {
+                            "command": "python",
+                            "args": ["-m", "devlogs.mcp.server"],
+                            "env": {"DOTENV_PATH": str(env_path)},
+                        }
+                    }
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        vscode_dir = tmp_path / ".vscode"
+        vscode_dir.mkdir()
+        vscode_path = vscode_dir / "mcp.json"
+        vscode_path.write_text(
+            json.dumps(
+                {
+                    "servers": {
+                        "devlogs": {
+                            "command": "python",
+                            "args": ["-m", "devlogs.mcp.server"],
+                            "env": {"DOTENV_PATH": str(env_path)},
+                        }
+                    }
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        codex_dir = tmp_path / ".codex"
+        codex_dir.mkdir()
+        codex_path = codex_dir / "config.toml"
+        codex_path.write_text(
+            "\n".join(
+                [
+                    "[mcp_servers.devlogs]",
+                    'command = "python"',
+                    'args = ["-m", "devlogs.mcp.server"]',
+                    "",
+                    "[mcp_servers.devlogs.env]",
+                    f'DOTENV_PATH = "{env_path}"',
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        class FakeIndices:
+            def exists(self, index):
+                return True
+
+        class FakeClient:
+            def __init__(self, count):
+                self.indices = FakeIndices()
+                self._count = count
+
+            def count(self, index):
+                return {"count": self._count}
+
+        fake_client = FakeClient(3)
+
+        monkeypatch.setattr(cli, "get_opensearch_client", lambda: fake_client)
+        monkeypatch.setattr(cli, "check_connection", lambda client: None)
+        monkeypatch.setattr(cli.Path, "home", classmethod(lambda cls: tmp_path))
+
+        result = runner.invoke(cli.app, ["diagnose"], color=False)
+        assert result.exit_code == 0
+        assert "OpenSearch: connected to" in result.output
+        assert "Index: diagnose-test-index exists" in result.output
+        assert "Logs: found 3 entries" in result.output
+        assert "MCP (Claude): devlogs configured" in result.output
+        assert "MCP (Copilot): devlogs configured" in result.output
+        assert "MCP (Codex): devlogs configured" in result.output
 
 
 @pytest.mark.integration

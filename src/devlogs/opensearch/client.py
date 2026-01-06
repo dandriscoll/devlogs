@@ -33,6 +33,11 @@ class QueryError(OpenSearchError):
 	pass
 
 
+class DevlogsDisabledError(OpenSearchError):
+	"""Raised when devlogs is disabled due to missing configuration."""
+	pass
+
+
 class LightweightOpenSearchClient:
 	"""Minimal OpenSearch client using stdlib urllib for fast imports."""
 
@@ -183,6 +188,11 @@ class _IndicesClient:
 
 def get_opensearch_client():
 	cfg = load_config()
+	if not getattr(cfg, "enabled", True):
+		raise DevlogsDisabledError(
+			"Devlogs is disabled because no DEVLOGS_* settings were found. "
+			"Set at least one devlogs setting (e.g., DEVLOGS_OPENSEARCH_HOST) to enable it."
+		)
 	return LightweightOpenSearchClient(
 		host=cfg.opensearch_host,
 		port=cfg.opensearch_port,

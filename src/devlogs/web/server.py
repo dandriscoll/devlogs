@@ -23,9 +23,9 @@ def root():
 
 
 def _try_client() -> Tuple[Optional[object], Optional[str]]:
-	cfg = load_config()
-	client = get_opensearch_client()
 	try:
+		cfg = load_config()
+		client = get_opensearch_client()
 		check_connection(client)
 		check_index(client, cfg.index)
 		return client, None

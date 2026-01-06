@@ -7,9 +7,31 @@ import re
 _dotenv_loaded = False
 _custom_dotenv_path = None
 
+_DEVLOGS_CONFIG_KEYS = (
+	"DEVLOGS_OPENSEARCH_HOST",
+	"DEVLOGS_OPENSEARCH_PORT",
+	"DEVLOGS_OPENSEARCH_USER",
+	"DEVLOGS_OPENSEARCH_PASS",
+	"DEVLOGS_OPENSEARCH_TIMEOUT",
+	"DEVLOGS_INDEX",
+	"DEVLOGS_RETENTION_DEBUG",
+	"DEVLOGS_RETENTION_INFO",
+	"DEVLOGS_RETENTION_WARNING",
+)
+
+
 def _getenv(name, default):
 	value = os.getenv(name)
 	return value if value else default
+
+
+def _has_any_devlogs_settings() -> bool:
+	for key in _DEVLOGS_CONFIG_KEYS:
+		value = os.getenv(key)
+		if value:
+			return True
+	return False
+
 
 def parse_duration(value: str, unit: str = 'hours') -> int:
 	"""Parse a duration string like '6h' or '7d' into numeric value.
@@ -64,7 +86,8 @@ def parse_duration(value: str, unit: str = 'hours') -> int:
 
 class DevlogsConfig:
 	"""Loads configuration from environment variables and provides defaults."""
-	def __init__(self):
+	def __init__(self, enabled: bool = True):
+		self.enabled = enabled
 		self.opensearch_host = _getenv("DEVLOGS_OPENSEARCH_HOST", "localhost")
 		self.opensearch_port = int(_getenv("DEVLOGS_OPENSEARCH_PORT", "9200"))
 		self.opensearch_user = _getenv("DEVLOGS_OPENSEARCH_USER", "admin")
@@ -105,4 +128,5 @@ def load_config() -> DevlogsConfig:
 		except ModuleNotFoundError:
 			pass
 		_dotenv_loaded = True
-	return DevlogsConfig()
+	enabled = _has_any_devlogs_settings()
+	return DevlogsConfig(enabled=enabled)

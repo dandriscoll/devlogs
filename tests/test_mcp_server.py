@@ -91,6 +91,10 @@ class TestCreateClientAndIndex:
             "DEVLOGS_OPENSEARCH_USER",
             "DEVLOGS_OPENSEARCH_PASS",
             "DEVLOGS_INDEX",
+            "DEVLOGS_OPENSEARCH_TIMEOUT",
+            "DEVLOGS_RETENTION_DEBUG",
+            "DEVLOGS_RETENTION_INFO",
+            "DEVLOGS_RETENTION_WARNING",
         ]:
             monkeypatch.delenv(key, raising=False)
 
@@ -109,10 +113,9 @@ class TestCreateClientAndIndex:
         monkeypatch.setattr(dotenv, "find_dotenv", mock_find_dotenv)
         monkeypatch.setattr(dotenv, "load_dotenv", mock_load_dotenv)
 
-        # Should work with hardcoded defaults only
-        client, index = _create_client_and_index()
-        assert client is not None
-        assert index == "devlogs-0001"  # default value from config.py
+        # Should disable devlogs when no settings are present
+        with pytest.raises(RuntimeError, match="Devlogs is disabled"):
+            _create_client_and_index()
 
 
 @pytest.mark.asyncio

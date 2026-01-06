@@ -12,6 +12,7 @@ from ..config import load_config
 from ..opensearch.client import (
     AuthenticationError,
     ConnectionFailedError,
+    DevlogsDisabledError,
     IndexNotFoundError,
     QueryError,
     get_opensearch_client,
@@ -37,6 +38,8 @@ def _create_client_and_index():
         client = get_opensearch_client()
         cfg = load_config()
         return client, cfg.index
+    except DevlogsDisabledError as e:
+        raise RuntimeError(str(e))
     except ConnectionFailedError as e:
         raise RuntimeError(f"OpenSearch connection failed: {e}")
     except AuthenticationError as e:

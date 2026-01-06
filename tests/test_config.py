@@ -17,6 +17,7 @@ def test_load_config_defaults(monkeypatch):
     ):
         monkeypatch.delenv(key, raising=False)
     cfg = config.load_config()
+    assert cfg.enabled is False
     assert cfg.opensearch_host == "localhost"
     assert cfg.opensearch_port == 9200
     assert cfg.opensearch_user == "admin"
@@ -24,6 +25,27 @@ def test_load_config_defaults(monkeypatch):
     assert cfg.retention_debug_hours == 6
     assert cfg.retention_info_days == 7
     assert cfg.retention_warning_days == 30
+
+
+def test_load_config_enabled_with_any_setting(monkeypatch):
+    monkeypatch.setattr(config, "_dotenv_loaded", True)
+    for key in (
+        "DEVLOGS_OPENSEARCH_HOST",
+        "DEVLOGS_OPENSEARCH_PORT",
+        "DEVLOGS_OPENSEARCH_USER",
+        "DEVLOGS_OPENSEARCH_PASS",
+        "DEVLOGS_OPENSEARCH_TIMEOUT",
+        "DEVLOGS_INDEX",
+        "DEVLOGS_RETENTION_DEBUG",
+        "DEVLOGS_RETENTION_INFO",
+        "DEVLOGS_RETENTION_WARNING",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("DEVLOGS_INDEX", "devlogs-enabled-test")
+    cfg = config.load_config()
+    assert cfg.enabled is True
+    assert cfg.index == "devlogs-enabled-test"
+
 
 def test_set_dotenv_path(monkeypatch):
     """Test that set_dotenv_path() sets custom env file path."""

@@ -14,6 +14,7 @@ from devlogs.opensearch.client import (
     IndexNotFoundError,
     AuthenticationError,
     QueryError,
+    DevlogsDisabledError,
     get_opensearch_client,
     check_connection,
     check_index,
@@ -319,10 +320,18 @@ class TestUtilityFunctions:
                 opensearch_user="user",
                 opensearch_pass="pass",
                 opensearch_timeout=15,
+                enabled=True,
             )
             client = get_opensearch_client()
             assert client.base_url == "http://myhost:9201"
             assert client.timeout == 15
+
+    def test_get_opensearch_client_disabled(self):
+        """Test get_opensearch_client raises when devlogs is disabled."""
+        with patch("devlogs.opensearch.client.load_config") as mock_config:
+            mock_config.return_value = MagicMock(enabled=False)
+            with pytest.raises(DevlogsDisabledError):
+                get_opensearch_client()
 
     def test_check_connection_success(self):
         """Test check_connection succeeds when client connects."""
