@@ -320,6 +320,7 @@ class TestUtilityFunctions:
                 opensearch_user="user",
                 opensearch_pass="pass",
                 opensearch_timeout=15,
+                opensearch_scheme="http",
                 enabled=True,
             )
             client = get_opensearch_client()

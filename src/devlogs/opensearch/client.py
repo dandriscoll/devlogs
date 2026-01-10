@@ -41,8 +41,8 @@ class DevlogsDisabledError(OpenSearchError):
 class LightweightOpenSearchClient:
 	"""Minimal OpenSearch client using stdlib urllib for fast imports."""
 
-	def __init__(self, host, port, user, password, timeout=5):
-		self.base_url = f"http://{host}:{port}"
+	def __init__(self, host, port, user, password, timeout=5, scheme="http"):
+		self.base_url = f"{scheme}://{host}:{port}"
 		self.timeout = timeout
 		# Pre-compute auth header
 		credentials = b64encode(f"{user}:{password}".encode()).decode('ascii')
@@ -135,6 +135,42 @@ class LightweightOpenSearchClient:
 			return self._request("POST", path, body)
 		return self._request("GET", path)
 
+	def bulk(self, body, refresh=None):
+		"""Bulk index/delete/update documents.
+
+		Args:
+			body: List of action/document pairs in NDJSON format
+			refresh: Whether to refresh after bulk operation
+		"""
+		path = "/_bulk"
+		params = []
+		if refresh is not None:
+			params.append(f"refresh={'true' if refresh else 'false'}")
+		if params:
+			path += "?" + "&".join(params)
+		# Bulk API uses NDJSON format, not JSON array
+		if isinstance(body, list):
+			ndjson = "\n".join(json.dumps(item) for item in body) + "\n"
+		else:
+			ndjson = body
+		url = f"{self.base_url}{path}"
+		data = ndjson.encode('utf-8') if isinstance(ndjson, str) else ndjson
+		headers = dict(self.headers)
+		headers["Content-Type"] = "application/x-ndjson"
+		req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+		try:
+			with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+				raw = resp.read().decode('utf-8')
+				if not raw:
+					return {}
+				return json.loads(raw)
+		except urllib.error.HTTPError as e:
+			if e.code == 401:
+				raise AuthenticationError(f"Authentication failed (HTTP 401)")
+			raise
+		except urllib.error.URLError as e:
+			raise ConnectionFailedError(f"Cannot connect: {e.reason}")
+
 
 class _IndicesClient:
 	"""Minimal indices operations."""
@@ -199,6 +235,7 @@ def get_opensearch_client():
 		user=cfg.opensearch_user,
 		password=cfg.opensearch_pass,
 		timeout=cfg.opensearch_timeout,
+		scheme=getattr(cfg, "opensearch_scheme", "http"),
 	)
 
 

@@ -23,8 +23,10 @@ from .opensearch.client import (
 from .opensearch.mappings import build_log_index_template, get_template_names
 from .opensearch.queries import normalize_log_entries, search_logs, tail_logs, get_last_errors
 from .retention import cleanup_old_logs, get_retention_stats
+from .jenkins.cli import jenkins_app
 
 app = typer.Typer()
+app.add_typer(jenkins_app, name="jenkins")
 
 OLD_TEMPLATE_NAMES = ("devlogs-template", "devlogs-logs-template")
 

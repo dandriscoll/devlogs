@@ -2,6 +2,7 @@
 
 import os
 import re
+from urllib.parse import urlparse
 
 # Lazy load dotenv - only when config is first accessed
 _dotenv_loaded = False
@@ -13,6 +14,9 @@ _DEVLOGS_CONFIG_KEYS = (
 	"DEVLOGS_OPENSEARCH_USER",
 	"DEVLOGS_OPENSEARCH_PASS",
 	"DEVLOGS_OPENSEARCH_TIMEOUT",
+	"DEVLOGS_OPENSEARCH_URL",
+	"DEVLOGS_OPENSEARCH_VERIFY_CERTS",
+	"DEVLOGS_OPENSEARCH_CA_CERT",
 	"DEVLOGS_INDEX",
 	"DEVLOGS_RETENTION_DEBUG",
 	"DEVLOGS_RETENTION_INFO",
@@ -84,15 +88,50 @@ def parse_duration(value: str, unit: str = 'hours') -> int:
 
 	return number
 
+def _parse_opensearch_url(url: str):
+	"""Parse DEVLOGS_OPENSEARCH_URL into components.
+
+	Supports format: https://user:pass@host:port
+	Returns: (scheme, host, port, user, pass) or None if no URL
+	"""
+	if not url:
+		return None
+	parsed = urlparse(url)
+	scheme = parsed.scheme or "http"
+	host = parsed.hostname or "localhost"
+	port = parsed.port or (443 if scheme == "https" else 9200)
+	user = parsed.username
+	password = parsed.password
+	return (scheme, host, port, user, password)
+
+
 class DevlogsConfig:
 	"""Loads configuration from environment variables and provides defaults."""
 	def __init__(self, enabled: bool = True):
 		self.enabled = enabled
-		self.opensearch_host = _getenv("DEVLOGS_OPENSEARCH_HOST", "localhost")
-		self.opensearch_port = int(_getenv("DEVLOGS_OPENSEARCH_PORT", "9200"))
-		self.opensearch_user = _getenv("DEVLOGS_OPENSEARCH_USER", "admin")
-		self.opensearch_pass = _getenv("DEVLOGS_OPENSEARCH_PASS", "admin")
+
+		# Check for URL shortcut first - it overrides individual settings
+		url_config = _parse_opensearch_url(os.getenv("DEVLOGS_OPENSEARCH_URL", ""))
+
+		if url_config:
+			scheme, host, port, url_user, url_pass = url_config
+			self.opensearch_scheme = scheme
+			self.opensearch_host = host
+			self.opensearch_port = port
+			# URL credentials override individual settings, but DEVLOGS_OPENSEARCH_PASS
+			# can still override if URL omits password
+			self.opensearch_user = url_user or _getenv("DEVLOGS_OPENSEARCH_USER", "admin")
+			self.opensearch_pass = url_pass or _getenv("DEVLOGS_OPENSEARCH_PASS", "admin")
+		else:
+			self.opensearch_scheme = "http"
+			self.opensearch_host = _getenv("DEVLOGS_OPENSEARCH_HOST", "localhost")
+			self.opensearch_port = int(_getenv("DEVLOGS_OPENSEARCH_PORT", "9200"))
+			self.opensearch_user = _getenv("DEVLOGS_OPENSEARCH_USER", "admin")
+			self.opensearch_pass = _getenv("DEVLOGS_OPENSEARCH_PASS", "admin")
+
 		self.opensearch_timeout = int(_getenv("DEVLOGS_OPENSEARCH_TIMEOUT", "30"))
+		self.opensearch_verify_certs = _getenv("DEVLOGS_OPENSEARCH_VERIFY_CERTS", "true").lower() in ("true", "1", "yes")
+		self.opensearch_ca_cert = _getenv("DEVLOGS_OPENSEARCH_CA_CERT", "")
 		self.index = _getenv("DEVLOGS_INDEX", "devlogs-0001")
 		# Retention configuration (time-based cleanup)
 		# Parse duration strings like "6h", "7d", or plain numbers
@@ -120,11 +159,13 @@ def load_config() -> DevlogsConfig:
 				load_dotenv(dotenv_path, override=True)
 			else:
 				# Search for .env file in current directory and parents
+				# Use usecwd=True to search from cwd, not from the source file location
 				dotenv_path = find_dotenv(usecwd=True)
 				if dotenv_path:
 					load_dotenv(dotenv_path)
-				else:
-					load_dotenv()
+				# If no .env found, don't call load_dotenv() with no args
+				# because it uses find_dotenv() without usecwd=True, which
+				# would search from the source file location instead of cwd
 		except ModuleNotFoundError:
 			pass
 		_dotenv_loaded = True
