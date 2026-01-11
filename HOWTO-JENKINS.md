@@ -4,9 +4,19 @@ Stream Jenkins build logs to OpenSearch in near real-time.
 
 ## Prerequisites
 
-**OpenSearch URL stored in Jenkins credentials** (Manage Jenkins > Credentials)
-- Add a "Secret text" credential with ID `devlogs-opensearch-url`
-- Value: `https://user:pass@host:9200`
+1. **Build the standalone binary** (one-time):
+   ```sh
+   ./build-standalone.sh
+   ```
+   Then host `dist/devlogs-linux` somewhere accessible (GitHub releases, S3, internal server).
+
+2. **OpenSearch URL stored in Jenkins credentials** (Manage Jenkins > Credentials)
+   - Add a "Secret text" credential with ID `devlogs-opensearch-url`
+   - Value: `https://user:pass@host:9200`
+
+3. **Devlogs binary URL in Jenkins credentials**
+   - Add a "Secret text" credential with ID `devlogs-binary-url`
+   - Value: URL to your hosted `devlogs-linux` binary
 
 ## Quick Start
 
@@ -15,18 +25,20 @@ pipeline {
     agent any
     environment {
         DEVLOGS_OPENSEARCH_URL = credentials('devlogs-opensearch-url')
+        DEVLOGS_BINARY_URL = credentials('devlogs-binary-url')
     }
     stages {
         stage('Build') {
             steps {
-                sh 'pip install --user devlogs && devlogs jenkins attach --background'
+                sh 'curl -sL $DEVLOGS_BINARY_URL -o /tmp/devlogs && chmod +x /tmp/devlogs'
+                sh '/tmp/devlogs jenkins attach --background'
                 sh 'make build'  // Your build steps
             }
         }
     }
     post {
         always {
-            sh 'devlogs jenkins stop || true'
+            sh '/tmp/devlogs jenkins stop || true'
         }
     }
 }
@@ -41,13 +53,15 @@ pipeline {
     agent any
     environment {
         DEVLOGS_OPENSEARCH_URL = credentials('devlogs-opensearch-url')
+        DEVLOGS_BINARY_URL = credentials('devlogs-binary-url')
     }
     stages {
         stage('Build') {
             steps {
                 script {
                     if (env.BRANCH_NAME != 'main' && env.BRANCH_NAME != 'production') {
-                        sh 'pip install --user devlogs && devlogs jenkins attach --background'
+                        sh 'curl -sL $DEVLOGS_BINARY_URL -o /tmp/devlogs && chmod +x /tmp/devlogs'
+                        sh '/tmp/devlogs jenkins attach --background'
                     }
                 }
                 sh 'make build'
@@ -56,7 +70,7 @@ pipeline {
     }
     post {
         always {
-            sh 'devlogs jenkins stop || true'
+            sh '/tmp/devlogs jenkins stop || true'
         }
     }
 }
@@ -88,6 +102,6 @@ withCredentials([usernamePassword(
     usernameVariable: 'JENKINS_USER',
     passwordVariable: 'JENKINS_TOKEN'
 )]) {
-    sh 'pip install --user devlogs && devlogs jenkins attach --background'
+    sh '/tmp/devlogs jenkins attach --background'
 }
 ```

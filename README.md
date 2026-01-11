@@ -111,29 +111,31 @@ This writes MCP config files in the standard locations:
 
 ## Jenkins Integration
 
-Stream Jenkins build logs to OpenSearch:
+Stream Jenkins build logs to OpenSearch using a standalone binary:
 
 ```groovy
 pipeline {
     agent any
     environment {
         DEVLOGS_OPENSEARCH_URL = credentials('devlogs-opensearch-url')
+        DEVLOGS_BINARY_URL = credentials('devlogs-binary-url')
     }
     stages {
         stage('Build') {
             steps {
-                sh 'pip install --user devlogs && devlogs jenkins attach --background'
+                sh 'curl -sL $DEVLOGS_BINARY_URL -o /tmp/devlogs && chmod +x /tmp/devlogs'
+                sh '/tmp/devlogs jenkins attach --background'
                 sh 'make build'
             }
         }
     }
     post {
-        always { sh 'devlogs jenkins stop || true' }
+        always { sh '/tmp/devlogs jenkins stop || true' }
     }
 }
 ```
 
-See [HOWTO-JENKINS.md](HOWTO-JENKINS.md) for full documentation.
+Build the binary with `./build-standalone.sh` and host it somewhere accessible. See [HOWTO-JENKINS.md](HOWTO-JENKINS.md) for setup details.
 
 ## Configuration
 
