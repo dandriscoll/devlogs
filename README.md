@@ -111,158 +111,26 @@ This writes MCP config files in the standard locations:
 
 ## Jenkins Integration
 
-Stream Jenkins build logs to OpenSearch in near real-time.
-
-### Setup
-
-Install devlogs on your Jenkins agents using one of these methods:
-
-**Option 1: Pre-install on agents**
-```sh
-# On each Jenkins agent, install globally or in a known virtualenv
-pip install devlogs
-
-# Or add to your agent provisioning (Ansible, Dockerfile, etc.)
-```
-
-**Option 2: Install in pipeline**
-```groovy
-stage('Setup') {
-    steps {
-        sh 'pip install --user devlogs'
-        // Ensure ~/.local/bin is in PATH
-    }
-}
-```
-
-**Option 3: Use a Docker agent**
-```groovy
-pipeline {
-    agent {
-        docker {
-            image 'python:3.12'
-            args '-v /var/run/docker.sock:/var/run/docker.sock'
-        }
-    }
-    stages {
-        stage('Setup') {
-            steps { sh 'pip install devlogs' }
-        }
-        // ...
-    }
-}
-```
-
-Set `DEVLOGS_OPENSEARCH_*` environment variables on your agents (via Jenkins credentials, environment configuration, or in the Jenkinsfile).
-
-### Quick Start (Jenkinsfile)
+Stream Jenkins build logs to OpenSearch. If devlogs is already in your repo and `.env` is configured:
 
 ```groovy
 pipeline {
     agent any
-    environment {
-        // Set to 'true' to enable devlogs streaming
-        DEVLOGS_ENABLED = "${env.BRANCH_NAME != 'main'}"
-    }
     stages {
         stage('Build') {
             steps {
-                script {
-                    if (env.DEVLOGS_ENABLED == 'true') {
-                        sh 'devlogs jenkins attach --background'
-                    }
-                }
+                sh 'devlogs jenkins attach --background'
                 sh 'make build'
             }
         }
     }
     post {
-        always {
-            sh 'devlogs jenkins stop || true'
-        }
+        always { sh 'devlogs jenkins stop || true' }
     }
 }
 ```
 
-### Helper Functions
-
-Add these to your Jenkinsfile or shared library:
-
-```groovy
-def setupDevlogs() {
-    // Only enable devlogs for non-production branches
-    if (env.BRANCH_NAME == 'main' || env.BRANCH_NAME == 'production') {
-        echo 'Skipping devlogs for production branch'
-        return
-    }
-    sh 'pip install devlogs || true'
-    sh 'devlogs jenkins attach --background'
-}
-
-def teardownDevlogs() {
-    sh 'devlogs jenkins stop || true'
-}
-```
-
-Usage:
-
-```groovy
-pipeline {
-    agent any
-    stages {
-        stage('Setup') {
-            steps { setupDevlogs() }
-        }
-        stage('Build') {
-            steps { sh 'make build' }
-        }
-    }
-    post {
-        always { teardownDevlogs() }
-    }
-}
-```
-
-### Commands
-
-- `devlogs jenkins attach [--background]` - Stream logs to OpenSearch
-- `devlogs jenkins stop` - Stop a background attach process
-- `devlogs jenkins snapshot` - One-time log capture (no streaming)
-- `devlogs jenkins status` - Show status of attach process
-
-### Environment Variables
-
-**Required (auto-set by Jenkins):**
-- `BUILD_URL` - Canonical URL of the build
-
-**Optional - Jenkins Authentication:**
-- `JENKINS_USER` - Username for Jenkins API
-- `JENKINS_TOKEN` - API token for Jenkins API
-
-**Optional - Build Metadata (auto-set by Jenkins):**
-- `JOB_NAME` - Name of the job
-- `BUILD_NUMBER` - Build number
-- `BUILD_TAG` - Used as run_id for log correlation
-- `BRANCH_NAME` - Branch name (for multibranch pipelines)
-- `GIT_COMMIT` - Git commit SHA
-
-### Security
-
-If your Jenkins requires authentication for console log access:
-
-1. Create an API token in Jenkins (User > Configure > API Token)
-2. Set `JENKINS_USER` and `JENKINS_TOKEN` in your build environment
-3. Store credentials securely using Jenkins Credentials plugin
-
-```groovy
-withCredentials([usernamePassword(
-    credentialsId: 'devlogs-jenkins',
-    usernameVariable: 'JENKINS_USER',
-    passwordVariable: 'JENKINS_TOKEN'
-)]) {
-    sh 'devlogs jenkins attach --background'
-}
-```
+See [HOWTO-JENKINS.md](HOWTO-JENKINS.md) for full documentation.
 
 ## Configuration
 
