@@ -10,7 +10,7 @@ import click
 import typer
 from pathlib import Path
 
-from .config import load_config, set_dotenv_path
+from .config import load_config, set_dotenv_path, set_url
 from .formatting import format_timestamp
 from .opensearch.client import (
 	get_opensearch_client,
@@ -35,10 +35,13 @@ OLD_TEMPLATE_NAMES = ("devlogs-template", "devlogs-logs-template")
 def main_callback(
 	ctx: typer.Context,
 	env: str = typer.Option(None, "--env", help="Path to .env file to load"),
+	url: str = typer.Option(None, "--url", help="OpenSearch URL (e.g., https://user:pass@host:port/index)"),
 ):
 	"""devlogs - Developer-focused logging with OpenSearch integration."""
 	if env:
 		set_dotenv_path(env)
+	if url:
+		set_url(url)
 
 
 def _format_features(features):

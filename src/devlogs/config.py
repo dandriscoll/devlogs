@@ -148,6 +148,11 @@ def set_dotenv_path(path: str):
 	_custom_dotenv_path = path
 	_dotenv_loaded = False  # Reset to force reload with new path
 
+
+def set_url(url: str):
+	"""Set the OpenSearch URL. Must be called before load_config()."""
+	os.environ["DEVLOGS_OPENSEARCH_URL"] = url
+
 def load_config() -> DevlogsConfig:
 	"""Return a config object with all settings loaded."""
 	global _dotenv_loaded, _custom_dotenv_path

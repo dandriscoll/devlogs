@@ -234,3 +234,60 @@ def test_config_index_fallback_to_default(monkeypatch):
 
     cfg = config.load_config()
     assert cfg.index == "devlogs-0001"
+
+
+def test_set_url(monkeypatch):
+    """Test that set_url() sets the URL environment variable."""
+    monkeypatch.setattr(config, "_dotenv_loaded", True)
+    # Clear any existing URL
+    monkeypatch.delenv("DEVLOGS_OPENSEARCH_URL", raising=False)
+    monkeypatch.delenv("DEVLOGS_INDEX", raising=False)
+
+    # Save original value to restore later
+    original_url = os.environ.get("DEVLOGS_OPENSEARCH_URL")
+
+    try:
+        # Set URL via set_url()
+        config.set_url("https://myuser:mypass@myhost:9200/myindex")
+
+        # Load config and verify it uses the URL values
+        cfg = config.load_config()
+        assert cfg.opensearch_scheme == "https"
+        assert cfg.opensearch_host == "myhost"
+        assert cfg.opensearch_port == 9200
+        assert cfg.opensearch_user == "myuser"
+        assert cfg.opensearch_pass == "mypass"
+        assert cfg.index == "myindex"
+    finally:
+        # Clean up the environment variable set by set_url()
+        if original_url is None:
+            os.environ.pop("DEVLOGS_OPENSEARCH_URL", None)
+        else:
+            os.environ["DEVLOGS_OPENSEARCH_URL"] = original_url
+
+
+def test_set_url_works_after_dotenv_loaded(monkeypatch):
+    """Test that set_url() works even after dotenv has been loaded."""
+    # Set up initial state as loaded (simulating dotenv already loaded)
+    monkeypatch.setattr(config, "_dotenv_loaded", True)
+    monkeypatch.delenv("DEVLOGS_OPENSEARCH_URL", raising=False)
+    monkeypatch.delenv("DEVLOGS_INDEX", raising=False)
+
+    # Save original value to restore later
+    original_url = os.environ.get("DEVLOGS_OPENSEARCH_URL")
+
+    try:
+        # Call set_url - this should still work because it sets the env var directly
+        config.set_url("https://late:user@latehost:9200/lateindex")
+
+        # Load config and verify it uses the URL values
+        cfg = config.load_config()
+        assert cfg.opensearch_host == "latehost"
+        assert cfg.opensearch_user == "late"
+        assert cfg.index == "lateindex"
+    finally:
+        # Clean up the environment variable set by set_url()
+        if original_url is None:
+            os.environ.pop("DEVLOGS_OPENSEARCH_URL", None)
+        else:
+            os.environ["DEVLOGS_OPENSEARCH_URL"] = original_url
