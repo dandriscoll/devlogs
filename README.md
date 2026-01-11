@@ -111,11 +111,14 @@ This writes MCP config files in the standard locations:
 
 ## Jenkins Integration
 
-Stream Jenkins build logs to OpenSearch. If devlogs is already in your repo and `.env` is configured:
+Stream Jenkins build logs to OpenSearch. If devlogs is a dev dependency in your repo:
 
 ```groovy
 pipeline {
     agent any
+    environment {
+        DEVLOGS_OPENSEARCH_URL = credentials('devlogs-opensearch-url')
+    }
     stages {
         stage('Build') {
             steps {

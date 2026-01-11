@@ -5,15 +5,18 @@ Stream Jenkins build logs to OpenSearch in near real-time.
 ## Prerequisites
 
 1. **Devlogs is a dev dependency in your repo** (in `requirements-dev.txt` or `pyproject.toml`)
-2. **`.env` file is configured** with `DEVLOGS_OPENSEARCH_*` variables
+2. **OpenSearch URL stored in Jenkins credentials** (Manage Jenkins > Credentials)
+   - Add a "Secret text" credential with ID `devlogs-opensearch-url`
+   - Value: `https://user:pass@host:9200`
 
 ## Quick Start
-
-If your repo already has devlogs installed and configured, just add this to your Jenkinsfile:
 
 ```groovy
 pipeline {
     agent any
+    environment {
+        DEVLOGS_OPENSEARCH_URL = credentials('devlogs-opensearch-url')
+    }
     stages {
         stage('Build') {
             steps {
@@ -37,6 +40,9 @@ To only stream logs for non-production branches:
 ```groovy
 pipeline {
     agent any
+    environment {
+        DEVLOGS_OPENSEARCH_URL = credentials('devlogs-opensearch-url')
+    }
     stages {
         stage('Build') {
             steps {
