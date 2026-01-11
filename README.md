@@ -16,22 +16,19 @@ If you don't have OpenSearch running and you want to stand one up:
 ## Step 2: Copy/paste these instructions into your coding agent
 
 > Please do the following in this project:
-> 1. Install `devlogs` (`pip install devlogs` or add it to `requirements.txt`/`pyproject.toml`).
+> 1. Install `devlogs` as a dev dependency (`pip install devlogs` or add it to `requirements-dev.txt`/`pyproject.toml` optional dependencies).
 > 2. Add `DEVLOGS_OPENSEARCH_HOST`, `DEVLOGS_OPENSEARCH_PORT`, `DEVLOGS_OPENSEARCH_USER`, `DEVLOGS_OPENSEARCH_PASS`, and `DEVLOGS_INDEX` to the project `.env` file (or equivalent config). Defaults are `localhost`, `9200`, `admin`, and `devlogs-<projectname>`.
-> 3. Add devlogs hooks immediately at the beginning of the application (main entrypoint/startup module) to attach the handler:
->    - `from devlogs.handler import OpenSearchHandler`
->    - `handler = OpenSearchHandler(level=logging.INFO)`
->    - `logging.getLogger().addHandler(handler)`
->    - `logging.getLogger().setLevel(logging.INFO)`
-> 4. Run `devlogs init` (inside the virtualenv if one is set up) and verify the index is healthy.
-> 5. Ask the user if they want MCP set up; if yes, state which agent you are (`copilot`, `claude`, or `codex`) and run `devlogs initmcp <agent>`.
-> 6. Note: devlogs is for development only. Wrap the handler setup in an environment check:
+> 3. Add devlogs hooks at the beginning of the application (main entrypoint/startup module), wrapped in an environment check so it only runs in development:
 >    ```python
 >    import os
 >    if os.getenv("ENVIRONMENT") != "production":
+>        from devlogs.handler import OpenSearchHandler
 >        handler = OpenSearchHandler(level=logging.INFO)
 >        logging.getLogger().addHandler(handler)
+>        logging.getLogger().setLevel(logging.INFO)
 >    ```
+> 4. Run `devlogs init` (inside the virtualenv if one is set up) and verify the index is healthy.
+> 5. Ask the user if they want MCP set up; if yes, state which agent you are (`copilot`, `claude`, or `codex`) and run `devlogs initmcp <agent>`.
 
 ## Step 3: Use devlogs
 
@@ -57,18 +54,18 @@ If you don't have OpenSearch running and you want to stand one up:
 	devlogs init
 	```
 
-4. **Use in Python code:**
+4. **Use in Python code (development only):**
 	```python
+	import os
 	import logging
-	from devlogs.handler import OpenSearchHandler
-	from devlogs.context import operation
 
-	handler = OpenSearchHandler(level=logging.DEBUG)
-	logging.getLogger().addHandler(handler)
+	# Only enable devlogs in development
+	if os.getenv("ENVIRONMENT") != "production":
+	    from devlogs.handler import OpenSearchHandler
+	    logging.getLogger().addHandler(OpenSearchHandler(level=logging.DEBUG))
+
 	logging.getLogger().setLevel(logging.DEBUG)
-
-	with operation(area="web"):
-		 logging.info("Hello from devlogs!", extra={"features": {"user": "alice", "plan": "pro"}})
+	logging.info("Hello from devlogs!")
 	```
 
 5. **Tail logs from CLI:**
@@ -121,11 +118,18 @@ Stream Jenkins build logs to OpenSearch in near real-time.
 ```groovy
 pipeline {
     agent any
+    environment {
+        // Set to 'true' to enable devlogs streaming
+        DEVLOGS_ENABLED = "${env.BRANCH_NAME != 'main'}"
+    }
     stages {
         stage('Build') {
             steps {
-                sh 'devlogs jenkins attach --background'
-                // Your build steps here
+                script {
+                    if (env.DEVLOGS_ENABLED == 'true') {
+                        sh 'devlogs jenkins attach --background'
+                    }
+                }
                 sh 'make build'
             }
         }
@@ -138,44 +142,41 @@ pipeline {
 }
 ```
 
-### Agent Snippet
+### Helper Functions
 
-Add this to your Jenkins agent setup to automatically configure devlogs:
+Add these to your Jenkinsfile or shared library:
 
 ```groovy
-// In your Jenkinsfile or shared library
 def setupDevlogs() {
-    // Install devlogs if not already installed
+    // Only enable devlogs for non-production branches
+    if (env.BRANCH_NAME == 'main' || env.BRANCH_NAME == 'production') {
+        echo 'Skipping devlogs for production branch'
+        return
+    }
     sh 'pip install devlogs || true'
-
-    // Start streaming logs in background
     sh 'devlogs jenkins attach --background'
 }
 
 def teardownDevlogs() {
-    // Stop streaming and flush remaining logs
     sh 'devlogs jenkins stop || true'
 }
+```
 
-// Usage in pipeline:
+Usage:
+
+```groovy
 pipeline {
     agent any
     stages {
         stage('Setup') {
-            steps {
-                setupDevlogs()
-            }
+            steps { setupDevlogs() }
         }
         stage('Build') {
-            steps {
-                sh 'make build'
-            }
+            steps { sh 'make build' }
         }
     }
     post {
-        always {
-            teardownDevlogs()
-        }
+        always { teardownDevlogs() }
     }
 }
 ```
@@ -234,20 +235,7 @@ See [.env.example](.env.example) for a complete configuration template.
 
 ## Production Deployment
 
-Devlogs is a development tool and should not run in production. Use your environment to conditionally include it:
-
-### Option 1: Conditional handler registration
-
-```python
-import os
-import logging
-
-if os.getenv("ENVIRONMENT") != "production":
-    from devlogs.handler import OpenSearchHandler
-    logging.getLogger().addHandler(OpenSearchHandler(level=logging.INFO))
-```
-
-### Option 2: Optional dependency
+Devlogs is a development tool. The examples above show how to conditionally enable it using an environment check. You can also make it an optional dependency:
 
 ```toml
 # pyproject.toml
@@ -255,7 +243,7 @@ if os.getenv("ENVIRONMENT") != "production":
 dev = ["devlogs>=1.1.0"]
 ```
 
-Install with `pip install -e ".[dev]"` in development, `pip install -e .` in production.
+Install with `pip install ".[dev]"` in development, `pip install .` in production.
 
 ## Project Structure
 

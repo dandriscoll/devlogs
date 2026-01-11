@@ -166,3 +166,71 @@ def test_retention_duration_strings(monkeypatch):
     assert cfg.retention_debug_hours == 12
     assert cfg.retention_info_days == 14
     assert cfg.retention_warning_days == 60
+
+
+# URL format tests
+
+def test_parse_opensearch_url_with_index():
+    """Test URL parsing extracts index from path."""
+    result = config._parse_opensearch_url("https://admin:pass@host:9200/myindex")
+    assert result == ("https", "host", 9200, "admin", "pass", "myindex")
+
+
+def test_parse_opensearch_url_without_index():
+    """Test URL parsing returns None for index when path is empty."""
+    result = config._parse_opensearch_url("https://admin:pass@host:9200")
+    assert result == ("https", "host", 9200, "admin", "pass", None)
+
+
+def test_parse_opensearch_url_with_trailing_slash():
+    """Test URL parsing handles trailing slash correctly."""
+    result = config._parse_opensearch_url("https://admin:pass@host:9200/")
+    assert result == ("https", "host", 9200, "admin", "pass", None)
+
+
+def test_parse_opensearch_url_no_auth():
+    """Test URL parsing without credentials."""
+    result = config._parse_opensearch_url("http://localhost:9200/devlogs-prod")
+    assert result == ("http", "localhost", 9200, None, None, "devlogs-prod")
+
+
+def test_parse_opensearch_url_https_default_port():
+    """Test URL parsing uses port 443 for https when not specified."""
+    result = config._parse_opensearch_url("https://host/index")
+    assert result == ("https", "host", 443, None, None, "index")
+
+
+def test_parse_opensearch_url_empty():
+    """Test URL parsing returns None for empty input."""
+    assert config._parse_opensearch_url("") is None
+    assert config._parse_opensearch_url(None) is None
+
+
+def test_config_index_from_url(monkeypatch):
+    """Test that index in URL takes priority over DEVLOGS_INDEX."""
+    monkeypatch.setattr(config, "_dotenv_loaded", True)
+    monkeypatch.setenv("DEVLOGS_OPENSEARCH_URL", "https://admin:pass@host:9200/url-index")
+    monkeypatch.setenv("DEVLOGS_INDEX", "env-index")
+
+    cfg = config.load_config()
+    assert cfg.index == "url-index"
+
+
+def test_config_index_fallback_to_env(monkeypatch):
+    """Test that DEVLOGS_INDEX is used when URL has no index."""
+    monkeypatch.setattr(config, "_dotenv_loaded", True)
+    monkeypatch.setenv("DEVLOGS_OPENSEARCH_URL", "https://admin:pass@host:9200")
+    monkeypatch.setenv("DEVLOGS_INDEX", "env-index")
+
+    cfg = config.load_config()
+    assert cfg.index == "env-index"
+
+
+def test_config_index_fallback_to_default(monkeypatch):
+    """Test that default index is used when neither URL nor env var specify one."""
+    monkeypatch.setattr(config, "_dotenv_loaded", True)
+    monkeypatch.setenv("DEVLOGS_OPENSEARCH_URL", "https://admin:pass@host:9200")
+    monkeypatch.delenv("DEVLOGS_INDEX", raising=False)
+
+    cfg = config.load_config()
+    assert cfg.index == "devlogs-0001"
