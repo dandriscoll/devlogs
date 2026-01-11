@@ -113,6 +113,48 @@ This writes MCP config files in the standard locations:
 
 Stream Jenkins build logs to OpenSearch in near real-time.
 
+### Setup
+
+Install devlogs on your Jenkins agents using one of these methods:
+
+**Option 1: Pre-install on agents**
+```sh
+# On each Jenkins agent, install globally or in a known virtualenv
+pip install devlogs
+
+# Or add to your agent provisioning (Ansible, Dockerfile, etc.)
+```
+
+**Option 2: Install in pipeline**
+```groovy
+stage('Setup') {
+    steps {
+        sh 'pip install --user devlogs'
+        // Ensure ~/.local/bin is in PATH
+    }
+}
+```
+
+**Option 3: Use a Docker agent**
+```groovy
+pipeline {
+    agent {
+        docker {
+            image 'python:3.12'
+            args '-v /var/run/docker.sock:/var/run/docker.sock'
+        }
+    }
+    stages {
+        stage('Setup') {
+            steps { sh 'pip install devlogs' }
+        }
+        // ...
+    }
+}
+```
+
+Set `DEVLOGS_OPENSEARCH_*` environment variables on your agents (via Jenkins credentials, environment configuration, or in the Jenkinsfile).
+
 ### Quick Start (Jenkinsfile)
 
 ```groovy
