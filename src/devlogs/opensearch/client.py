@@ -1,11 +1,12 @@
 # OpenSearch client factory and retry logic - using stdlib urllib for fast imports
 
 import json
+import socket
 import urllib.request
 import urllib.error
 from base64 import b64encode
 
-from ..config import load_config
+from ..config import load_config, URLParseError
 
 
 class OpenSearchError(Exception):
@@ -14,7 +15,22 @@ class OpenSearchError(Exception):
 
 
 class ConnectionFailedError(OpenSearchError):
-	"""Raised when OpenSearch is not reachable."""
+	"""Raised when OpenSearch is not reachable (generic connection failure)."""
+	pass
+
+
+class DNSResolutionError(ConnectionFailedError):
+	"""Raised when the hostname cannot be resolved."""
+	pass
+
+
+class ConnectionRefusedError(ConnectionFailedError):
+	"""Raised when the connection is actively refused."""
+	pass
+
+
+class ConnectionTimeoutError(ConnectionFailedError):
+	"""Raised when the connection times out."""
 	pass
 
 
@@ -36,6 +52,32 @@ class QueryError(OpenSearchError):
 class DevlogsDisabledError(OpenSearchError):
 	"""Raised when devlogs is disabled due to missing configuration."""
 	pass
+
+
+def _raise_connection_error(url_error: urllib.error.URLError, url: str):
+	"""Raise a specific connection error based on the URLError reason."""
+	reason = url_error.reason
+
+	# DNS resolution failure (socket.gaierror)
+	if isinstance(reason, socket.gaierror):
+		# Extract hostname from URL for better error message
+		try:
+			from urllib.parse import urlparse
+			host = urlparse(url).hostname or url
+		except Exception:
+			host = url
+		raise DNSResolutionError(f"Cannot resolve hostname '{host}': {reason.strerror}")
+
+	# Connection refused (check errno for ECONNREFUSED on Linux/Windows)
+	if isinstance(reason, OSError) and reason.errno in (111, 10061):
+		raise ConnectionRefusedError(f"Connection refused: {reason}")
+
+	# Timeout
+	if isinstance(reason, socket.timeout) or isinstance(reason, TimeoutError):
+		raise ConnectionTimeoutError(f"Connection timed out: {reason}")
+
+	# Generic connection failure
+	raise ConnectionFailedError(f"Cannot connect: {reason}")
 
 
 class LightweightOpenSearchClient:
@@ -82,7 +124,7 @@ class LightweightOpenSearchClient:
 					raise QueryError(f"Query error: Bad Request")
 			raise
 		except urllib.error.URLError as e:
-			raise ConnectionFailedError(f"Cannot connect: {e.reason}")
+			_raise_connection_error(e, url)
 
 	def info(self):
 		"""Get cluster info (used for connection check)."""
@@ -169,7 +211,7 @@ class LightweightOpenSearchClient:
 				raise AuthenticationError(f"Authentication failed (HTTP 401)")
 			raise
 		except urllib.error.URLError as e:
-			raise ConnectionFailedError(f"Cannot connect: {e.reason}")
+			_raise_connection_error(e, url)
 
 
 class _IndicesClient:
@@ -240,14 +282,29 @@ def get_opensearch_client():
 
 
 def check_connection(client):
-	"""Check if OpenSearch is reachable. Raises ConnectionFailedError if not."""
+	"""Check if OpenSearch is reachable. Raises specific error for each failure type."""
 	cfg = load_config()
 	try:
 		client.info()
-	except ConnectionFailedError:
+	except DNSResolutionError:
+		raise DNSResolutionError(
+			f"Cannot resolve hostname '{cfg.opensearch_host}'\n"
+			f"Check that DEVLOGS_OPENSEARCH_HOST is spelled correctly."
+		)
+	except ConnectionRefusedError:
+		raise ConnectionRefusedError(
+			f"Connection refused by {cfg.opensearch_host}:{cfg.opensearch_port}\n"
+			f"Make sure OpenSearch is running on this host and port."
+		)
+	except ConnectionTimeoutError:
+		raise ConnectionTimeoutError(
+			f"Connection timed out to {cfg.opensearch_host}:{cfg.opensearch_port}\n"
+			f"Check network connectivity and firewall settings."
+		)
+	except ConnectionFailedError as e:
 		raise ConnectionFailedError(
 			f"Cannot connect to OpenSearch at {cfg.opensearch_host}:{cfg.opensearch_port}\n"
-			f"Make sure OpenSearch is running and accessible."
+			f"Error: {e}"
 		)
 	except AuthenticationError:
 		raise AuthenticationError(

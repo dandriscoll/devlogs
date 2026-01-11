@@ -10,7 +10,7 @@ import click
 import typer
 from pathlib import Path
 
-from .config import load_config, set_dotenv_path, set_url
+from .config import load_config, set_dotenv_path, set_url, URLParseError
 from .formatting import format_timestamp
 from .opensearch.client import (
 	get_opensearch_client,
@@ -69,6 +69,9 @@ def require_opensearch(check_idx=True):
 		check_connection(client)
 		if check_idx:
 			check_index(client, cfg.index)
+	except URLParseError as e:
+		typer.echo(typer.style(f"Configuration error: {e}", fg=typer.colors.RED), err=True)
+		raise typer.Exit(1)
 	except OpenSearchError as e:
 		typer.echo(typer.style(f"Error: {e}", fg=typer.colors.RED), err=True)
 		raise typer.Exit(1)

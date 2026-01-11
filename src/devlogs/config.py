@@ -88,17 +88,33 @@ def parse_duration(value: str, unit: str = 'hours') -> int:
 
 	return number
 
+
+class URLParseError(ValueError):
+	"""Raised when the OpenSearch URL is malformed."""
+	pass
+
+
 def _parse_opensearch_url(url: str):
 	"""Parse DEVLOGS_OPENSEARCH_URL into components.
 
 	Supports format: https://user:pass@host:port/index
 	Returns: (scheme, host, port, user, pass, index) or None if no URL
+	Raises: URLParseError if URL is malformed
 	"""
 	if not url:
 		return None
 	parsed = urlparse(url)
+
+	# Validate scheme
+	if parsed.scheme and parsed.scheme not in ("http", "https"):
+		raise URLParseError(f"Invalid URL scheme '{parsed.scheme}': must be 'http' or 'https'")
+
+	# Validate hostname exists
+	if not parsed.hostname:
+		raise URLParseError(f"Invalid URL '{url}': missing hostname")
+
 	scheme = parsed.scheme or "http"
-	host = parsed.hostname or "localhost"
+	host = parsed.hostname
 	port = parsed.port or (443 if scheme == "https" else 9200)
 	user = parsed.username
 	password = parsed.password
