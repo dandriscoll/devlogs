@@ -177,6 +177,50 @@ public class Startup
 | CircuitBreakerDurationSeconds | 60 | Circuit breaker open duration |
 | ErrorPrintIntervalSeconds | 10 | Error message throttling interval |
 
+## Production Deployment
+
+Devlogs is a development tool and should not run in production. Use standard .NET patterns to exclude it:
+
+### Option 1: Conditional compilation
+
+```csharp
+#if DEBUG
+builder.Logging.AddDevlogs(builder.Configuration.GetSection("Devlogs"));
+app.UseDevlogs();
+#endif
+```
+
+### Option 2: Environment-based registration
+
+```csharp
+if (builder.Environment.IsDevelopment())
+{
+    builder.Logging.AddDevlogs(builder.Configuration.GetSection("Devlogs"));
+}
+
+// Later...
+if (app.Environment.IsDevelopment())
+{
+    app.UseDevlogs();
+}
+```
+
+### Option 3: Configuration-based
+
+Only include Devlogs configuration in `appsettings.Development.json`:
+
+```json
+{
+  "Devlogs": {
+    "OpenSearchHost": "localhost",
+    "OpenSearchPort": 9200,
+    "OpenSearchUser": "admin",
+    "OpenSearchPassword": "admin",
+    "IndexName": "devlogs-myapp"
+  }
+}
+```
+
 ## OpenSearch Document Schema
 
 Each log entry is stored as a document in OpenSearch with the following structure:

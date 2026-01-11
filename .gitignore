@@ -208,3 +208,4 @@ __marimo__/
 
 *.env
 .mcp.json
+node_modules/

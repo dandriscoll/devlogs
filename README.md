@@ -25,6 +25,13 @@ If you don't have OpenSearch running and you want to stand one up:
 >    - `logging.getLogger().setLevel(logging.INFO)`
 > 4. Run `devlogs init` (inside the virtualenv if one is set up) and verify the index is healthy.
 > 5. Ask the user if they want MCP set up; if yes, state which agent you are (`copilot`, `claude`, or `codex`) and run `devlogs initmcp <agent>`.
+> 6. Note: devlogs is for development only. Wrap the handler setup in an environment check:
+>    ```python
+>    import os
+>    if os.getenv("ENVIRONMENT") != "production":
+>        handler = OpenSearchHandler(level=logging.INFO)
+>        logging.getLogger().addHandler(handler)
+>    ```
 
 ## Step 3: Use devlogs
 
@@ -224,6 +231,31 @@ Environment variables:
 - Retention (supports duration strings like `24h`, `7d`): `DEVLOGS_RETENTION_DEBUG`, `DEVLOGS_RETENTION_INFO`, `DEVLOGS_RETENTION_WARNING`
 
 See [.env.example](.env.example) for a complete configuration template.
+
+## Production Deployment
+
+Devlogs is a development tool and should not run in production. Use your environment to conditionally include it:
+
+### Option 1: Conditional handler registration
+
+```python
+import os
+import logging
+
+if os.getenv("ENVIRONMENT") != "production":
+    from devlogs.handler import OpenSearchHandler
+    logging.getLogger().addHandler(OpenSearchHandler(level=logging.INFO))
+```
+
+### Option 2: Optional dependency
+
+```toml
+# pyproject.toml
+[project.optional-dependencies]
+dev = ["devlogs>=1.1.0"]
+```
+
+Install with `pip install -e ".[dev]"` in development, `pip install -e .` in production.
 
 ## Project Structure
 

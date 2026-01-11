@@ -91,8 +91,8 @@ def parse_duration(value: str, unit: str = 'hours') -> int:
 def _parse_opensearch_url(url: str):
 	"""Parse DEVLOGS_OPENSEARCH_URL into components.
 
-	Supports format: https://user:pass@host:port
-	Returns: (scheme, host, port, user, pass) or None if no URL
+	Supports format: https://user:pass@host:port/index
+	Returns: (scheme, host, port, user, pass, index) or None if no URL
 	"""
 	if not url:
 		return None
@@ -102,7 +102,8 @@ def _parse_opensearch_url(url: str):
 	port = parsed.port or (443 if scheme == "https" else 9200)
 	user = parsed.username
 	password = parsed.password
-	return (scheme, host, port, user, password)
+	index = parsed.path.strip("/") or None
+	return (scheme, host, port, user, password, index)
 
 
 class DevlogsConfig:
@@ -114,7 +115,7 @@ class DevlogsConfig:
 		url_config = _parse_opensearch_url(os.getenv("DEVLOGS_OPENSEARCH_URL", ""))
 
 		if url_config:
-			scheme, host, port, url_user, url_pass = url_config
+			scheme, host, port, url_user, url_pass, url_index = url_config
 			self.opensearch_scheme = scheme
 			self.opensearch_host = host
 			self.opensearch_port = port
@@ -122,17 +123,19 @@ class DevlogsConfig:
 			# can still override if URL omits password
 			self.opensearch_user = url_user or _getenv("DEVLOGS_OPENSEARCH_USER", "admin")
 			self.opensearch_pass = url_pass or _getenv("DEVLOGS_OPENSEARCH_PASS", "admin")
+			# URL index takes priority, then DEVLOGS_INDEX env var, then default
+			self.index = url_index or _getenv("DEVLOGS_INDEX", "devlogs-0001")
 		else:
 			self.opensearch_scheme = "http"
 			self.opensearch_host = _getenv("DEVLOGS_OPENSEARCH_HOST", "localhost")
 			self.opensearch_port = int(_getenv("DEVLOGS_OPENSEARCH_PORT", "9200"))
 			self.opensearch_user = _getenv("DEVLOGS_OPENSEARCH_USER", "admin")
 			self.opensearch_pass = _getenv("DEVLOGS_OPENSEARCH_PASS", "admin")
+			self.index = _getenv("DEVLOGS_INDEX", "devlogs-0001")
 
 		self.opensearch_timeout = int(_getenv("DEVLOGS_OPENSEARCH_TIMEOUT", "30"))
 		self.opensearch_verify_certs = _getenv("DEVLOGS_OPENSEARCH_VERIFY_CERTS", "true").lower() in ("true", "1", "yes")
 		self.opensearch_ca_cert = _getenv("DEVLOGS_OPENSEARCH_CA_CERT", "")
-		self.index = _getenv("DEVLOGS_INDEX", "devlogs-0001")
 		# Retention configuration (time-based cleanup)
 		# Parse duration strings like "6h", "7d", or plain numbers
 		self.retention_debug_hours = parse_duration(_getenv("DEVLOGS_RETENTION_DEBUG", "6h"), unit='hours')
