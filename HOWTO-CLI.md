@@ -522,6 +522,34 @@ devlogs jenkins snapshot --build-url https://jenkins.example.com/job/my-job/123/
 | `JOB_NAME`, `BUILD_NUMBER`, `BUILD_TAG` | Build metadata (auto-set) |
 | `BRANCH_NAME`, `GIT_COMMIT` | Git metadata (auto-set) |
 
+#### Obtaining a Jenkins API Token
+
+If your Jenkins instance requires authentication, you'll need to create an API token:
+
+1. Log into the Jenkins web UI
+2. Click your username in the top right corner
+3. Click **Configure** (or go to `/user/<username>/configure`)
+4. Under **API Token**, click **Add new Token**
+5. Give it a name (e.g., "devlogs") and click **Generate**
+6. Copy the token immediately (it won't be shown again)
+
+Then set the environment variables:
+
+```bash
+export JENKINS_USER=your-username
+export JENKINS_TOKEN=your-api-token
+```
+
+Or in Docker Compose:
+
+```yaml
+services:
+  your-service:
+    environment:
+      - JENKINS_USER=your-username
+      - JENKINS_TOKEN=your-api-token
+```
+
 ---
 
 ## Standalone Binary
