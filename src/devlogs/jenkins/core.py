@@ -546,6 +546,9 @@ def _stream_logs(build_info: JenkinsBuildInfo, resume: bool, verbose: bool):
 	streamer = JenkinsLogStreamer(build_info)
 	indexer = JenkinsLogIndexer(build_info)
 
+	if verbose:
+		print(f"Jenkins build URL: {build_info.build_url}")
+
 	# Emit attached event
 	indexer.index_event(
 		"attached",
