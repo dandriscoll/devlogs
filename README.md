@@ -115,6 +115,29 @@ This writes MCP config files in the standard locations:
 
 ## Jenkins Integration
 
+### Option 1: Jenkins Plugin (Recommended)
+
+Install the Devlogs Jenkins plugin for native integration:
+
+```groovy
+pipeline {
+    agent any
+    stages {
+        stage('Build') {
+            steps {
+                devlogs(url: credentials('devlogs-url')) {
+                    sh 'make build'
+                }
+            }
+        }
+    }
+}
+```
+
+See [jenkins-plugin/README.md](jenkins-plugin/README.md) for installation and usage details.
+
+### Option 2: Standalone Binary
+
 Stream Jenkins build logs to OpenSearch using a standalone binary:
 
 ```groovy

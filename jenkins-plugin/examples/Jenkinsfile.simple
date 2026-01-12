@@ -1,0 +1,16 @@
+// Simple example - basic usage
+
+pipeline {
+    agent any
+    
+    stages {
+        stage('Build') {
+            steps {
+                devlogs(url: 'https://admin:password@opensearch.example.com:9200/devlogs-myproject') {
+                    sh 'echo "Hello from devlogs!"'
+                    sh 'make build'
+                }
+            }
+        }
+    }
+}

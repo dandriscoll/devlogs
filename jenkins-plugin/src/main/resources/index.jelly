@@ -1,0 +1,4 @@
+<?jelly escape-by-default='true'?>
+<div>
+  Streams Jenkins build logs to a devlogs OpenSearch instance for enhanced log analysis and debugging during development.
+</div>
