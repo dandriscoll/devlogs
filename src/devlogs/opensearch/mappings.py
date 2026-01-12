@@ -6,7 +6,7 @@ def build_log_index_template(index_name: str) -> dict:
 		"index_patterns": [index_name],
 		"priority": 100,
 		"template": {
-			"settings": {"number_of_shards": 1},
+			"settings": {"number_of_shards": 1, "number_of_replicas": 0},
 			"mappings": {
 				"properties": {
 					# Core log entry fields (flat schema)
