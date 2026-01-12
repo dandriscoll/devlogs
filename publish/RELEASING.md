@@ -36,55 +36,57 @@ gh auth login
 
 ## Quick Release
 
-The easiest way to release is using the master script:
+The easiest way to release is using the master script (from project root):
 
 ```bash
 # Release current version to all platforms
-./release.sh
+./publish/release.sh
 
 # Bump patch version (1.0.0 -> 1.0.1) and release
-./release.sh --bump-patch
+./publish/release.sh --bump-patch
 
 # Bump minor version (1.0.0 -> 1.1.0) and release
-./release.sh --bump-minor
+./publish/release.sh --bump-minor
 
 # Set specific version and release
-./release.sh 1.2.0
+./publish/release.sh 1.2.0
 
 # Preview without making changes
-./release.sh --dry-run
+./publish/release.sh --dry-run
 ```
 
 ## Individual Scripts
 
+All scripts can be run from the project root.
+
 ### PyPI Only
 
 ```bash
-./publish-pypi.sh
+./publish/publish-pypi.sh
 
 # Test with TestPyPI first
-TEST_PYPI=true ./publish-pypi.sh
+TEST_PYPI=true ./publish/publish-pypi.sh
 
 # Dry run
-DRY_RUN=true ./publish-pypi.sh
+DRY_RUN=true ./publish/publish-pypi.sh
 ```
 
 ### npm Only
 
 ```bash
-./publish-npm.sh
+./publish/publish-npm.sh
 
 # Dry run
-DRY_RUN=true ./publish-npm.sh
+DRY_RUN=true ./publish/publish-npm.sh
 ```
 
 ### GitHub Release Only
 
 ```bash
-./publish-github.sh
+./publish/publish-github.sh
 
 # Dry run
-DRY_RUN=true ./publish-github.sh
+DRY_RUN=true ./publish/publish-github.sh
 ```
 
 ## Version Management
