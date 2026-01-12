@@ -30,18 +30,28 @@ app.add_typer(jenkins_app, name="jenkins")
 
 OLD_TEMPLATE_NAMES = ("devlogs-template", "devlogs-logs-template")
 
-# Global callback to handle --env flag before any command runs
-@app.callback(invoke_without_command=True)
-def main_callback(
-	ctx: typer.Context,
-	env: str = typer.Option(None, "--env", help="Path to .env file to load"),
-	url: str = typer.Option(None, "--url", help="OpenSearch URL (e.g., https://user:pass@host:port/index)"),
-):
-	"""devlogs - Developer-focused logging with OpenSearch integration."""
+# Common options for commands - these can be placed anywhere in the command line
+ENV_OPTION = typer.Option(None, "--env", help="Path to .env file to load")
+URL_OPTION = typer.Option(None, "--url", help="OpenSearch URL (e.g., https://user:pass@host:port/index)")
+
+
+def _apply_common_options(env: str = None, url: str = None):
+	"""Apply common options (--env, --url) to configure the client."""
 	if env:
 		set_dotenv_path(env)
 	if url:
 		set_url(url)
+
+
+# Global callback to handle --env flag before any command runs (for backwards compatibility)
+@app.callback(invoke_without_command=True)
+def main_callback(
+	ctx: typer.Context,
+	env: str = ENV_OPTION,
+	url: str = URL_OPTION,
+):
+	"""devlogs - Developer-focused logging with OpenSearch integration."""
+	_apply_common_options(env, url)
 
 
 def _format_features(features):
@@ -175,8 +185,12 @@ def _write_codex_config(path: Path, python_path: str) -> str:
 
 
 @app.command()
-def init():
+def init(
+	env: str = ENV_OPTION,
+	url: str = URL_OPTION,
+):
 	"""Initialize OpenSearch indices and templates (idempotent)."""
+	_apply_common_options(env, url)
 	client, cfg = require_opensearch(check_idx=False)
 	# Create or update index templates
 	template_body = build_log_index_template(cfg.index)
@@ -262,8 +276,12 @@ def initmcp(
 			typer.echo(f"Skipped {label}: {path} already configured")
 
 @app.command()
-def diagnose():
+def diagnose(
+	env: str = ENV_OPTION,
+	url: str = URL_OPTION,
+):
 	"""Diagnose common devlogs setup issues."""
+	_apply_common_options(env, url)
 	import os
 	import tomllib
 	from . import config as config_module
@@ -459,11 +477,14 @@ def tail(
 	follow: bool = typer.Option(False, "--follow", "-f"),
 	verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose output"),
 	utc: bool = typer.Option(False, "--utc", help="Display timestamps in UTC instead of local time"),
+	env: str = ENV_OPTION,
+	url: str = URL_OPTION,
 ):
 	"""Tail logs for a given area/operation."""
 	import urllib.error
 	import traceback
 
+	_apply_common_options(env, url)
 	client, cfg = require_opensearch()
 
 	def _verbose_echo(message, color=typer.colors.BLUE):
@@ -625,10 +646,13 @@ def search(
 	limit: int = typer.Option(50, "--limit"),
 	follow: bool = typer.Option(False, "--follow", "-f"),
 	utc: bool = typer.Option(False, "--utc", help="Display timestamps in UTC instead of local time"),
+	env: str = ENV_OPTION,
+	url: str = URL_OPTION,
 ):
 	"""Search logs for a query."""
 	import urllib.error
 
+	_apply_common_options(env, url)
 	client, cfg = require_opensearch()
 	search_after = None
 	consecutive_errors = 0
@@ -725,10 +749,13 @@ def last_error(
 	until: str = typer.Option(None, "--until"),
 	limit: int = typer.Option(1, "--limit"),
 	utc: bool = typer.Option(False, "--utc", help="Display timestamps in UTC instead of local time"),
+	env: str = ENV_OPTION,
+	url: str = URL_OPTION,
 ):
 	"""Show the most recent error/critical log entries."""
 	import urllib.error
 
+	_apply_common_options(env, url)
 	client, cfg = require_opensearch()
 
 	try:
@@ -789,6 +816,8 @@ def last_error(
 def cleanup(
 	dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be deleted without actually deleting"),
 	stats: bool = typer.Option(False, "--stats", help="Show retention statistics only"),
+	env: str = ENV_OPTION,
+	url: str = URL_OPTION,
 ):
 	"""Clean up old logs based on retention policy.
 
@@ -797,6 +826,7 @@ def cleanup(
 	- INFO logs: Deleted after DEVLOGS_RETENTION_INFO_DAYS (default: 7 days)
 	- WARNING/ERROR/CRITICAL: Deleted after DEVLOGS_RETENTION_WARNING_DAYS (default: 30 days)
 	"""
+	_apply_common_options(env, url)
 	client, cfg = require_opensearch()
 
 	if stats:
@@ -833,8 +863,11 @@ def cleanup(
 @app.command()
 def clean(
 	force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
+	env: str = ENV_OPTION,
+	url: str = URL_OPTION,
 ):
 	"""Delete the devlogs index and templates (destructive)."""
+	_apply_common_options(env, url)
 	client, cfg = require_opensearch(check_idx=False)
 	template_name, legacy_template_name = get_template_names(cfg.index)
 	warning_text = (
@@ -907,6 +940,8 @@ def clean(
 def delete(
 	index: str = typer.Argument(None, help="Index name to delete (defaults to configured index)"),
 	force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
+	env: str = ENV_OPTION,
+	url: str = URL_OPTION,
 ):
 	"""Delete a devlogs index.
 
@@ -919,6 +954,7 @@ def delete(
 	  devlogs delete --force            # Delete without confirmation
 	  devlogs delete my-index --force   # Delete specific index without confirmation
 	"""
+	_apply_common_options(env, url)
 	client, cfg = require_opensearch(check_idx=False)
 
 	# Use configured index if none provided
@@ -951,8 +987,11 @@ def delete(
 def demo(
 	duration: int = typer.Option(10, "--duration", "-t", help="Duration in seconds"),
 	count: int = typer.Option(50, "--count", "-n", help="Number of log entries to generate"),
+	env: str = ENV_OPTION,
+	url: str = URL_OPTION,
 ):
 	"""Generate demo logs to illustrate devlogs capabilities."""
+	_apply_common_options(env, url)
 	from .demo import run_demo
 	run_demo(duration, count, require_opensearch)
 
