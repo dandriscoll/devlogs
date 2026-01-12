@@ -155,19 +155,19 @@ export DRY_RUN
 # Publish to PyPI
 if [[ "$PYPI" == "true" ]]; then
     echo -e "\n${BLUE}========================================${NC}"
-    ./publish-pypi.sh
+    ./publish/publish-pypi.sh
 fi
 
 # Publish to npm
 if [[ "$NPM" == "true" ]]; then
     echo -e "\n${BLUE}========================================${NC}"
-    ./publish-npm.sh
+    ./publish/publish-npm.sh
 fi
 
 # Create GitHub release
 if [[ "$GITHUB" == "true" ]]; then
     echo -e "\n${BLUE}========================================${NC}"
-    ./publish-github.sh
+    ./publish/publish-github.sh
 fi
 
 # Summary
