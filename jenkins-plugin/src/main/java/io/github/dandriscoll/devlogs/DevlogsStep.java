@@ -211,7 +211,8 @@ public class DevlogsStep extends Step implements Serializable {
     private static class DevlogsOutputStream extends OutputStream implements Serializable {
         private static final long serialVersionUID = 1L;
         private static final int BUFFER_SIZE = 8192;
-        private static final int BATCH_SIZE = 50;
+        private static final int BATCH_SIZE = 10;
+        private static final long BATCH_TIMEOUT_MS = 10000; // 10 seconds
         
         private final OutputStream delegate;
         private final String baseUrl;
@@ -227,6 +228,8 @@ public class DevlogsStep extends Step implements Serializable {
         private final StringBuilder lineBuffer = new StringBuilder();
         private final StringBuilder batchBuffer = new StringBuilder();
         private int batchCount = 0;
+        private long lastBatchTime = System.currentTimeMillis();
+        private String currentLineTimestamp = null;  // Timestamp for current line being built
         
         private transient OkHttpClient client;
         private transient Gson gson;
@@ -299,8 +302,10 @@ public class DevlogsStep extends Step implements Serializable {
                 processBuffer();
             }
             if (lineBuffer.length() > 0) {
-                sendLine(lineBuffer.toString());
+                String timestamp = (currentLineTimestamp != null) ? currentLineTimestamp : Instant.now().toString();
+                sendLine(lineBuffer.toString(), timestamp);
                 lineBuffer.setLength(0);
+                currentLineTimestamp = null;
             }
             flushBatch();
         }
@@ -320,24 +325,37 @@ public class DevlogsStep extends Step implements Serializable {
             for (char c : text.toCharArray()) {
                 if (c == '\n') {
                     if (lineBuffer.length() > 0) {
-                        sendLine(lineBuffer.toString());
+                        // Use the timestamp captured when line started, or capture now if not set
+                        String timestamp = (currentLineTimestamp != null) ? currentLineTimestamp : Instant.now().toString();
+                        sendLine(lineBuffer.toString(), timestamp);
                         lineBuffer.setLength(0);
+                        currentLineTimestamp = null;
                     }
                 } else {
+                    // Capture timestamp when line starts
+                    if (lineBuffer.length() == 0 && currentLineTimestamp == null) {
+                        currentLineTimestamp = Instant.now().toString();
+                    }
                     lineBuffer.append(c);
                 }
             }
         }
         
-        private void sendLine(String line) {
+        private void sendLine(String line, String timestamp) {
             if (line.trim().isEmpty()) return;
             
             try {
                 initTransients();
                 
+                // Check if batch timeout has elapsed
+                long currentTime = System.currentTimeMillis();
+                if (batchCount > 0 && (currentTime - lastBatchTime) >= BATCH_TIMEOUT_MS) {
+                    flushBatch();
+                }
+                
                 JsonObject doc = new JsonObject();
                 doc.addProperty("doc_type", "log_entry");
-                doc.addProperty("timestamp", Instant.now().toString());
+                doc.addProperty("timestamp", timestamp);  // Use the timestamp from when line was written
                 doc.addProperty("run_id", runId);
                 doc.addProperty("job", jobName);
                 doc.addProperty("build_number", buildNumber);
@@ -351,6 +369,11 @@ public class DevlogsStep extends Step implements Serializable {
                 batchBuffer.append("{\"index\":{\"_index\":\"").append(index).append("\"}}\n");
                 batchBuffer.append(gson.toJson(doc)).append("\n");
                 batchCount++;
+                
+                // Update last batch time on first entry
+                if (batchCount == 1) {
+                    lastBatchTime = currentTime;
+                }
                 
                 // Flush if batch is full
                 if (batchCount >= BATCH_SIZE) {
@@ -387,10 +410,12 @@ public class DevlogsStep extends Step implements Serializable {
                 
                 batchBuffer.setLength(0);
                 batchCount = 0;
+                lastBatchTime = System.currentTimeMillis();
             } catch (Exception e) {
                 System.err.println("Warning: Failed to flush logs to devlogs: " + e.getMessage());
                 batchBuffer.setLength(0);
                 batchCount = 0;
+                lastBatchTime = System.currentTimeMillis();
             }
         }
     }

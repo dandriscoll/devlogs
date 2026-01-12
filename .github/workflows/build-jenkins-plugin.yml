@@ -1,14 +1,15 @@
-name: Build Jenkins Plugin
-
-on:
-  push:
-    branches: [ main ]
-    paths:
-      - 'jenkins-plugin/**'
-  pull_request:
-    paths:
-      - 'jenkins-plugin/**'
-  workflow_dispatch:
+# Disabled per request
+# name: Build Jenkins Plugin
+# 
+# on:
+#   push:
+#     branches: [ main ]
+#     paths:
+#       - 'jenkins-plugin/**'
+#   pull_request:
+#     paths:
+#       - 'jenkins-plugin/**'
+#   workflow_dispatch:
 
 jobs:
   build:
