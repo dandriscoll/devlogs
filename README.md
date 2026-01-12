@@ -1,5 +1,9 @@
 # devlogs
 
+<p align="center">
+  <img src="devlogs.png" alt="devlogs logo" width="200">
+</p>
+
 A developer-focused logging library for Python based on OpenSearch.
 
 ## Step 1: Get OpenSearch running
