@@ -209,3 +209,9 @@ __marimo__/
 *.env
 .mcp.json
 node_modules/
+
+# Jenkins Plugin (Maven)
+jenkins-plugin/target/
+jenkins-plugin/work/
+jenkins-plugin/.idea/
+jenkins-plugin/*.iml

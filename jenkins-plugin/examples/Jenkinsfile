@@ -1,0 +1,95 @@
+// Example Jenkinsfile demonstrating the Devlogs plugin
+
+pipeline {
+    agent any
+    
+    // Store the devlogs URL as a Jenkins credential for security
+    environment {
+        DEVLOGS_URL = credentials('devlogs-opensearch-url')
+    }
+    
+    stages {
+        stage('Build') {
+            steps {
+                // Wrap build steps with devlogs to stream logs
+                devlogs(url: env.DEVLOGS_URL) {
+                    echo 'Starting build...'
+                    sh 'npm install'
+                    sh 'npm run build'
+                    echo 'Build complete!'
+                }
+            }
+        }
+        
+        stage('Test') {
+            steps {
+                // Each stage can have its own devlogs block
+                devlogs(url: env.DEVLOGS_URL) {
+                    echo 'Running tests...'
+                    sh 'npm test'
+                    echo 'Tests complete!'
+                }
+            }
+        }
+        
+        stage('Deploy to Staging') {
+            // Only run for non-production branches
+            when {
+                not {
+                    branch 'main'
+                }
+            }
+            steps {
+                devlogs(url: env.DEVLOGS_URL) {
+                    echo 'Deploying to staging...'
+                    sh './deploy-staging.sh'
+                }
+            }
+        }
+        
+        stage('Deploy to Production') {
+            when {
+                branch 'main'
+            }
+            steps {
+                // Production deployments might not need devlogs
+                // Just omit the devlogs wrapper or use an empty URL
+                echo 'Deploying to production...'
+                sh './deploy-production.sh'
+            }
+        }
+    }
+    
+    post {
+        success {
+            echo 'Pipeline completed successfully!'
+        }
+        failure {
+            echo 'Pipeline failed!'
+        }
+    }
+}
+
+// Alternative: Conditional devlogs usage based on branch
+// pipeline {
+//     agent any
+//     
+//     stages {
+//         stage('Build') {
+//             steps {
+//                 script {
+//                     // Use devlogs for development branches only
+//                     def isDevelopment = env.BRANCH_NAME != 'main' && env.BRANCH_NAME != 'production'
+//                     
+//                     if (isDevelopment) {
+//                         devlogs(url: credentials('devlogs-url')) {
+//                             sh 'make build'
+//                         }
+//                     } else {
+//                         sh 'make build'
+//                     }
+//                 }
+//             }
+//         }
+//     }
+// }
