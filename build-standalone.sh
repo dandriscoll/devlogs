@@ -35,7 +35,7 @@ pyinstaller \
     --collect-submodules devlogs \
     /tmp/devlogs_entry.py
 
-mv dist/devlogs_entry dist/devlogs-linux
+# Binary is already named devlogs-linux via --name flag
 
 echo "Binary created: dist/devlogs-linux"
 

@@ -2,7 +2,7 @@
 
 import os
 import re
-from urllib.parse import urlparse
+from urllib.parse import urlparse, unquote
 
 # Lazy load dotenv - only when config is first accessed
 _dotenv_loaded = False
@@ -116,8 +116,9 @@ def _parse_opensearch_url(url: str):
 	scheme = parsed.scheme or "http"
 	host = parsed.hostname
 	port = parsed.port or (443 if scheme == "https" else 9200)
-	user = parsed.username
-	password = parsed.password
+	# URL-decode username and password since urlparse doesn't do this automatically
+	user = unquote(parsed.username) if parsed.username else None
+	password = unquote(parsed.password) if parsed.password else None
 	index = parsed.path.strip("/") or None
 	return (scheme, host, port, user, password, index)
 

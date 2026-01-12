@@ -10,7 +10,7 @@ import click
 import typer
 from pathlib import Path
 
-from .config import load_config, set_dotenv_path, set_url, URLParseError
+from .config import load_config, set_dotenv_path, set_url, URLParseError, _parse_opensearch_url
 from .formatting import format_timestamp
 from .opensearch.client import (
 	get_opensearch_client,
@@ -966,6 +966,130 @@ def serve(
 	"""Start the web UI server."""
 	import uvicorn
 	uvicorn.run("devlogs.web.server:app", host=host, port=port, reload=reload)
+
+
+def _build_opensearch_url(scheme: str, host: str, port: int, user: str, password: str, index: str) -> str:
+	"""Build an OpenSearch URL from components, URL-encoding credentials."""
+	from urllib.parse import quote
+	# URL-encode username and password to handle special characters
+	encoded_user = quote(user, safe="") if user else ""
+	encoded_pass = quote(password, safe="") if password else ""
+	if encoded_user and encoded_pass:
+		auth = f"{encoded_user}:{encoded_pass}@"
+	elif encoded_user:
+		auth = f"{encoded_user}@"
+	else:
+		auth = ""
+	path = f"/{index}" if index else ""
+	return f"{scheme}://{auth}{host}:{port}{path}"
+
+
+def _format_env_output(scheme: str, host: str, port: int, user: str, password: str, index: str) -> str:
+	"""Format OpenSearch config as individual .env variables."""
+	lines = [
+		f"DEVLOGS_OPENSEARCH_HOST={host}",
+		f"DEVLOGS_OPENSEARCH_PORT={port}",
+	]
+	if user:
+		lines.append(f"DEVLOGS_OPENSEARCH_USER={user}")
+	if password:
+		lines.append(f"DEVLOGS_OPENSEARCH_PASS={password}")
+	if index:
+		lines.append(f"DEVLOGS_INDEX={index}")
+	return "\n".join(lines)
+
+
+@app.command()
+def mkurl():
+	"""Interactively create an OpenSearch URL and show .env formats.
+
+	This command helps you construct a properly URL-encoded OpenSearch connection
+	string. You can either paste an existing URL to parse and reformat, or enter
+	the components (host, port, credentials, index) one by one.
+
+	The output shows three equivalent formats:
+	- A bare URL (for --url flag or DEVLOGS_OPENSEARCH_URL)
+	- The URL as a single .env variable
+	- Individual .env variables for each component
+	"""
+	typer.echo("OpenSearch URL Builder")
+	typer.echo("=" * 50)
+	typer.echo()
+
+	# Ask user for input method
+	typer.echo("How would you like to provide the connection details?")
+	typer.echo("  [1] Paste an existing URL")
+	typer.echo("  [2] Enter components one by one")
+	typer.echo()
+	choice = typer.prompt("Choice", default="2")
+
+	scheme = "https"
+	host = ""
+	port = 9200
+	user = ""
+	password = ""
+	index = ""
+
+	if choice == "1":
+		# Parse existing URL
+		typer.echo()
+		url_input = typer.prompt("Paste your OpenSearch URL")
+		try:
+			result = _parse_opensearch_url(url_input)
+			if result is None:
+				typer.echo(typer.style("Error: Empty URL provided.", fg=typer.colors.RED), err=True)
+				raise typer.Exit(1)
+			scheme, host, port, user, password, index = result
+			user = user or ""
+			password = password or ""
+			index = index or ""
+		except URLParseError as e:
+			typer.echo(typer.style(f"Error: {e}", fg=typer.colors.RED), err=True)
+			raise typer.Exit(1)
+	else:
+		# Prompt for each component
+		typer.echo()
+		scheme = typer.prompt("Scheme (http/https)", default="https")
+		if scheme not in ("http", "https"):
+			typer.echo(typer.style("Error: Scheme must be 'http' or 'https'.", fg=typer.colors.RED), err=True)
+			raise typer.Exit(1)
+		host = typer.prompt("Host", default="localhost")
+		default_port = 443 if scheme == "https" else 9200
+		port = int(typer.prompt("Port", default=str(default_port)))
+		user = typer.prompt("Username (leave empty for none)", default="")
+		if user:
+			password = typer.prompt("Password (leave empty for none)", default="", hide_input=True)
+		index = typer.prompt("Index name (leave empty for default)", default="")
+
+	# Build the URL
+	url = _build_opensearch_url(scheme, host, port, user, password, index)
+
+	# Output the three formats
+	typer.echo()
+	typer.echo("=" * 50)
+	typer.echo(typer.style("OUTPUT FORMATS", bold=True))
+	typer.echo("=" * 50)
+
+	# Format 1: Bare URL
+	typer.echo()
+	typer.echo(typer.style("1. Bare URL (for --url flag):", fg=typer.colors.CYAN, bold=True))
+	typer.echo("-" * 50)
+	typer.echo(url)
+
+	# Format 2: URL as .env variable
+	typer.echo()
+	typer.echo(typer.style("2. Single .env variable:", fg=typer.colors.CYAN, bold=True))
+	typer.echo("-" * 50)
+	typer.echo(f"DEVLOGS_OPENSEARCH_URL={url}")
+
+	# Format 3: Individual .env variables
+	typer.echo()
+	typer.echo(typer.style("3. Individual .env variables:", fg=typer.colors.CYAN, bold=True))
+	typer.echo("-" * 50)
+	typer.echo(_format_env_output(scheme, host, port, user, password, index))
+
+	typer.echo()
+	typer.echo("=" * 50)
 
 
 def main():

@@ -236,6 +236,50 @@ def test_config_index_fallback_to_default(monkeypatch):
     assert cfg.index == "devlogs-0001"
 
 
+def test_parse_opensearch_url_decodes_password():
+    """Test URL parsing decodes URL-encoded password."""
+    # Password with ! encoded as %21
+    result = config._parse_opensearch_url("https://admin:mX4Vst2s%21@host:9200/index")
+    assert result[3] == "admin"  # username
+    assert result[4] == "mX4Vst2s!"  # password should be decoded
+
+
+def test_parse_opensearch_url_decodes_username():
+    """Test URL parsing decodes URL-encoded username."""
+    # Username with @ encoded as %40
+    result = config._parse_opensearch_url("https://user%40domain:pass@host:9200/index")
+    assert result[3] == "user@domain"  # username should be decoded
+    assert result[4] == "pass"
+
+
+def test_parse_opensearch_url_decodes_special_characters():
+    """Test URL parsing decodes various special characters in credentials."""
+    # Test multiple special characters: ! @ # $ % ^ & * ( ) encoded
+    result = config._parse_opensearch_url(
+        "https://user%21%40:pass%23%24%25@host:9200/index"
+    )
+    assert result[3] == "user!@"  # username with ! and @
+    assert result[4] == "pass#$%"  # password with # $ %
+
+
+def test_parse_opensearch_url_handles_plus_sign():
+    """Test URL parsing decodes + as space (standard URL encoding)."""
+    result = config._parse_opensearch_url("https://user:pass%2Bword@host:9200/index")
+    assert result[4] == "pass+word"  # %2B is +
+
+
+def test_parse_opensearch_url_handles_colon_in_password():
+    """Test URL parsing handles encoded colon in password."""
+    result = config._parse_opensearch_url("https://admin:pass%3Aword@host:9200/index")
+    assert result[4] == "pass:word"  # %3A is :
+
+
+def test_parse_opensearch_url_handles_slash_in_password():
+    """Test URL parsing handles encoded slash in password."""
+    result = config._parse_opensearch_url("https://admin:pass%2Fword@host:9200/index")
+    assert result[4] == "pass/word"  # %2F is /
+
+
 def test_set_url(monkeypatch):
     """Test that set_url() sets the URL environment variable."""
     monkeypatch.setattr(config, "_dotenv_loaded", True)

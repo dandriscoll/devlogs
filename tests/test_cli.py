@@ -627,3 +627,158 @@ class TestCleanCommand:
                     pass
             if opensearch_client.indices.exists(index=temp_index):
                 opensearch_client.indices.delete(index=temp_index)
+
+
+class TestBuildOpensearchUrl:
+    """Tests for _build_opensearch_url helper function."""
+
+    def test_basic_url(self):
+        url = cli._build_opensearch_url("https", "host.com", 9200, "admin", "pass", "index")
+        assert url == "https://admin:pass@host.com:9200/index"
+
+    def test_url_encodes_special_chars_in_password(self):
+        url = cli._build_opensearch_url("https", "host.com", 9200, "admin", "pass!word#123", "index")
+        assert url == "https://admin:pass%21word%23123@host.com:9200/index"
+        assert "!" not in url  # Should be encoded
+        assert "#" not in url  # Should be encoded
+
+    def test_url_encodes_special_chars_in_username(self):
+        url = cli._build_opensearch_url("https", "host.com", 9200, "user@domain", "pass", "index")
+        assert url == "https://user%40domain:pass@host.com:9200/index"
+        assert "@" not in url.split("@")[0].split("//")[1]  # @ in username should be encoded
+
+    def test_url_encodes_colon_in_password(self):
+        url = cli._build_opensearch_url("https", "host.com", 9200, "admin", "pass:word", "index")
+        assert url == "https://admin:pass%3Aword@host.com:9200/index"
+
+    def test_url_encodes_slash_in_password(self):
+        url = cli._build_opensearch_url("https", "host.com", 9200, "admin", "pass/word", "index")
+        assert url == "https://admin:pass%2Fword@host.com:9200/index"
+
+    def test_url_without_credentials(self):
+        url = cli._build_opensearch_url("http", "localhost", 9200, "", "", "myindex")
+        assert url == "http://localhost:9200/myindex"
+
+    def test_url_with_user_only(self):
+        url = cli._build_opensearch_url("https", "host.com", 443, "admin", "", "index")
+        assert url == "https://admin@host.com:443/index"
+
+    def test_url_without_index(self):
+        url = cli._build_opensearch_url("https", "host.com", 9200, "admin", "pass", "")
+        assert url == "https://admin:pass@host.com:9200"
+
+
+class TestFormatEnvOutput:
+    """Tests for _format_env_output helper function."""
+
+    def test_full_config(self):
+        output = cli._format_env_output("https", "host.com", 9200, "admin", "pass!word", "myindex")
+        assert "DEVLOGS_OPENSEARCH_HOST=host.com" in output
+        assert "DEVLOGS_OPENSEARCH_PORT=9200" in output
+        assert "DEVLOGS_OPENSEARCH_USER=admin" in output
+        assert "DEVLOGS_OPENSEARCH_PASS=pass!word" in output  # Raw password, not encoded
+        assert "DEVLOGS_INDEX=myindex" in output
+
+    def test_without_credentials(self):
+        output = cli._format_env_output("http", "localhost", 9200, "", "", "index")
+        assert "DEVLOGS_OPENSEARCH_HOST=localhost" in output
+        assert "DEVLOGS_OPENSEARCH_PORT=9200" in output
+        assert "DEVLOGS_OPENSEARCH_USER" not in output
+        assert "DEVLOGS_OPENSEARCH_PASS" not in output
+        assert "DEVLOGS_INDEX=index" in output
+
+    def test_without_index(self):
+        output = cli._format_env_output("https", "host.com", 443, "admin", "pass", "")
+        assert "DEVLOGS_OPENSEARCH_HOST=host.com" in output
+        assert "DEVLOGS_INDEX" not in output
+
+
+class TestMkurlCommand:
+    """Tests for the mkurl CLI command."""
+
+    def test_mkurl_help(self):
+        runner = CliRunner()
+        result = runner.invoke(cli.app, ["mkurl", "--help"])
+        assert result.exit_code == 0
+        assert "OpenSearch URL" in result.output
+
+    def test_mkurl_parse_url(self):
+        runner = CliRunner()
+        # Simulate choosing option 1 (parse URL) and pasting a URL
+        result = runner.invoke(
+            cli.app,
+            ["mkurl"],
+            input="1\nhttps://admin:pass%21word@host.com:9200/myindex\n"
+        )
+        assert result.exit_code == 0
+        # Check all three output formats appear
+        assert "Bare URL" in result.output
+        assert "Single .env variable" in result.output
+        assert "Individual .env variables" in result.output
+        # Check URL is in output
+        assert "https://admin:pass%21word@host.com:9200/myindex" in result.output
+        # Check individual env vars
+        assert "DEVLOGS_OPENSEARCH_HOST=host.com" in result.output
+        assert "DEVLOGS_OPENSEARCH_PASS=pass!word" in result.output  # Decoded
+
+    def test_mkurl_enter_components(self):
+        runner = CliRunner()
+        # Simulate choosing option 2 (enter components)
+        result = runner.invoke(
+            cli.app,
+            ["mkurl"],
+            input="2\nhttps\nmyhost.example.com\n443\nadmin\nsecretpass\ndevlogs-prod\n"
+        )
+        assert result.exit_code == 0
+        # Check URL is constructed correctly
+        assert "https://admin:secretpass@myhost.example.com:443/devlogs-prod" in result.output
+        # Check env vars
+        assert "DEVLOGS_OPENSEARCH_HOST=myhost.example.com" in result.output
+        assert "DEVLOGS_OPENSEARCH_PORT=443" in result.output
+        assert "DEVLOGS_INDEX=devlogs-prod" in result.output
+
+    def test_mkurl_enter_components_no_credentials(self):
+        runner = CliRunner()
+        result = runner.invoke(
+            cli.app,
+            ["mkurl"],
+            input="2\nhttp\nlocalhost\n9200\n\ntest-index\n"
+        )
+        assert result.exit_code == 0
+        assert "http://localhost:9200/test-index" in result.output
+        assert "DEVLOGS_OPENSEARCH_USER" not in result.output
+
+    def test_mkurl_invalid_url(self):
+        runner = CliRunner()
+        result = runner.invoke(
+            cli.app,
+            ["mkurl"],
+            input="1\nnot-a-valid-url\n"
+        )
+        # Exception is raised and caught by typer, resulting in exit code 1
+        assert result.exit_code == 1
+
+    def test_mkurl_invalid_scheme(self):
+        runner = CliRunner()
+        result = runner.invoke(
+            cli.app,
+            ["mkurl"],
+            input="2\nftp\nhost\n21\n\n\n"
+        )
+        assert result.exit_code == 1
+
+    def test_mkurl_roundtrip_preserves_special_chars(self):
+        """Test that parsing a URL and rebuilding it preserves special characters."""
+        runner = CliRunner()
+        # URL with special characters in password
+        original_url = "https://admin:P%40ss%21w%23rd@host.com:9200/index"
+        result = runner.invoke(
+            cli.app,
+            ["mkurl"],
+            input=f"1\n{original_url}\n"
+        )
+        assert result.exit_code == 0
+        # The password in env vars should be decoded
+        assert "DEVLOGS_OPENSEARCH_PASS=P@ss!w#rd" in result.output
+        # The URL should have the encoded version
+        assert "P%40ss%21w%23rd" in result.output
