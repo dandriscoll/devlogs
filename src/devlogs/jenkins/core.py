@@ -236,7 +236,7 @@ class JenkinsLogIndexer:
 		now = datetime.now(timezone.utc).isoformat()
 		self.seq += 1
 		doc = {
-			"doc_type": "devlogs_event",
+			"doc_type": "log_entry",
 			"timestamp": now,
 			"run_id": self.build_info.run_id,
 			"job": self.build_info.job_name,
