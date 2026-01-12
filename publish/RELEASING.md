@@ -217,5 +217,5 @@ Then in your workflow:
 - name: Release
   run: |
     npm config set //registry.npmjs.org/:_authToken=$NPM_TOKEN
-    ./release.sh --bump-patch
+    ./publish/release.sh --bump-patch
 ```
