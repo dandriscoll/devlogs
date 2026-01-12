@@ -330,6 +330,9 @@ class JenkinsLogIndexer:
 # State file management for background mode
 STATE_FILE_NAME = ".devlogs-jenkins-state.json"
 
+# Shutdown coordination
+_shutdown_requested = False
+
 
 def get_state_file_path() -> Path:
 	"""Get the path to the state file in the current workspace."""
@@ -498,8 +501,8 @@ def _run_background(build_info: JenkinsBuildInfo, resume: bool, verbose: bool):
 
 	# Set up signal handler for graceful shutdown
 	def handle_signal(signum, frame):
-		clear_state()
-		sys.exit(0)
+		global _shutdown_requested
+		_shutdown_requested = True
 
 	signal.signal(signal.SIGTERM, handle_signal)
 	signal.signal(signal.SIGINT, handle_signal)
@@ -524,8 +527,8 @@ def _run_foreground(build_info: JenkinsBuildInfo, resume: bool, verbose: bool):
 
 	# Set up signal handler for graceful shutdown
 	def handle_signal(signum, frame):
-		clear_state()
-		sys.exit(0)
+		global _shutdown_requested
+		_shutdown_requested = True
 
 	signal.signal(signal.SIGTERM, handle_signal)
 
@@ -543,6 +546,9 @@ def _stream_logs(build_info: JenkinsBuildInfo, resume: bool, verbose: bool):
 		resume: If True, resume from last indexed offset
 		verbose: If True, print progress messages
 	"""
+	global _shutdown_requested
+	_shutdown_requested = False  # Reset at start of streaming
+
 	streamer = JenkinsLogStreamer(build_info)
 	indexer = JenkinsLogIndexer(build_info)
 
@@ -567,6 +573,33 @@ def _stream_logs(build_info: JenkinsBuildInfo, resume: bool, verbose: bool):
 	max_errors = 5
 
 	while True:
+		# Check for graceful shutdown request
+		if _shutdown_requested:
+			if verbose:
+				print("Shutdown requested, draining final logs...")
+			# Drain remaining logs before exiting
+			for _ in range(10):  # Up to 10 final poll attempts
+				try:
+					chunk, more_data = streamer.fetch_next_chunk()
+					if chunk:
+						indexer.index_chunk(chunk, streamer.current_offset - len(chunk))
+						update_state_offset(streamer.current_offset)
+						if verbose:
+							lines = len(chunk.splitlines())
+							print(f"Indexed {lines} lines (offset: {streamer.current_offset})")
+					if not more_data:
+						break
+					time.sleep(0.1)
+				except JenkinsError:
+					break  # Stop draining on error
+			indexer.index_event(
+				"detached",
+				f"devlogs detached from Jenkins build {build_info.run_id} (shutdown requested)"
+			)
+			indexer.flush()
+			if verbose:
+				print(f"Graceful shutdown complete: {indexer.seq} log entries indexed")
+			return
 		try:
 			chunk, more_data = streamer.fetch_next_chunk()
 			consecutive_errors = 0
