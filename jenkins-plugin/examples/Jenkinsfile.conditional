@@ -1,0 +1,27 @@
+// Example with conditional devlogs (development branches only)
+
+pipeline {
+    agent any
+    
+    stages {
+        stage('Build') {
+            steps {
+                script {
+                    def isDevelopment = env.BRANCH_NAME != 'main' && env.BRANCH_NAME != 'production'
+                    
+                    if (isDevelopment) {
+                        // Stream logs for development branches
+                        devlogs(url: credentials('devlogs-url')) {
+                            sh 'make build'
+                            sh 'make test'
+                        }
+                    } else {
+                        // Production branches - no logging overhead
+                        sh 'make build'
+                        sh 'make test'
+                    }
+                }
+            }
+        }
+    }
+}

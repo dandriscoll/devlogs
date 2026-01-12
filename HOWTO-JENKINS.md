@@ -2,7 +2,76 @@
 
 Stream Jenkins build logs to OpenSearch in near real-time.
 
-## Prerequisites
+## Two Integration Options
+
+### Option 1: Jenkins Plugin (Recommended)
+
+The **Devlogs Jenkins Plugin** provides native Jenkins integration with a simple wrapper syntax.
+
+**Advantages:**
+- Native Jenkins integration
+- Simple syntax: `devlogs(url: '...') { }`
+- Per-pipeline configuration
+- No binary downloads needed
+- Automatic updates via Jenkins Update Center
+
+See [jenkins-plugin/README.md](jenkins-plugin/README.md) for installation and usage.
+
+### Option 2: Standalone Binary (CLI Approach)
+
+Use the `devlogs jenkins` CLI command for environments where plugin installation is not possible.
+
+**Advantages:**
+- No Jenkins plugin installation required
+- Works with any Jenkins setup
+- More control over when logging starts/stops
+
+See below for setup instructions.
+
+---
+
+## Jenkins Plugin Setup (Option 1)
+
+### Prerequisites
+
+1. **Jenkins 2.440.3 or higher**
+2. **Java 11 or higher**
+3. **OpenSearch URL stored in Jenkins credentials** (Manage Jenkins > Credentials)
+   - Add a "Secret text" credential with ID `devlogs-opensearch-url`
+   - Value: `https://user:pass@host:9200/index`
+   - **Important:** Special characters in passwords must be URL-encoded (e.g., `!` becomes `%21`)
+   - Use `devlogs mkurl` to generate a properly encoded URL
+
+### Quick Start
+
+```groovy
+pipeline {
+    agent any
+    
+    environment {
+        DEVLOGS_URL = credentials('devlogs-opensearch-url')
+    }
+    
+    stages {
+        stage('Build') {
+            steps {
+                devlogs(url: env.DEVLOGS_URL) {
+                    sh 'make build'
+                    sh 'make test'
+                }
+            }
+        }
+    }
+}
+```
+
+For complete documentation, see [jenkins-plugin/README.md](jenkins-plugin/README.md).
+
+---
+
+## Standalone Binary Setup (Option 2)
+
+### Prerequisites
 
 1. **Build the standalone binary** (one-time):
    ```sh

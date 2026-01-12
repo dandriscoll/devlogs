@@ -115,6 +115,29 @@ This writes MCP config files in the standard locations:
 
 ## Jenkins Integration
 
+### Option 1: Jenkins Plugin (Recommended)
+
+Install the Devlogs Jenkins plugin for native integration:
+
+```groovy
+pipeline {
+    agent any
+    stages {
+        stage('Build') {
+            steps {
+                devlogs(url: credentials('devlogs-url')) {
+                    sh 'make build'
+                }
+            }
+        }
+    }
+}
+```
+
+See [jenkins-plugin/README.md](jenkins-plugin/README.md) for installation and usage details.
+
+### Option 2: Standalone Binary
+
 Stream Jenkins build logs to OpenSearch using a standalone binary:
 
 ```groovy
@@ -199,6 +222,7 @@ Install with `pip install ".[dev]"` in development, `pip install .` in productio
 
 - `src/devlogs/` - Python library, CLI, MCP server, and web UI
 - `browser/` - Browser/npm package for frontend logging
+- `jenkins-plugin/` - Native Jenkins plugin for log streaming
 - `devlogs` - Shell wrapper for local development
 - `tests/` - Pytest-based tests
 - `dist/` - Built packages and standalone binary
@@ -223,6 +247,7 @@ See [publish/RELEASING.md](publish/RELEASING.md) for detailed publishing instruc
 - [HOWTO-CLI.md](HOWTO-CLI.md) - Complete CLI reference
 - [HOWTO.md](HOWTO.md) - Integration guide
 - [HOWTO-JENKINS.md](HOWTO-JENKINS.md) - Jenkins setup
+- [jenkins-plugin/README.md](jenkins-plugin/README.md) - Jenkins plugin documentation
 - [HOWTO-MCP.md](HOWTO-MCP.md) - MCP agent setup
 - [HOWTO-UI.md](HOWTO-UI.md) - Web UI guide
 - [publish/RELEASING.md](publish/RELEASING.md) - Publishing guide
