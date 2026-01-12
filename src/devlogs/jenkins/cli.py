@@ -42,7 +42,7 @@ def _require_opensearch():
 def attach(
 	build_url: str = typer.Option(
 		None,
-		"--build-url",
+		"--url",
 		help="Jenkins build URL (auto-detected from BUILD_URL env var if not specified)",
 	),
 	background: bool = typer.Option(
@@ -169,7 +169,7 @@ def stop():
 def snapshot(
 	build_url: str = typer.Option(
 		None,
-		"--build-url",
+		"--url",
 		help="Jenkins build URL (auto-detected from BUILD_URL env var if not specified)",
 	),
 	verbose: bool = typer.Option(
@@ -190,7 +190,7 @@ def snapshot(
 	  - Debugging without continuous streaming
 
 	Example:
-	  devlogs jenkins snapshot --build-url https://jenkins.example.com/job/my-job/123/
+	  devlogs jenkins snapshot --url https://jenkins.example.com/job/my-job/123/
 	"""
 	# Verify OpenSearch connection first
 	_require_opensearch()

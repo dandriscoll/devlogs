@@ -76,7 +76,7 @@ def detect_jenkins_environment(build_url: Optional[str] = None) -> JenkinsBuildI
 	if not url:
 		raise JenkinsEnvironmentError(
 			"BUILD_URL environment variable is not set.\n"
-			"This command must be run from within a Jenkins build, or use --build-url."
+			"This command must be run from within a Jenkins build, or use --url."
 		)
 
 	return JenkinsBuildInfo(
