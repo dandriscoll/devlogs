@@ -139,4 +139,23 @@ devlogs tail --follow
 
 - **Can't connect**: Check OpenSearch is running (`curl http://localhost:9200`)
 - **No logs**: Run `devlogs init` and verify handler is added
-- **Auth error**: Check credentials in `.env`
+- **Auth error**: Check credentials in `.env` or use `devlogs diagnose`
+- **Special characters in password**: Use `devlogs mkurl` to generate a properly URL-encoded connection string
+
+### Using --url for Quick Testing
+
+Test connection without modifying `.env`:
+
+```bash
+devlogs --url 'https://admin:pass@host:9200/index' diagnose
+```
+
+### Diagnosing Issues
+
+Run diagnostics to check your setup:
+
+```bash
+devlogs diagnose
+```
+
+See [HOWTO-CLI.md](HOWTO-CLI.md) for complete CLI reference.

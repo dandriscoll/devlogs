@@ -139,14 +139,45 @@ Build the binary with `./build-standalone.sh` and host it somewhere accessible. 
 
 ## Configuration
 
-Environment variables:
+### Environment Variables
+
 - OpenSearch connection: `DEVLOGS_OPENSEARCH_HOST`, `DEVLOGS_OPENSEARCH_PORT`, `DEVLOGS_OPENSEARCH_USER`, `DEVLOGS_OPENSEARCH_PASS`
-- OpenSearch URL shortcut: `DEVLOGS_OPENSEARCH_URL` (e.g., `https://user:pass@host:9200`)
+- OpenSearch URL shortcut: `DEVLOGS_OPENSEARCH_URL` (e.g., `https://user:pass@host:9200/index`)
 - SSL/TLS: `DEVLOGS_OPENSEARCH_VERIFY_CERTS`, `DEVLOGS_OPENSEARCH_CA_CERT`
 - Index: `DEVLOGS_INDEX`
 - Retention (supports duration strings like `24h`, `7d`): `DEVLOGS_RETENTION_DEBUG`, `DEVLOGS_RETENTION_INFO`, `DEVLOGS_RETENTION_WARNING`
 
 See [.env.example](.env.example) for a complete configuration template.
+
+### CLI Options
+
+Use `--url` to specify connection details without a `.env` file:
+
+```bash
+devlogs --url 'https://admin:pass@host:9200/myindex' tail
+```
+
+Use `--env` to load from a specific `.env` file:
+
+```bash
+devlogs --env /path/to/.env diagnose
+```
+
+### URL Builder
+
+Use `devlogs mkurl` to interactively create a properly URL-encoded connection string:
+
+```bash
+devlogs mkurl
+# Outputs the URL in three formats:
+# 1. Bare URL (for --url flag)
+# 2. Single DEVLOGS_OPENSEARCH_URL variable
+# 3. Individual .env variables
+```
+
+This is especially useful for passwords containing special characters like `!`, `@`, `#`, which must be URL-encoded.
+
+See [HOWTO-CLI.md](HOWTO-CLI.md) for complete CLI reference.
 
 ## Production Deployment
 
@@ -163,9 +194,32 @@ Install with `pip install ".[dev]"` in development, `pip install .` in productio
 ## Project Structure
 
 - `src/devlogs/` - Python library, CLI, MCP server, and web UI
+- `browser/` - Browser/npm package for frontend logging
 - `devlogs` - Shell wrapper for local development
 - `tests/` - Pytest-based tests
+- `dist/` - Built packages and standalone binary
+
+## Publishing
+
+```bash
+# Release to all platforms (PyPI, npm, GitHub)
+./publish/release.sh
+
+# Bump version and release
+./publish/release.sh --bump-patch
+
+# Preview release
+./publish/release.sh --dry-run
+```
+
+See [publish/RELEASING.md](publish/RELEASING.md) for detailed publishing instructions.
 
 ## See Also
 
+- [HOWTO-CLI.md](HOWTO-CLI.md) - Complete CLI reference
+- [HOWTO.md](HOWTO.md) - Integration guide
+- [HOWTO-JENKINS.md](HOWTO-JENKINS.md) - Jenkins setup
+- [HOWTO-MCP.md](HOWTO-MCP.md) - MCP agent setup
+- [HOWTO-UI.md](HOWTO-UI.md) - Web UI guide
+- [publish/RELEASING.md](publish/RELEASING.md) - Publishing guide
 - `PROMPT.md` for full requirements

@@ -12,7 +12,9 @@ Stream Jenkins build logs to OpenSearch in near real-time.
 
 2. **OpenSearch URL stored in Jenkins credentials** (Manage Jenkins > Credentials)
    - Add a "Secret text" credential with ID `devlogs-opensearch-url`
-   - Value: `https://user:pass@host:9200`
+   - Value: `https://user:pass@host:9200/index`
+   - **Important:** Special characters in passwords must be URL-encoded (e.g., `!` becomes `%21`)
+   - Use `devlogs mkurl` to generate a properly encoded URL
 
 3. **Devlogs binary URL in Jenkins credentials**
    - Add a "Secret text" credential with ID `devlogs-binary-url`
@@ -104,4 +106,43 @@ withCredentials([usernamePassword(
 )]) {
     sh '/tmp/devlogs jenkins attach --background'
 }
+```
+
+## Troubleshooting
+
+### Authentication Failed
+
+If you see "Authentication failed" errors, your password likely contains special characters that need URL encoding:
+
+| Character | URL Encoded |
+|-----------|-------------|
+| `!` | `%21` |
+| `@` | `%40` |
+| `#` | `%23` |
+| `$` | `%24` |
+| `%` | `%25` |
+| `:` | `%3A` |
+| `/` | `%2F` |
+
+Use the `mkurl` command to generate a properly encoded URL:
+
+```bash
+devlogs mkurl
+# Choose option 2, enter your components
+# Copy the generated URL to Jenkins credentials
+```
+
+### Testing the URL
+
+Test your URL locally before adding to Jenkins:
+
+```bash
+devlogs --url 'https://admin:pass%21word@host:9200/index' diagnose
+```
+
+### Viewing Streamed Logs
+
+```bash
+# In another terminal, tail the logs being streamed
+devlogs tail --area jenkins --follow
 ```
