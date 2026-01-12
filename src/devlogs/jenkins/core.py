@@ -226,6 +226,34 @@ class JenkinsLogIndexer:
 			"level": "info",  # Default level, could be enhanced with log parsing
 		}
 
+	def index_event(self, event: str, message: str):
+		"""Index a devlogs event (e.g., attached, detached).
+
+		Args:
+			event: Event type (e.g., "attached", "detached")
+			message: Human-readable message describing the event
+		"""
+		now = datetime.now(timezone.utc).isoformat()
+		self.seq += 1
+		doc = {
+			"doc_type": "devlogs_event",
+			"timestamp": now,
+			"run_id": self.build_info.run_id,
+			"job": self.build_info.job_name,
+			"build_number": self.build_info.build_number,
+			"build_url": self.build_info.build_url,
+			"branch": self.build_info.branch_name,
+			"git_commit": self.build_info.git_commit,
+			"seq": self.seq,
+			"event": event,
+			"message": message,
+			"source": "devlogs",
+			"level": "info",
+		}
+		self._buffer.append({"index": {"_index": self.config.index}})
+		self._buffer.append(doc)
+		self._flush()
+
 	def index_chunk(self, text: str, start_offset: int):
 		"""Index a chunk of log text.
 
@@ -518,6 +546,12 @@ def _stream_logs(build_info: JenkinsBuildInfo, resume: bool, verbose: bool):
 	streamer = JenkinsLogStreamer(build_info)
 	indexer = JenkinsLogIndexer(build_info)
 
+	# Emit attached event
+	indexer.index_event(
+		"attached",
+		f"devlogs attached to Jenkins build {build_info.run_id}"
+	)
+
 	# Resume from last offset if requested
 	if resume:
 		last_offset = indexer.get_last_indexed_offset()
@@ -546,6 +580,10 @@ def _stream_logs(build_info: JenkinsBuildInfo, resume: bool, verbose: bool):
 				if not streamer.is_build_running():
 					if verbose:
 						print("Build completed, flushing and exiting")
+					indexer.index_event(
+						"detached",
+						f"devlogs detached from Jenkins build {build_info.run_id} (build completed)"
+					)
 					indexer.flush()
 					break
 				# Build still running but no new data - longer sleep
@@ -556,6 +594,10 @@ def _stream_logs(build_info: JenkinsBuildInfo, resume: bool, verbose: bool):
 
 		except JenkinsAuthError as e:
 			print(f"Error: {e}", file=sys.stderr)
+			indexer.index_event(
+				"detached",
+				f"devlogs detached from Jenkins build {build_info.run_id} (auth error)"
+			)
 			indexer.flush()
 			sys.exit(1)
 
@@ -563,6 +605,10 @@ def _stream_logs(build_info: JenkinsBuildInfo, resume: bool, verbose: bool):
 			consecutive_errors += 1
 			if consecutive_errors >= max_errors:
 				print(f"Error: Too many failures ({consecutive_errors}): {e}", file=sys.stderr)
+				indexer.index_event(
+					"detached",
+					f"devlogs detached from Jenkins build {build_info.run_id} (too many errors)"
+				)
 				indexer.flush()
 				sys.exit(1)
 			if verbose:
