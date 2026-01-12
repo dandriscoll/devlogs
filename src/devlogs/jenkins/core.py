@@ -595,6 +595,10 @@ def _stream_logs(build_info: JenkinsBuildInfo, resume: bool, verbose: bool):
 		except JenkinsAuthError as e:
 			print(f"Error: {e}", file=sys.stderr)
 			indexer.index_event(
+				"error",
+				f"Jenkins auth error: {e}"
+			)
+			indexer.index_event(
 				"detached",
 				f"devlogs detached from Jenkins build {build_info.run_id} (auth error)"
 			)
@@ -603,11 +607,15 @@ def _stream_logs(build_info: JenkinsBuildInfo, resume: bool, verbose: bool):
 
 		except JenkinsError as e:
 			consecutive_errors += 1
+			indexer.index_event(
+				"warning",
+				f"Jenkins error (attempt {consecutive_errors}/{max_errors}): {e}"
+			)
 			if consecutive_errors >= max_errors:
 				print(f"Error: Too many failures ({consecutive_errors}): {e}", file=sys.stderr)
 				indexer.index_event(
 					"detached",
-					f"devlogs detached from Jenkins build {build_info.run_id} (too many errors)"
+					f"devlogs detached from Jenkins build {build_info.run_id} (too many errors): {e}"
 				)
 				indexer.flush()
 				sys.exit(1)
