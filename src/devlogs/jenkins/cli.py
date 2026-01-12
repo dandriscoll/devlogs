@@ -24,17 +24,17 @@ from ..opensearch.client import (
 
 jenkins_app = typer.Typer(help="Jenkins log streaming commands")
 
-# Common options for jenkins commands (use --opensearch-url to avoid conflict with --url for Jenkins build URL)
+# Common options for jenkins commands
 JENKINS_ENV_OPTION = typer.Option(None, "--env", help="Path to .env file to load")
-JENKINS_OPENSEARCH_URL_OPTION = typer.Option(None, "--opensearch-url", help="OpenSearch URL (e.g., https://user:pass@host:port/index)")
+JENKINS_URL_OPTION = typer.Option(None, "--url", "--opensearch-url", help="OpenSearch URL (e.g., https://user:pass@host:port/index)")
 
 
-def _apply_common_options(env: str = None, opensearch_url: str = None):
-	"""Apply common options (--env, --opensearch-url) to configure the client."""
+def _apply_common_options(env: str = None, url: str = None):
+	"""Apply common options (--env, --url) to configure the client."""
 	if env:
 		set_dotenv_path(env)
-	if opensearch_url:
-		set_url(opensearch_url)
+	if url:
+		set_url(url)
 
 
 def _require_opensearch():
@@ -54,7 +54,7 @@ def _require_opensearch():
 def attach(
 	build_url: str = typer.Option(
 		None,
-		"--url",
+		"--build-url",
 		help="Jenkins build URL (auto-detected from BUILD_URL env var if not specified)",
 	),
 	background: bool = typer.Option(
@@ -75,7 +75,7 @@ def attach(
 		help="Enable verbose output",
 	),
 	env: str = JENKINS_ENV_OPTION,
-	opensearch_url: str = JENKINS_OPENSEARCH_URL_OPTION,
+	url: str = JENKINS_URL_OPTION,
 ):
 	"""Attach to a Jenkins build and stream logs to OpenSearch.
 
@@ -104,7 +104,7 @@ def attach(
 	  }
 	"""
 	# Apply common options and verify OpenSearch connection
-	_apply_common_options(env, opensearch_url)
+	_apply_common_options(env, url)
 	_require_opensearch()
 
 	try:
@@ -184,7 +184,7 @@ def stop():
 def snapshot(
 	build_url: str = typer.Option(
 		None,
-		"--url",
+		"--build-url",
 		help="Jenkins build URL (auto-detected from BUILD_URL env var if not specified)",
 	),
 	verbose: bool = typer.Option(
@@ -194,7 +194,7 @@ def snapshot(
 		help="Enable verbose output",
 	),
 	env: str = JENKINS_ENV_OPTION,
-	opensearch_url: str = JENKINS_OPENSEARCH_URL_OPTION,
+	url: str = JENKINS_URL_OPTION,
 ):
 	"""Take a one-time snapshot of Jenkins build logs.
 
@@ -207,10 +207,10 @@ def snapshot(
 	  - Debugging without continuous streaming
 
 	Example:
-	  devlogs jenkins snapshot --url https://jenkins.example.com/job/my-job/123/
+	  devlogs jenkins snapshot --build-url https://jenkins.example.com/job/my-job/123/
 	"""
 	# Apply common options and verify OpenSearch connection
-	_apply_common_options(env, opensearch_url)
+	_apply_common_options(env, url)
 	_require_opensearch()
 
 	try:

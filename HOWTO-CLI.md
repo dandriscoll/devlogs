@@ -433,7 +433,8 @@ devlogs jenkins attach [OPTIONS]
 
 | Option | Description |
 |--------|-------------|
-| `--url TEXT` | Jenkins build URL (auto-detected from `BUILD_URL`) |
+| `--build-url TEXT` | Jenkins build URL (auto-detected from `BUILD_URL`) |
+| `--url TEXT` | OpenSearch URL (e.g., `https://user:pass@host:port/index`) |
 | `-b, --background` | Run in background mode |
 | `--no-resume` | Don't resume from last indexed offset |
 | `-v, --verbose` | Enable verbose output |
@@ -447,7 +448,7 @@ devlogs jenkins attach
 devlogs jenkins attach --background
 
 # Explicit build URL
-devlogs jenkins attach --url https://jenkins.example.com/job/my-job/123/
+devlogs jenkins attach --build-url https://jenkins.example.com/job/my-job/123/
 ```
 
 ### `jenkins stop`
@@ -476,12 +477,13 @@ devlogs jenkins snapshot [OPTIONS]
 
 | Option | Description |
 |--------|-------------|
-| `--url TEXT` | Jenkins build URL |
+| `--build-url TEXT` | Jenkins build URL |
+| `--url TEXT` | OpenSearch URL (e.g., `https://user:pass@host:port/index`) |
 | `-v, --verbose` | Enable verbose output |
 
 **Example:**
 ```bash
-devlogs jenkins snapshot --url https://jenkins.example.com/job/my-job/123/
+devlogs jenkins snapshot --build-url https://jenkins.example.com/job/my-job/123/
 ```
 
 ---
