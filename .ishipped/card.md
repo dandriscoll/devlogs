@@ -1,7 +1,7 @@
 ---
 title: devlogs
 summary: Forwards all of your application's logs to opensearch so that an LLM can easily crawl and search them. Enables hypervelocity coding loops.
-hero: ../devlogs.png
+icon: devlogs.png
 shipped: 2025-12-22
 author:
   name: Dan Driscoll
