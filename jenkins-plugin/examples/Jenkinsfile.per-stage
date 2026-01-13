@@ -1,0 +1,38 @@
+// Example using per-stage devlogs wrapper (legacy approach)
+// Use this if you need fine-grained control over which stages are logged
+
+pipeline {
+    agent any
+
+    environment {
+        DEVLOGS_URL = credentials('devlogs-opensearch-url')
+    }
+
+    stages {
+        stage('Build') {
+            steps {
+                // Only log this stage
+                devlogs(url: env.DEVLOGS_URL) {
+                    sh 'npm install'
+                    sh 'npm run build'
+                }
+            }
+        }
+
+        stage('Test') {
+            steps {
+                // Log this stage too
+                devlogs(url: env.DEVLOGS_URL) {
+                    sh 'npm test'
+                }
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                // This stage is NOT logged to devlogs
+                sh './deploy.sh'
+            }
+        }
+    }
+}

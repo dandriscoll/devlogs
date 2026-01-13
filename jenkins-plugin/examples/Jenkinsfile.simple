@@ -1,15 +1,17 @@
-// Simple example - basic usage
+// Simple example - basic pipeline-level usage
 
 pipeline {
     agent any
-    
+
+    options {
+        devlogs(url: 'https://admin:password@opensearch.example.com:9200/devlogs-myproject')
+    }
+
     stages {
         stage('Build') {
             steps {
-                devlogs(url: 'https://admin:password@opensearch.example.com:9200/devlogs-myproject') {
-                    sh 'echo "Hello from devlogs!"'
-                    sh 'make build'
-                }
+                sh 'echo "Hello from devlogs!"'
+                sh 'make build'
             }
         }
     }

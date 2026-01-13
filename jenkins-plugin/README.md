@@ -4,11 +4,12 @@ A Jenkins plugin that streams build logs to a [devlogs](https://github.com/dandr
 
 ## Features
 
+- **Pipeline-Level Configuration**: Configure once in the `options` block, automatically captures all stages
 - **Real-time Log Streaming**: Automatically captures and streams console output to OpenSearch during build execution
-- **Per-Pipeline Configuration**: Configure different devlogs URLs for different pipelines
 - **Non-Intrusive**: If no URL is provided, the plugin does nothing - no impact on builds
 - **Batch Processing**: Efficiently batches log entries before sending to reduce network overhead
 - **Error Resilient**: Failures to send logs don't cause build failures
+- **UI Configuration**: Can also be configured via Jenkins job configuration UI
 
 ## Installation
 
@@ -62,114 +63,145 @@ Use the devlogs CLI `devlogs mkurl` command to generate properly encoded URLs.
 
 ## Usage
 
-### In Declarative Pipeline
+### Pipeline-Level Configuration (Recommended)
 
-Wrap your build steps in a `devlogs` block:
-
-```groovy
-pipeline {
-    agent any
-    
-    stages {
-        stage('Build') {
-            steps {
-                devlogs(url: 'https://admin:password@opensearch.example.com:9200/devlogs-myproject') {
-                    sh 'npm install'
-                    sh 'npm run build'
-                    sh 'npm test'
-                }
-            }
-        }
-    }
-}
-```
-
-### Using Jenkins Credentials
-
-Store the devlogs URL as a Jenkins credential for better security:
+Add `devlogs` to the `options` block to automatically capture all stages:
 
 ```groovy
 pipeline {
     agent any
-    
+
     environment {
         DEVLOGS_URL = credentials('devlogs-opensearch-url')
     }
-    
+
+    options {
+        devlogs(url: '${DEVLOGS_URL}')
+    }
+
     stages {
         stage('Build') {
             steps {
-                devlogs(url: env.DEVLOGS_URL) {
-                    sh 'make build'
-                }
+                sh 'npm install'
+                sh 'npm run build'
+            }
+        }
+
+        stage('Test') {
+            steps {
+                sh 'npm test'
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                sh './deploy.sh'
             }
         }
     }
 }
 ```
 
-### Conditional Usage (Development Only)
+All console output from all stages is automatically streamed to devlogs.
 
-Stream logs only for development branches:
+### Minimal Example
 
 ```groovy
 pipeline {
     agent any
-    
+
+    options {
+        devlogs(url: 'https://admin:password@opensearch.example.com:9200/devlogs-myproject')
+    }
+
     stages {
         stage('Build') {
             steps {
-                script {
-                    if (env.BRANCH_NAME != 'main' && env.BRANCH_NAME != 'production') {
-                        devlogs(url: credentials('devlogs-url')) {
-                            sh 'make build'
-                        }
-                    } else {
-                        sh 'make build'
-                    }
-                }
+                sh 'make build'
             }
         }
     }
 }
 ```
+
+### Conditional Usage
+
+Enable devlogs only when an environment variable is set:
+
+```groovy
+pipeline {
+    agent any
+
+    environment {
+        DEVLOGS_URL = credentials('devlogs-opensearch-url')
+    }
+
+    options {
+        // Empty string disables devlogs
+        devlogs(url: "${env.ENABLE_DEVLOGS == 'true' ? env.DEVLOGS_URL : ''}")
+    }
+
+    stages {
+        stage('Build') {
+            steps {
+                sh 'make build'
+            }
+        }
+    }
+}
+```
+
+### Per-Stage Configuration (Advanced)
+
+For fine-grained control, you can wrap individual stages instead:
+
+```groovy
+pipeline {
+    agent any
+
+    environment {
+        DEVLOGS_URL = credentials('devlogs-opensearch-url')
+    }
+
+    stages {
+        stage('Build') {
+            steps {
+                // Only this stage is logged
+                devlogs(url: env.DEVLOGS_URL) {
+                    sh 'npm install'
+                    sh 'npm run build'
+                }
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                // This stage is NOT logged
+                sh './deploy.sh'
+            }
+        }
+    }
+}
+```
+
+### Jenkins UI Configuration
+
+You can also configure devlogs via the Jenkins job configuration UI:
+
+1. Open your job configuration
+2. Under **Build Environment**, check **Stream logs to Devlogs**
+3. Enter your devlogs URL
+4. Save
 
 ### In Scripted Pipeline
 
 ```groovy
 node {
-    stage('Build') {
-        devlogs(url: 'https://admin:password@opensearch.example.com:9200/devlogs-myproject') {
+    // Wrap entire node block
+    wrap([$class: 'DevlogsBuildWrapper', url: 'https://admin:password@opensearch.example.com:9200/devlogs-myproject']) {
+        stage('Build') {
             sh 'make build'
             sh 'make test'
-        }
-    }
-}
-```
-
-### Multiple devlogs Blocks
-
-You can use multiple `devlogs` blocks in the same pipeline:
-
-```groovy
-pipeline {
-    agent any
-    
-    stages {
-        stage('Build') {
-            steps {
-                devlogs(url: credentials('devlogs-build-url')) {
-                    sh 'make build'
-                }
-            }
-        }
-        
-        stage('Test') {
-            steps {
-                devlogs(url: credentials('devlogs-test-url')) {
-                    sh 'make test'
-                }
-            }
         }
     }
 }
@@ -180,8 +212,8 @@ pipeline {
 If no URL is provided, the plugin acts as a pass-through and doesn't send any logs:
 
 ```groovy
-devlogs(url: '') {
-    sh 'echo "This still works, just without devlogs streaming"'
+options {
+    devlogs(url: '')  // Disabled
 }
 ```
 
@@ -214,7 +246,7 @@ The plugin sends logs to OpenSearch in the following format:
 - `build_url`: Relative URL to the build
 - `seq`: Sequence number (1, 2, 3, ...) for ordering logs
 - `message`: The actual log line content
-- `source`: Always "jenkins" 
+- `source`: Always "jenkins"
 - `level`: Log level (currently always "info")
 
 ## Viewing Logs
@@ -283,7 +315,7 @@ If you see connection errors:
 
 The plugin is designed to have minimal impact on build performance:
 
-- **Batching**: Logs are batched (default 50 lines) before sending
+- **Batching**: Logs are batched (default 10 lines or 10 seconds) before sending
 - **Non-blocking**: Log streaming happens asynchronously
 - **Error handling**: Network failures don't block the build
 - **Lightweight**: No heavy processing or transformation of logs
@@ -295,7 +327,7 @@ This plugin differs from the `devlogs jenkins` CLI command approach:
 | Feature | Plugin | CLI |
 |---------|--------|-----|
 | Installation | Via Jenkins Update Center | Download binary, add to pipeline |
-| Configuration | Per-pipeline URL | Environment variable |
+| Configuration | Per-pipeline URL in options | Environment variable |
 | Integration | Native Jenkins step | External binary |
 | Updates | Via Jenkins plugin updates | Manual binary updates |
 | Resource usage | Runs in Jenkins JVM | Separate process |

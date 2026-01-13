@@ -1,26 +1,23 @@
-// Example with conditional devlogs (development branches only)
+// Example with conditional devlogs based on environment variable
+// Set ENABLE_DEVLOGS=true to enable log streaming
 
 pipeline {
     agent any
-    
+
+    environment {
+        DEVLOGS_URL = credentials('devlogs-opensearch-url')
+    }
+
+    options {
+        // Use empty string to disable when ENABLE_DEVLOGS is not set
+        devlogs(url: "${env.ENABLE_DEVLOGS == 'true' ? env.DEVLOGS_URL : ''}")
+    }
+
     stages {
         stage('Build') {
             steps {
-                script {
-                    def isDevelopment = env.BRANCH_NAME != 'main' && env.BRANCH_NAME != 'production'
-                    
-                    if (isDevelopment) {
-                        // Stream logs for development branches
-                        devlogs(url: credentials('devlogs-url')) {
-                            sh 'make build'
-                            sh 'make test'
-                        }
-                    } else {
-                        // Production branches - no logging overhead
-                        sh 'make build'
-                        sh 'make test'
-                    }
-                }
+                sh 'make build'
+                sh 'make test'
             }
         }
     }

@@ -4,16 +4,16 @@ This guide will help you get started with the Devlogs Jenkins Plugin.
 
 ## What is the Devlogs Jenkins Plugin?
 
-The Devlogs Jenkins Plugin is a native Jenkins plugin that streams build console output in real-time to a devlogs OpenSearch instance. Unlike the CLI-based approach (`devlogs jenkins attach`), this plugin integrates directly into Jenkins and provides a simpler, more native experience.
+The Devlogs Jenkins Plugin is a native Jenkins plugin that streams build console output in real-time to a devlogs OpenSearch instance. Configure it once at the pipeline level and all stages are automatically captured.
 
 ## Key Features
 
-✅ **Native Jenkins Integration** - Install via Jenkins Update Center  
-✅ **Per-Pipeline Configuration** - Different URL for each pipeline  
-✅ **Non-Intrusive** - No URL = no logging (zero impact)  
-✅ **Error Resilient** - Logging failures don't break builds  
-✅ **Batch Processing** - Efficient log streaming  
-✅ **Easy to Use** - Simple `devlogs { }` wrapper syntax  
+- **Pipeline-Level Configuration** - Set once in `options {}`, captures all stages
+- **Native Jenkins Integration** - Install via Jenkins Update Center
+- **Non-Intrusive** - No URL = no logging (zero impact)
+- **Error Resilient** - Logging failures don't break builds
+- **Batch Processing** - Efficient log streaming
+- **UI Configuration** - Can also configure via Jenkins job settings
 
 ## Quick Start
 
@@ -25,8 +25,6 @@ The Devlogs Jenkins Plugin is a native Jenkins plugin that streams build console
 - Network access from Jenkins agents to OpenSearch
 
 ### 2. Build the Plugin
-
-Since the Jenkins repository is blocked in the build environment, you'll need to build the plugin in an environment with internet access:
 
 ```bash
 cd jenkins-plugin
@@ -77,23 +75,33 @@ Store your devlogs OpenSearch URL as a Jenkins credential:
 ```groovy
 pipeline {
     agent any
-    
+
     environment {
         DEVLOGS_URL = credentials('devlogs-opensearch-url')
     }
-    
+
+    options {
+        devlogs(url: '${DEVLOGS_URL}')
+    }
+
     stages {
         stage('Build') {
             steps {
-                devlogs(url: env.DEVLOGS_URL) {
-                    sh 'npm install'
-                    sh 'npm run build'
-                }
+                sh 'npm install'
+                sh 'npm run build'
+            }
+        }
+
+        stage('Test') {
+            steps {
+                sh 'npm test'
             }
         }
     }
 }
 ```
+
+That's it! All console output from all stages is automatically streamed to devlogs.
 
 ### 6. View Logs
 
@@ -115,38 +123,29 @@ devlogs web --port 8088
 
 The `jenkins-plugin/examples/` directory contains several example Jenkinsfiles:
 
-- **Jenkinsfile.simple** - Basic usage
+- **Jenkinsfile.simple** - Minimal pipeline-level usage
 - **Jenkinsfile.credentials** - Using Jenkins credentials
-- **Jenkinsfile.conditional** - Only log development branches
+- **Jenkinsfile.conditional** - Enable/disable via environment variable
+- **Jenkinsfile.per-stage** - Fine-grained per-stage control (advanced)
 - **Jenkinsfile** - Complete example with multiple stages
 
-## Comparison: Plugin vs CLI
+## Alternative: UI Configuration
 
-| Feature | Plugin | CLI (`devlogs jenkins`) |
-|---------|--------|------------------------|
-| Installation | Jenkins Update Center | Download binary |
-| Configuration | Per-pipeline in Jenkinsfile | Environment variables |
-| Syntax | `devlogs(url: '...') { }` | `sh 'devlogs jenkins attach'` |
-| Updates | Via Jenkins | Manual binary update |
-| Integration | Native Jenkins step | External process |
+You can also configure devlogs via the Jenkins job configuration UI:
+
+1. Open your job configuration
+2. Under **Build Environment**, check **Stream logs to Devlogs**
+3. Enter your devlogs URL
+4. Save
+
+## Comparison: Pipeline Options vs Per-Stage
+
+| Approach | Syntax | Use Case |
+|----------|--------|----------|
+| Pipeline options | `options { devlogs(url: '...') }` | Capture all stages (recommended) |
+| Per-stage wrapper | `devlogs(url: '...') { ... }` | Fine-grained control over what's logged |
 
 ## Common Issues
-
-### Build fails with "devlogs: command not found"
-
-This means you're trying to use the CLI approach, not the plugin. Change from:
-
-```groovy
-sh 'devlogs jenkins attach --background'
-```
-
-To:
-
-```groovy
-devlogs(url: credentials('devlogs-url')) {
-    // your build steps
-}
-```
 
 ### Logs not appearing in devlogs
 

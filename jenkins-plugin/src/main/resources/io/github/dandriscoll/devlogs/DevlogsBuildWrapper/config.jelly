@@ -1,0 +1,9 @@
+<?jelly escape-by-default='true'?>
+<j:jelly xmlns:j="jelly:core" xmlns:f="/lib/form">
+  <f:entry title="Devlogs URL" field="url" description="OpenSearch URL with index (e.g., https://user:pass@host:9200/devlogs-myproject)">
+    <f:textbox />
+  </f:entry>
+  <f:entry title="Index (optional)" field="index" description="Override the index name extracted from the URL">
+    <f:textbox />
+  </f:entry>
+</j:jelly>
