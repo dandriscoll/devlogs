@@ -62,7 +62,7 @@ public class DevlogsStepTest {
             true
         ));
         
-        WorkflowRun run = jenkins.assertBuildStatus(Result.FAILURE, job);
+        WorkflowRun run = jenkins.assertBuildStatus(Result.FAILURE, job.scheduleBuild2(0));
         jenkins.assertLogContains("Build failed intentionally", run);
     }
     

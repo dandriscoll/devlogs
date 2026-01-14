@@ -117,7 +117,7 @@ public class DevlogsStep extends Step implements Serializable {
             filter = new DevlogsConsoleLogFilter(url, index, run);
             
             getContext().newBodyInvoker()
-                .withContext(filter.createContext())
+                .withContext(BodyInvoker.mergeConsoleLogFilters(getContext().get(ConsoleLogFilter.class), filter))
                 .withCallback(BodyExecutionCallback.wrap(getContext()))
                 .start();
             
@@ -190,16 +190,7 @@ public class DevlogsStep extends Step implements Serializable {
         public OutputStream decorateLogger(Run build, OutputStream logger) throws IOException, InterruptedException {
             return new DevlogsOutputStream(logger, url, index, runId, jobName, buildNumber, buildUrl, seq);
         }
-        
-        public ConsoleLogFilter.ConsoleLogFilterContext createContext() {
-            return new ConsoleLogFilter.ConsoleLogFilterContext() {
-                @Override
-                public ConsoleLogFilter get() {
-                    return DevlogsConsoleLogFilter.this;
-                }
-            };
-        }
-        
+
         public void close() {
             // Cleanup if needed
         }
