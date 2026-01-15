@@ -1,16 +1,13 @@
 // Example Jenkinsfile demonstrating the Devlogs plugin
-// This shows the recommended pipeline-level configuration
+// This shows the recommended pipeline-level configuration using credentialsId
 
 pipeline {
     agent any
 
-    environment {
-        DEVLOGS_URL = credentials('devlogs-opensearch-url')
-    }
-
     // Configure devlogs once at the pipeline level - all stages are automatically captured
+    // The credentialsId parameter looks up a "Secret text" credential containing the OpenSearch URL
     options {
-        devlogs(url: '${DEVLOGS_URL}')
+        devlogs(credentialsId: 'devlogs-opensearch-url')
     }
 
     stages {

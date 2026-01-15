@@ -276,6 +276,39 @@ def initmcp(
 			typer.echo(f"Skipped {label}: {path} already configured")
 
 @app.command()
+def refresh(
+	index: str = typer.Argument(None, help="Index name to refresh (defaults to configured index)"),
+	env: str = ENV_OPTION,
+	url: str = URL_OPTION,
+):
+	"""Force OpenSearch to index pending documents.
+
+	This makes recently indexed documents immediately searchable by forcing
+	a refresh of the index. Normally OpenSearch refreshes every 1 second,
+	but this command is useful when you need immediate visibility.
+
+	Examples:
+	  devlogs refresh              # Refresh the configured index
+	  devlogs refresh my-index     # Refresh a specific index
+	"""
+	_apply_common_options(env, url)
+	client, cfg = require_opensearch(check_idx=False)
+
+	index_to_refresh = index or cfg.index
+
+	if not client.indices.exists(index=index_to_refresh):
+		typer.echo(typer.style(f"Error: Index '{index_to_refresh}' does not exist.", fg=typer.colors.RED), err=True)
+		raise typer.Exit(1)
+
+	try:
+		client.indices.refresh(index=index_to_refresh)
+		typer.echo(typer.style(f"Refreshed index '{index_to_refresh}'.", fg=typer.colors.GREEN))
+	except OpenSearchError as e:
+		typer.echo(typer.style(f"Error: Failed to refresh index: {e}", fg=typer.colors.RED), err=True)
+		raise typer.Exit(1)
+
+
+@app.command()
 def diagnose(
 	env: str = ENV_OPTION,
 	url: str = URL_OPTION,
@@ -1036,6 +1069,155 @@ def _format_env_output(scheme: str, host: str, port: int, user: str, password: s
 	if index:
 		lines.append(f"DEVLOGS_INDEX={index}")
 	return "\n".join(lines)
+
+
+@app.command()
+def initjenkins(
+	jenkinsfile: str = typer.Argument("Jenkinsfile", help="Path to Jenkinsfile to modify"),
+	credential_id: str = typer.Option("devlogs-opensearch-url", "--credential-id", "-c", help="Jenkins credential ID to use"),
+	env: str = ENV_OPTION,
+	url: str = URL_OPTION,
+):
+	"""Add devlogs configuration to an existing Jenkinsfile.
+
+	This command modifies an existing Jenkinsfile to add an options block
+	with the devlogs pipeline step configured to use a Jenkins credential.
+
+	After running this command, you need to create a Jenkins credential
+	of type "Secret text" with the OpenSearch URL.
+
+	Examples:
+	  devlogs initjenkins                        # Modify ./Jenkinsfile
+	  devlogs initjenkins path/to/Jenkinsfile    # Modify specific file
+	  devlogs initjenkins --credential-id my-cred  # Use custom credential ID
+	"""
+	import re
+
+	_apply_common_options(env, url)
+
+	jenkinsfile_path = Path(jenkinsfile)
+	if not jenkinsfile_path.is_file():
+		typer.echo(typer.style(f"Error: Jenkinsfile not found: {jenkinsfile_path}", fg=typer.colors.RED), err=True)
+		raise typer.Exit(1)
+
+	content = jenkinsfile_path.read_text(encoding="utf-8")
+
+	# Check if this looks like a declarative pipeline
+	if "pipeline" not in content:
+		typer.echo(typer.style("Error: File does not appear to be a declarative Jenkins pipeline.", fg=typer.colors.RED), err=True)
+		typer.echo("This command only supports declarative pipelines with a 'pipeline { }' block.", err=True)
+		raise typer.Exit(1)
+
+	# Check if devlogs is already configured
+	if "devlogs(" in content:
+		typer.echo(typer.style("Warning: Jenkinsfile already appears to have devlogs configuration.", fg=typer.colors.YELLOW))
+		typer.echo("Review the file manually to ensure correct configuration.")
+		raise typer.Exit(0)
+
+	options_line = f"        devlogs(credentialsId: '{credential_id}')"
+
+	modified = False
+	lines = content.split("\n")
+	result_lines = []
+	i = 0
+
+	# Track brace depth and whether we're inside pipeline block
+	in_pipeline = False
+	pipeline_brace_depth = 0
+	added_options = False
+
+	while i < len(lines):
+		line = lines[i]
+		result_lines.append(line)
+
+		# Detect entering pipeline block
+		if not in_pipeline and re.match(r'^\s*pipeline\s*\{', line):
+			in_pipeline = True
+			pipeline_brace_depth = 1
+			i += 1
+			continue
+
+		if in_pipeline:
+			# Count braces to track depth
+			pipeline_brace_depth += line.count('{') - line.count('}')
+
+			# Check for existing options block and add our line
+			if not added_options and re.match(r'^\s*options\s*\{', line):
+				result_lines.append(options_line)
+				added_options = True
+				modified = True
+
+			# If we hit stages and haven't added options, add it before stages
+			if re.match(r'^\s*stages\s*\{', line) and not added_options:
+				# Insert before the stages line
+				result_lines.pop()  # Remove the stages line we just added
+
+				result_lines.append("")
+				result_lines.append("    options {")
+				result_lines.append(options_line)
+				result_lines.append("    }")
+				added_options = True
+				modified = True
+
+				result_lines.append("")
+				result_lines.append(line)  # Re-add the stages line
+
+			# Exit pipeline tracking when we close the pipeline block
+			if pipeline_brace_depth == 0:
+				in_pipeline = False
+
+		i += 1
+
+	if not modified:
+		typer.echo(typer.style("Error: Could not find a suitable location to add devlogs configuration.", fg=typer.colors.RED), err=True)
+		typer.echo("Ensure the Jenkinsfile has a 'pipeline { stages { } }' structure.", err=True)
+		raise typer.Exit(1)
+
+	# Write the modified file
+	new_content = "\n".join(result_lines)
+	jenkinsfile_path.write_text(new_content, encoding="utf-8")
+
+	typer.echo(typer.style(f"Modified {jenkinsfile_path}", fg=typer.colors.GREEN))
+	typer.echo()
+	typer.echo("Added:")
+	typer.echo(f"  - Options: devlogs(credentialsId: '{credential_id}')")
+
+	# Print setup instructions
+	typer.echo()
+	typer.echo(typer.style("Next steps - Create Jenkins credential:", fg=typer.colors.CYAN, bold=True))
+	typer.echo("=" * 60)
+	typer.echo()
+	typer.echo("1. Go to Jenkins > Manage Jenkins > Credentials")
+	typer.echo("2. Select the appropriate domain (e.g., Global)")
+	typer.echo("3. Click 'Add Credentials'")
+	typer.echo("4. Configure:")
+	typer.echo(f"   - Kind: Secret text")
+	typer.echo(f"   - ID: {credential_id}")
+	typer.echo("   - Secret: <your OpenSearch URL>")
+	typer.echo()
+
+	# Try to load config and show the URL value
+	try:
+		cfg = load_config()
+		if cfg.enabled:
+			# Build the URL from config
+			credential_url = _build_opensearch_url(
+				cfg.opensearch_scheme,
+				cfg.opensearch_host,
+				cfg.opensearch_port,
+				cfg.opensearch_user,
+				cfg.opensearch_pass,
+				cfg.index,
+			)
+			typer.echo(typer.style("Credential value (from your .env/environment):", fg=typer.colors.GREEN, bold=True))
+			typer.echo("-" * 60)
+			typer.echo(credential_url)
+			typer.echo("-" * 60)
+		else:
+			typer.echo("Tip: Set up a .env file with DEVLOGS_OPENSEARCH_URL to see the exact value here.")
+			typer.echo("     Run 'devlogs mkurl' to interactively build the URL.")
+	except Exception:
+		typer.echo("Tip: Run 'devlogs mkurl' to interactively build the OpenSearch URL.")
 
 
 @app.command()

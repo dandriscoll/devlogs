@@ -77,12 +77,17 @@ public class DevlogsStepTest {
     
     @Test
     public void testDevlogsStepGetters() {
-        DevlogsStep step = new DevlogsStep("https://example.com:9200/test");
-        
+        DevlogsStep step = new DevlogsStep();
+        step.setUrl("https://example.com:9200/test");
+
         assertEquals("https://example.com:9200/test", step.getUrl());
         assertNull(step.getIndex());
-        
+        assertNull(step.getCredentialsId());
+
         step.setIndex("custom-index");
         assertEquals("custom-index", step.getIndex());
+
+        step.setCredentialsId("my-creds");
+        assertEquals("my-creds", step.getCredentialsId());
     }
 }
