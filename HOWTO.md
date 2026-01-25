@@ -30,12 +30,16 @@ devlogs init
 
 ### 5. Integrate into Your Code
 
-**Basic setup:**
+**Basic setup with build info:**
 ```python
 import logging
 from devlogs.handler import DiagnosticsHandler
 from devlogs.opensearch.client import get_opensearch_client
 from devlogs.config import load_config
+from devlogs.build_info import resolve_build_info
+
+# Resolve build info at startup (reads .build.json or env vars)
+build_info = resolve_build_info(write_if_missing=True)
 
 # Setup handler
 config = load_config()
@@ -44,6 +48,14 @@ handler = DiagnosticsHandler(opensearch_client=client, index_name=config.index)
 
 logging.getLogger().addHandler(handler)
 logging.getLogger().setLevel(logging.DEBUG)
+
+# Include build_id in logs
+logging.info("Application started", extra={
+    "features": {
+        "build_id": build_info.build_id,
+        "branch": build_info.branch,
+    }
+})
 ```
 
 **Use operations to group related logs:**
@@ -61,6 +73,35 @@ with operation(area="api"):
 ```
 
 ## Common Patterns
+
+### Adding Build Info to All Logs
+
+Use a logging adapter to automatically include build info in every log:
+```python
+import logging
+from devlogs.build_info import resolve_build_info
+
+build_info = resolve_build_info()
+
+class BuildInfoAdapter(logging.LoggerAdapter):
+    def process(self, msg, kwargs):
+        extra = kwargs.get('extra', {})
+        features = extra.get('features', {})
+        features.update({
+            'build_id': self.extra['build_id'],
+            'branch': self.extra['branch'],
+        })
+        extra['features'] = features
+        kwargs['extra'] = extra
+        return msg, kwargs
+
+logger = BuildInfoAdapter(
+    logging.getLogger(__name__),
+    {'build_id': build_info.build_id, 'branch': build_info.branch}
+)
+
+logger.info("This log includes build_id automatically")
+```
 
 ### Web Framework (Flask/FastAPI)
 ```python
@@ -126,6 +167,31 @@ devlogs tail --follow
 - **area**: Logical grouping (api, database, scheduler, etc.)
 - **operation_id**: Auto-generated UUID linking related logs
 - **operation() context**: Groups logs from a single request/job/transaction
+- **build_id**: Stable identifier linking logs to a specific build/deployment
+
+## Build Info in CI
+
+Generate `.build.json` during your CI build:
+
+**GitHub Actions:**
+```yaml
+- name: Generate build info
+  run: |
+    cat > .build.json << EOF
+    {
+      "build_id": "${{ github.ref_name }}-$(date -u +%Y%m%dT%H%M%SZ)",
+      "branch": "${{ github.ref_name }}",
+      "timestamp_utc": "$(date -u +%Y%m%dT%H%M%SZ)"
+    }
+    EOF
+```
+
+**Or use Python:**
+```bash
+python -c "from devlogs.build_info import generate_build_info_file; generate_build_info_file(allow_git=True)"
+```
+
+See [docs/build-info.md](docs/build-info.md) for full documentation.
 
 ## Best Practices
 

@@ -1,6 +1,6 @@
 {
   "name": "devlogs-browser",
-  "version": "1.1.4",
+  "version": "1.2.0",
   "type": "module",
   "description": "Browser logging library for DevLogs - forwards console logs to OpenSearch",
   "main": "dist/devlogs.cjs.js",
@@ -13,13 +13,16 @@
   "scripts": {
     "build": "rollup -c",
     "dev": "rollup -c -w",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "devDependencies": {
     "@rollup/plugin-typescript": "^11.1.6",
     "rollup": "^4.9.0",
     "tslib": "^2.6.2",
-    "typescript": "^5.3.0"
+    "typescript": "^5.3.0",
+    "vitest": "^1.2.0"
   },
   "keywords": [
     "logging",

@@ -78,3 +78,17 @@ export { setArea, setOperationId, setFeatures, withOperation };
 
 // Re-export types for TypeScript users
 export type { DevlogsOptions, LogContext, LogDocument } from './types';
+
+// Re-export build info utilities
+export {
+  resolveBuildInfo,
+  resolveBuildId,
+  createBuildInfoData,
+  formatTimestamp,
+} from './build-info';
+export type {
+  BuildInfo,
+  BuildInfoSource,
+  BuildInfoFile,
+  BuildInfoOptions,
+} from './build-info';

@@ -25,11 +25,20 @@ If you don't have OpenSearch running and you want to stand one up:
 > 3. Add devlogs hooks at the beginning of the application (main entrypoint/startup module), wrapped in an environment check so it only runs in development:
 >    ```python
 >    import os
+>    import logging
 >    if os.getenv("ENVIRONMENT") != "production":
 >        from devlogs.handler import OpenSearchHandler
+>        from devlogs.build_info import resolve_build_info
+>
+>        # Resolve build info (reads .build.json or generates)
+>        build_info = resolve_build_info(write_if_missing=True)
+>
 >        handler = OpenSearchHandler(level=logging.INFO)
 >        logging.getLogger().addHandler(handler)
 >        logging.getLogger().setLevel(logging.INFO)
+>
+>        # Log startup with build info
+>        logging.info("App started", extra={"features": {"build_id": build_info.build_id, "branch": build_info.branch}})
 >    ```
 > 4. Run `devlogs init` (inside the virtualenv if one is set up) and verify the index is healthy.
 > 5. Ask the user if they want MCP set up; if yes, state which agent you are (`copilot`, `claude`, or `codex`) and run `devlogs initmcp <agent>`.
@@ -66,10 +75,18 @@ If you don't have OpenSearch running and you want to stand one up:
 	# Only enable devlogs in development
 	if os.getenv("ENVIRONMENT") != "production":
 	    from devlogs.handler import OpenSearchHandler
-	    logging.getLogger().addHandler(OpenSearchHandler(level=logging.DEBUG))
+	    from devlogs.build_info import resolve_build_info
 
-	logging.getLogger().setLevel(logging.DEBUG)
-	logging.info("Hello from devlogs!")
+	    # Get build info (reads .build.json or generates)
+	    build_info = resolve_build_info(write_if_missing=True)
+
+	    logging.getLogger().addHandler(OpenSearchHandler(level=logging.DEBUG))
+	    logging.getLogger().setLevel(logging.DEBUG)
+
+	    # Include build_id in logs
+	    logging.info("Hello from devlogs!", extra={
+	        "features": {"build_id": build_info.build_id, "branch": build_info.branch}
+	    })
 	```
 
 5. **Tail logs from CLI:**
@@ -242,8 +259,33 @@ Install with `pip install ".[dev]"` in development, `pip install .` in productio
 
 See [publish/RELEASING.md](publish/RELEASING.md) for detailed publishing instructions.
 
+## Build Info Helper
+
+Tag every log entry with a stable build identifier without requiring git at runtime:
+
+```python
+from devlogs.build_info import resolve_build_info
+
+bi = resolve_build_info(write_if_missing=True)
+# bi.build_id = "main-20260124T153045Z"
+# bi.branch = "main"
+# bi.source = "file" | "env" | "generated"
+
+# Use with logger
+handler = OpenSearchHandler(level=logging.INFO)
+logging.info("Started", extra={"features": {"build_id": bi.build_id, "branch": bi.branch}})
+```
+
+The build info is resolved from (in priority order):
+1. Environment variables (`DEVLOGS_BUILD_ID`, `DEVLOGS_BRANCH`)
+2. Build info file (`.build.json`)
+3. Generated values (branch-timestamp format)
+
+See [docs/build-info.md](docs/build-info.md) for CI integration examples and full API reference.
+
 ## See Also
 
+- [docs/build-info.md](docs/build-info.md) - Build info helper guide
 - [HOWTO-CLI.md](HOWTO-CLI.md) - Complete CLI reference
 - [HOWTO.md](HOWTO.md) - Integration guide
 - [HOWTO-JENKINS.md](HOWTO-JENKINS.md) - Jenkins setup
