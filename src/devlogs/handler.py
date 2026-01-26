@@ -169,24 +169,20 @@ class DevlogsHandler(logging.Handler):
 		if operation_id:
 			doc["operation_id"] = operation_id
 
-		# Custom fields (renamed from 'features')
+		# Custom fields
 		fields = _extract_features(record)
 		if fields:
 			doc["fields"] = fields
 
-		# Source location info (useful for debugging)
-		doc["source"] = {
-			"logger": record.name,
-			"pathname": record.pathname,
-			"lineno": record.lineno,
-			"funcName": record.funcName,
-		}
+		# Source location info (flat schema to match mappings)
+		doc["logger"] = record.name
+		doc["pathname"] = record.pathname
+		doc["lineno"] = record.lineno
+		doc["funcname"] = record.funcName
 
-		# Process/thread info
-		doc["process"] = {
-			"id": record.process,
-			"thread": record.thread,
-		}
+		# Process/thread info (flat schema to match mappings)
+		doc["process"] = record.process
+		doc["thread"] = record.thread
 
 		# Exception info if present
 		exc_text = getattr(record, "exc_text", None)

@@ -244,7 +244,7 @@ class TestMCPServerIntegration:
             "timestamp": "2025-12-26T10:00:00Z",
             "level": "ERROR",
             "message": "Test MCP search",
-            "logger_name": "test.mcp",
+            "logger": "test.mcp",
             "area": "test",
             "doc_type": "log_entry",
         }
@@ -272,7 +272,7 @@ class TestMCPServerIntegration:
                 "timestamp": f"2025-12-26T10:0{i}:00Z",
                 "level": "INFO",
                 "message": f"Test tail {i}",
-                "logger_name": "test.mcp",
+                "logger": "test.mcp",
                 "area": "test",
                 "doc_type": "log_entry",
             }

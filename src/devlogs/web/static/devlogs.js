@@ -99,7 +99,7 @@ function formatTimestamp(value) {
 }
 
 function entryKey(entry) {
-	const features = featureKey(entry.features);
+	const features = featureKey(entry.fields);
 	return `${entry.timestamp || ''}|${entry.level || ''}|${entry.operation_id || ''}|${entry.message || ''}|${features}`;
 }
 
@@ -193,12 +193,12 @@ function renderEntries(entries, { highlightKeys } = {}) {
 		const isNew = highlightKeys && highlightKeys.has(key);
 		const entryClass = `entry-row${isNew ? ' is-new' : ''}`;
 		const message = escapeHtml(entry.message || '');
-		const loggerName = escapeHtml(entry.logger_name || 'unknown');
+		const loggerName = escapeHtml(entry.logger || 'unknown');
 		const area = escapeHtml(entry.area || 'general');
 		const operationId = escapeHtml(entry.operation_id || 'n/a');
 		const fallbackOp = !group.rootId && entry.operation_id ? `<span class="entry-op">${operationId}</span>` : '';
 		const timestamp = formatTimestamp(entry.timestamp);
-		const features = renderFeatures(entry.features);
+		const features = renderFeatures(entry.fields);
 		return `
 			<div class="${entryClass} ${levelClass}">
 				<div class="entry-meta">

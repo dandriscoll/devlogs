@@ -263,6 +263,14 @@ class _IndicesClient:
 		"""Refresh an index to make recent changes searchable."""
 		return self._client._request("POST", f"/{index}/_refresh")
 
+	def get_mapping(self, index):
+		"""Get index mapping."""
+		return self._client._request("GET", f"/{index}/_mapping")
+
+	def reindex(self, body):
+		"""Reindex documents from one index to another."""
+		return self._client._request("POST", "/_reindex", body)
+
 
 def get_opensearch_client():
 	cfg = load_config()

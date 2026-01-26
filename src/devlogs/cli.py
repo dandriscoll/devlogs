@@ -20,7 +20,14 @@ from .opensearch.client import (
 	ConnectionFailedError,
 	DevlogsDisabledError,
 )
-from .opensearch.mappings import build_log_index_template, get_template_names
+from .opensearch.mappings import (
+	build_log_index_template,
+	get_template_names,
+	detect_schema_version,
+	get_schema_issues,
+	build_reindex_script,
+	SCHEMA_VERSION,
+)
 from .opensearch.queries import normalize_log_entries, search_logs, tail_logs, get_last_errors
 from .retention import cleanup_old_logs, get_retention_stats
 from .jenkins.cli import jenkins_app
@@ -184,17 +191,148 @@ def _write_codex_config(path: Path, python_path: str) -> str:
 	return "written"
 
 
+def _check_schema_compatibility(client, index: str) -> tuple[int | None, list[str]]:
+	"""Check index schema compatibility and return (version, issues)."""
+	try:
+		mapping = client.indices.get_mapping(index=index)
+		version = detect_schema_version(mapping)
+		issues = get_schema_issues(mapping) if version != SCHEMA_VERSION else []
+		return version, issues
+	except Exception:
+		return None, []
+
+
+def _perform_upgrade(client, cfg, source_index: str) -> bool:
+	"""Upgrade index to v2 schema by reindexing.
+
+	Returns True on success, False on failure.
+	"""
+	import uuid
+
+	target_index = f"{source_index}-v2-{uuid.uuid4().hex[:8]}"
+	template_body = build_log_index_template(cfg.index)
+
+	typer.echo(f"Creating new index '{target_index}' with v2 schema...")
+	try:
+		client.indices.create(index=target_index, body=template_body["template"])
+	except Exception as e:
+		typer.echo(typer.style(f"Error creating target index: {e}", fg=typer.colors.RED), err=True)
+		return False
+
+	typer.echo(f"Reindexing from '{source_index}' to '{target_index}'...")
+	typer.echo(typer.style("This may take a while for large indices...", dim=True))
+
+	reindex_body = {
+		"source": {"index": source_index},
+		"dest": {"index": target_index},
+		"script": {
+			"source": build_reindex_script(),
+			"lang": "painless",
+		},
+	}
+
+	try:
+		result = client.indices.reindex(body=reindex_body)
+		total = result.get("total", 0)
+		created = result.get("created", 0)
+		updated = result.get("updated", 0)
+		failures = result.get("failures", [])
+
+		if failures:
+			typer.echo(typer.style(f"Warning: {len(failures)} documents failed to reindex", fg=typer.colors.YELLOW))
+			for failure in failures[:3]:
+				typer.echo(f"  - {failure}", err=True)
+			if len(failures) > 3:
+				typer.echo(f"  ... and {len(failures) - 3} more", err=True)
+
+		typer.echo(f"Reindexed {total} documents ({created} created, {updated} updated)")
+	except Exception as e:
+		typer.echo(typer.style(f"Error during reindex: {e}", fg=typer.colors.RED), err=True)
+		typer.echo(f"The partial index '{target_index}' may need to be cleaned up manually.")
+		return False
+
+	# Delete old index and rename new one
+	typer.echo(f"Removing old index '{source_index}'...")
+	try:
+		client.indices.delete(index=source_index)
+	except Exception as e:
+		typer.echo(typer.style(f"Error deleting old index: {e}", fg=typer.colors.RED), err=True)
+		typer.echo(f"New index is available at '{target_index}'. Manual cleanup may be needed.")
+		return False
+
+	# Create alias or new index with original name pointing to data
+	typer.echo(f"Creating new index '{source_index}' with v2 schema...")
+	try:
+		client.indices.create(index=source_index, body=template_body["template"])
+	except Exception as e:
+		typer.echo(typer.style(f"Error creating new index: {e}", fg=typer.colors.RED), err=True)
+		typer.echo(f"Data is available at '{target_index}'.")
+		return False
+
+	# Reindex from temp to final
+	typer.echo(f"Moving data to '{source_index}'...")
+	reindex_final = {
+		"source": {"index": target_index},
+		"dest": {"index": source_index},
+	}
+	try:
+		client.indices.reindex(body=reindex_final)
+		client.indices.delete(index=target_index)
+	except Exception as e:
+		typer.echo(typer.style(f"Error finalizing: {e}", fg=typer.colors.RED), err=True)
+		typer.echo(f"Data may be split between '{source_index}' and '{target_index}'.")
+		return False
+
+	typer.echo(typer.style(f"Successfully upgraded '{source_index}' to v2 schema!", fg=typer.colors.GREEN))
+	return True
+
+
 @app.command()
 def init(
+	upgrade: bool = typer.Option(False, "--upgrade", help="Upgrade existing index to v2 schema if needed"),
 	env: str = ENV_OPTION,
 	url: str = URL_OPTION,
 ):
-	"""Initialize OpenSearch indices and templates (idempotent)."""
+	"""Initialize OpenSearch indices and templates (idempotent).
+
+	Checks existing index for v2 schema compatibility. Use --upgrade to
+	automatically migrate data from v1 to v2 schema.
+	"""
 	_apply_common_options(env, url)
 	client, cfg = require_opensearch(check_idx=False)
+
+	# Check existing index schema
+	index_exists = client.indices.exists(index=cfg.index)
+	if index_exists:
+		version, issues = _check_schema_compatibility(client, cfg.index)
+		if version is not None:
+			typer.echo(f"Index '{cfg.index}' exists with schema v{version}")
+			if version == SCHEMA_VERSION:
+				typer.echo(typer.style("Schema is v2-compatible.", fg=typer.colors.GREEN))
+			else:
+				typer.echo(typer.style(f"Schema needs upgrade to v{SCHEMA_VERSION}.", fg=typer.colors.YELLOW))
+				if issues:
+					typer.echo("Issues found:")
+					for issue in issues:
+						typer.echo(f"  - {issue}")
+
+				if upgrade:
+					typer.echo("")
+					if not _perform_upgrade(client, cfg, cfg.index):
+						raise typer.Exit(1)
+				else:
+					typer.echo("")
+					typer.echo("Run with --upgrade to migrate data to v2 schema.")
+					typer.echo(typer.style(
+						"Warning: Upgrade will reindex all data. Back up your index first.",
+						fg=typer.colors.YELLOW,
+					))
+					raise typer.Exit(1)
+
 	# Create or update index templates
 	template_body = build_log_index_template(cfg.index)
 	template_name, legacy_template_name = get_template_names(cfg.index)
+
 	# Remove any conflicting templates before creating a new one
 	names_to_remove = {template_name, legacy_template_name}
 	names_to_remove.update(OLD_TEMPLATE_NAMES)
@@ -210,10 +348,12 @@ def init(
 					err=True,
 				)
 	client.indices.put_index_template(name=template_name, body=template_body)
+
 	# Create initial index with explicit mappings if it doesn't exist
-	if not client.indices.exists(index=cfg.index):
+	if not index_exists:
 		client.indices.create(index=cfg.index, body=template_body["template"])
-		typer.echo(f"Created index '{cfg.index}'.")
+		typer.echo(f"Created index '{cfg.index}' with v{SCHEMA_VERSION} schema.")
+
 	typer.echo("OpenSearch indices and templates initialized.")
 
 
@@ -651,7 +791,7 @@ def tail(
 				entry_area = doc.get("area") or ""
 				entry_operation = doc.get("operation_id") or ""
 				message = doc.get("message") or ""
-				features = _format_features(doc.get("features"))
+				features = _format_features(doc.get("fields"))
 				if features:
 					typer.echo(f"{timestamp} {entry_level} {entry_area} {entry_operation} {features} {message}")
 				else:
@@ -762,7 +902,7 @@ def search(
 			entry_area = doc.get("area") or ""
 			entry_operation = doc.get("operation_id") or ""
 			message = doc.get("message") or ""
-			features = _format_features(doc.get("features"))
+			features = _format_features(doc.get("fields"))
 			if features:
 				typer.echo(f"{timestamp} {entry_level} {entry_area} {entry_operation} {features} {message}")
 			else:
@@ -838,7 +978,7 @@ def last_error(
 		entry_area = doc.get("area") or ""
 		entry_operation = doc.get("operation_id") or ""
 		message = doc.get("message") or ""
-		features = _format_features(doc.get("features"))
+		features = _format_features(doc.get("fields"))
 		if features:
 			typer.echo(f"{timestamp} {entry_level} {entry_area} {entry_operation} {features} {message}")
 		else:

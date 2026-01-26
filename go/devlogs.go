@@ -25,4 +25,4 @@
 package devlogs
 
 // Version is the library version.
-const Version = "1.1.4"
+const Version = "2.0.1"

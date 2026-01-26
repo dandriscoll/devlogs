@@ -178,8 +178,8 @@ def test_features_are_indexed_and_normalized(opensearch_client, test_index):
 	assert results
 	entries = normalize_log_entries(results)
 	assert any(
-		entry.get("features", {}).get("user") == "alice"
-		and entry.get("features", {}).get("plan") == "pro"
-		and entry.get("features", {}).get("count") == 3
+		entry.get("fields", {}).get("user") == "alice"
+		and entry.get("fields", {}).get("plan") == "pro"
+		and entry.get("fields", {}).get("count") == 3
 		for entry in entries
 	)

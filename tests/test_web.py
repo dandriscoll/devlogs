@@ -33,7 +33,7 @@ def test_search_returns_flat_docs(monkeypatch):
 		"area": "jobs",
 		"timestamp": "2024-02-01T09:30:00Z",
 		"level": "info",
-		"logger_name": "svc",
+		"logger": "svc",
 		"message": "hello",
 		"pathname": "worker.py",
 		"lineno": 12,
@@ -48,7 +48,7 @@ def test_search_returns_flat_docs(monkeypatch):
 	assert len(results) == 1
 	assert results[0]["operation_id"] == "op-2"
 	assert results[0]["message"] == "hello"
-	assert results[0]["logger_name"] == "svc"
+	assert results[0]["logger"] == "svc"
 
 
 def test_tail_endpoint_returns_cursor(monkeypatch):
@@ -59,7 +59,7 @@ def test_tail_endpoint_returns_cursor(monkeypatch):
 		"area": "api",
 		"timestamp": "2024-02-01T09:40:00Z",
 		"level": "warning",
-		"logger_name": "svc",
+		"logger": "svc",
 		"message": "slow response",
 	}
 	monkeypatch.setattr(server, "tail_logs", lambda *args, **kwargs: ([flat_doc], ["2024-02-01T09:40:00Z", "x"]))

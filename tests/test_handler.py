@@ -161,15 +161,15 @@ class TestDevlogsHandler:
         assert "test message" in doc["message"]
         assert doc["level"] == "info"
 
-        # Source info in nested object
-        assert doc["source"]["logger"] == "test.logger"
-        assert doc["source"]["pathname"] == "/path/to/file.py"
-        assert doc["source"]["lineno"] == 42
-        assert "funcName" in doc["source"]  # May be None for manually created records
+        # Source info at top level (flat schema)
+        assert doc["logger"] == "test.logger"
+        assert doc["pathname"] == "/path/to/file.py"
+        assert doc["lineno"] == 42
+        assert "funcname" in doc  # May be None for manually created records
 
-        # Process info in nested object
-        assert "id" in doc["process"]
-        assert "thread" in doc["process"]
+        # Process info at top level (flat schema)
+        assert "process" in doc
+        assert "thread" in doc
 
     def test_format_record_with_fields(self):
         """Test format_record includes fields when present."""
