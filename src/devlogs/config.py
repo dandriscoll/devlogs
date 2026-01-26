@@ -8,7 +8,17 @@ from urllib.parse import urlparse, unquote
 _dotenv_loaded = False
 _custom_dotenv_path = None
 
+# All recognized devlogs configuration keys
 _DEVLOGS_CONFIG_KEYS = (
+	# Collector URL (where apps send logs)
+	"DEVLOGS_URL",
+	# Forward mode: if set, collector forwards to this URL instead of ingesting
+	"DEVLOGS_FORWARD_URL",
+	# Forward mode: per-application index routing (KV format)
+	"DEVLOGS_FORWARD_INDEX_MAP_KV",
+	# Forward mode: internal logs index
+	"DEVLOGS_FORWARD_INTERNAL_INDEX",
+	# Admin/OpenSearch connection (for search/tail/UI/CLI and collector ingest)
 	"DEVLOGS_OPENSEARCH_HOST",
 	"DEVLOGS_OPENSEARCH_PORT",
 	"DEVLOGS_OPENSEARCH_USER",
@@ -18,9 +28,23 @@ _DEVLOGS_CONFIG_KEYS = (
 	"DEVLOGS_OPENSEARCH_VERIFY_CERTS",
 	"DEVLOGS_OPENSEARCH_CA_CERT",
 	"DEVLOGS_INDEX",
+	# Retention policy
 	"DEVLOGS_RETENTION_DEBUG",
 	"DEVLOGS_RETENTION_INFO",
 	"DEVLOGS_RETENTION_WARNING",
+	# Collector limits (future provisions, default unlimited)
+	"DEVLOGS_COLLECTOR_RATE_LIMIT",
+	"DEVLOGS_COLLECTOR_MAX_PAYLOAD_SIZE",
+	# Collector binding settings
+	"DEVLOGS_COLLECTOR_HOST",
+	"DEVLOGS_COLLECTOR_PORT",
+	"DEVLOGS_COLLECTOR_WORKERS",
+	"DEVLOGS_COLLECTOR_LOG_LEVEL",
+	# Authentication configuration
+	"DEVLOGS_AUTH_MODE",
+	"DEVLOGS_TOKEN_MAP_KV",
+	# Legacy: Auth token header name (default: Authorization)
+	"DEVLOGS_AUTH_HEADER",
 )
 
 
@@ -124,11 +148,25 @@ def _parse_opensearch_url(url: str):
 
 
 class DevlogsConfig:
-	"""Loads configuration from environment variables and provides defaults."""
+	"""Loads configuration from environment variables and provides defaults.
+
+	Configuration concepts:
+	- DEVLOGS_URL: The collector base URL where applications send logs (ingestion endpoint)
+	- DEVLOGS_FORWARD_URL: If set, collector forwards incoming requests to this URL (forward mode)
+	- DEVLOGS_OPENSEARCH_*: Admin connection for direct OpenSearch access (search/tail/UI/CLI, and ingest mode)
+	- DEVLOGS_INDEX: The OpenSearch index to use for log storage
+	"""
 	def __init__(self, enabled: bool = True):
 		self.enabled = enabled
 
+		# Collector URL (where apps send logs)
+		self.collector_url = _getenv("DEVLOGS_URL", "")
+
+		# Forward URL (if set, collector operates in forward mode)
+		self.forward_url = _getenv("DEVLOGS_FORWARD_URL", "")
+
 		# Check for URL shortcut first - it overrides individual settings
+		# This is the admin OpenSearch connection used for search/tail/UI/CLI and ingest mode
 		url_config = _parse_opensearch_url(os.getenv("DEVLOGS_OPENSEARCH_URL", ""))
 
 		if url_config:
@@ -153,11 +191,63 @@ class DevlogsConfig:
 		self.opensearch_timeout = int(_getenv("DEVLOGS_OPENSEARCH_TIMEOUT", "30"))
 		self.opensearch_verify_certs = _getenv("DEVLOGS_OPENSEARCH_VERIFY_CERTS", "true").lower() in ("true", "1", "yes")
 		self.opensearch_ca_cert = _getenv("DEVLOGS_OPENSEARCH_CA_CERT", "")
+
 		# Retention configuration (time-based cleanup)
 		# Parse duration strings like "6h", "7d", or plain numbers
 		self.retention_debug_hours = parse_duration(_getenv("DEVLOGS_RETENTION_DEBUG", "6h"), unit='hours')
 		self.retention_info_days = parse_duration(_getenv("DEVLOGS_RETENTION_INFO", "7d"), unit='days')
 		self.retention_warning_days = parse_duration(_getenv("DEVLOGS_RETENTION_WARNING", "30d"), unit='days')
+
+		# Collector limits (future provisions - default unlimited)
+		# Rate limit: requests per second (0 = unlimited)
+		rate_limit_str = _getenv("DEVLOGS_COLLECTOR_RATE_LIMIT", "0")
+		self.collector_rate_limit = int(rate_limit_str) if rate_limit_str else 0
+		# Max payload size in bytes (0 = unlimited)
+		max_payload_str = _getenv("DEVLOGS_COLLECTOR_MAX_PAYLOAD_SIZE", "0")
+		self.collector_max_payload_size = int(max_payload_str) if max_payload_str else 0
+
+		# Auth header name for token validation (legacy, use new auth system)
+		self.auth_header = _getenv("DEVLOGS_AUTH_HEADER", "Authorization")
+
+		# Authentication mode: allow_anonymous, require_token_passthrough, require_token_verified
+		self.auth_mode = _getenv("DEVLOGS_AUTH_MODE", "allow_anonymous")
+
+		# Token-to-identity mapping (KV format)
+		self.token_map_kv = _getenv("DEVLOGS_TOKEN_MAP_KV", "")
+
+		# Forward mode: per-application index routing (KV format)
+		self.forward_index_map_kv = _getenv("DEVLOGS_FORWARD_INDEX_MAP_KV", "")
+
+		# Forward mode: internal logs index
+		self.forward_internal_index = _getenv("DEVLOGS_FORWARD_INTERNAL_INDEX", "")
+
+		# Collector binding settings
+		self.collector_host = _getenv("DEVLOGS_COLLECTOR_HOST", "0.0.0.0")
+		self.collector_port = int(_getenv("DEVLOGS_COLLECTOR_PORT", "8080"))
+		self.collector_workers = int(_getenv("DEVLOGS_COLLECTOR_WORKERS", "1"))
+		self.collector_log_level = _getenv("DEVLOGS_COLLECTOR_LOG_LEVEL", "info")
+
+	def has_opensearch_config(self) -> bool:
+		"""Check if OpenSearch admin connection is configured."""
+		return bool(
+			os.getenv("DEVLOGS_OPENSEARCH_URL") or
+			os.getenv("DEVLOGS_OPENSEARCH_HOST")
+		)
+
+	def get_collector_mode(self) -> str:
+		"""Determine collector operating mode based on configuration.
+
+		Returns:
+			'forward' - if DEVLOGS_FORWARD_URL is set
+			'ingest' - if OpenSearch admin connection is configured
+			'error' - if neither is configured
+		"""
+		if self.forward_url:
+			return 'forward'
+		elif self.has_opensearch_config():
+			return 'ingest'
+		else:
+			return 'error'
 
 def set_dotenv_path(path: str):
 	"""Set a custom .env file path to load. Must be called before load_config()."""

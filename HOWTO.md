@@ -1,4 +1,4 @@
-# How to Integrate devlogs
+# How to Integrate devlogs (v2.0)
 
 Quick guide for adding devlogs to your Python project.
 
@@ -30,10 +30,10 @@ devlogs init
 
 ### 5. Integrate into Your Code
 
-**Basic setup with build info:**
+**Basic setup with DevlogsHandler:**
 ```python
 import logging
-from devlogs.handler import DiagnosticsHandler
+from devlogs.handler import DevlogsHandler
 from devlogs.opensearch.client import get_opensearch_client
 from devlogs.config import load_config
 from devlogs.build_info import resolve_build_info
@@ -41,21 +41,23 @@ from devlogs.build_info import resolve_build_info
 # Resolve build info at startup (reads .build.json or env vars)
 build_info = resolve_build_info(write_if_missing=True)
 
-# Setup handler
+# Setup handler with required application and component
 config = load_config()
 client = get_opensearch_client()
-handler = DiagnosticsHandler(opensearch_client=client, index_name=config.index)
+handler = DevlogsHandler(
+    application="my-app",      # Required: your application name
+    component="api",           # Required: component within the app
+    opensearch_client=client,
+    index_name=config.index,
+    environment="production",  # Optional
+    version=build_info.build_id,  # Optional
+)
 
 logging.getLogger().addHandler(handler)
 logging.getLogger().setLevel(logging.DEBUG)
 
-# Include build_id in logs
-logging.info("Application started", extra={
-    "features": {
-        "build_id": build_info.build_id,
-        "branch": build_info.branch,
-    }
-})
+# Logs automatically include application, component, level, and message
+logging.info("Application started")
 ```
 
 **Use operations to group related logs:**
@@ -73,6 +75,23 @@ with operation(area="api"):
 ```
 
 ## Common Patterns
+
+### Adding Custom Fields to Logs
+
+Use the `features` extra to attach custom data (stored as `fields` in the record):
+```python
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Custom fields attached to the log
+logger.info("User login", extra={
+    "features": {
+        "user_id": "user-123",
+        "login_method": "oauth",
+    }
+})
+```
 
 ### Adding Build Info to All Logs
 
@@ -164,10 +183,43 @@ devlogs tail --follow
 
 ## Key Concepts
 
+- **application**: Required identifier for your application (e.g., `my-web-app`)
+- **component**: Required identifier for the component (e.g., `api`, `worker`)
 - **area**: Logical grouping (api, database, scheduler, etc.)
 - **operation_id**: Auto-generated UUID linking related logs
 - **operation() context**: Groups logs from a single request/job/transaction
 - **build_id**: Stable identifier linking logs to a specific build/deployment
+
+## Record Schema (v2.0)
+
+The DevlogsHandler produces records with this structure:
+
+```json
+{
+  "application": "my-app",
+  "component": "api",
+  "timestamp": "2024-01-15T10:30:00.123Z",
+  "message": "User logged in",
+  "level": "info",
+  "area": "auth",
+  "operation_id": "abc-123",
+  "environment": "production",
+  "version": "1.2.3",
+  "fields": {"user_id": "123"},
+  "source": {
+    "logger": "myapp.auth",
+    "pathname": "/app/auth.py",
+    "lineno": 42,
+    "funcName": "login"
+  },
+  "process": {
+    "id": 12345,
+    "thread": 140234567890
+  }
+}
+```
+
+See [HOWTO-DEVLOGS-FORMAT.md](HOWTO-DEVLOGS-FORMAT.md) for full schema documentation.
 
 ## Build Info in CI
 
@@ -193,13 +245,21 @@ python -c "from devlogs.build_info import generate_build_info_file; generate_bui
 
 See [docs/build-info.md](docs/build-info.md) for full documentation.
 
+## Migration from v1.x
+
+If upgrading from devlogs v1.x, see [MIGRATION-V2.md](MIGRATION-V2.md) for:
+- Handler parameter changes
+- Schema field mapping
+- OpenSearch query updates
+
 ## Best Practices
 
-1. Use meaningful area names matching your architecture
-2. Wrap related operations in `operation()` contexts
-3. Log at appropriate levels (DEBUG, INFO, WARNING, ERROR)
-4. Never log sensitive data (passwords, tokens, PII)
-5. Add console handler as backup if OpenSearch goes down
+1. Set meaningful `application` and `component` values
+2. Use consistent area names matching your architecture
+3. Wrap related operations in `operation()` contexts
+4. Log at appropriate levels (DEBUG, INFO, WARNING, ERROR)
+5. Never log sensitive data (passwords, tokens, PII)
+6. Add console handler as backup if OpenSearch goes down
 
 ## Troubleshooting
 

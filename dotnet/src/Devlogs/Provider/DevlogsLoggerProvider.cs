@@ -36,8 +36,8 @@ public sealed class DevlogsLoggerProvider : ILoggerProvider
         // Create context if not provided
         var devlogsContext = context ?? new DevlogsContext();
 
-        // Create formatter
-        _formatter = new LogDocumentFormatter(devlogsContext);
+        // Create formatter with options for v2.0 schema
+        _formatter = new LogDocumentFormatter(devlogsContext, opts);
 
         _indexName = opts.IndexName;
     }

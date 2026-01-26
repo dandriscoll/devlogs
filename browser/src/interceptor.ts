@@ -22,11 +22,14 @@ const METHODS: readonly ConsoleMethod[] = ['log', 'warn', 'error', 'debug', 'inf
  * Current logging context - shared across all console calls
  */
 let currentContext: LogContext = {
+  application: 'unknown',
+  component: 'browser',
   area: null,
   operationId: null,
-  loggerName: 'browser',
   pathname: typeof window !== 'undefined' ? window.location.pathname : '/',
-  features: {},
+  environment: null,
+  version: null,
+  fields: {},
 };
 
 /**
@@ -58,10 +61,17 @@ export function setOperationId(operationId: string | null): void {
 }
 
 /**
- * Set custom features to include in all logs
+ * Set custom fields to include in all logs
+ */
+export function setFields(fields: Record<string, unknown>): void {
+  currentContext.fields = fields;
+}
+
+/**
+ * @deprecated Use setFields instead
  */
 export function setFeatures(features: Record<string, unknown>): void {
-  currentContext.features = features;
+  setFields(features);
 }
 
 /**

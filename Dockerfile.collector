@@ -1,0 +1,45 @@
+# Dockerfile for devlogs collector service
+#
+# Build:
+#   docker build -f Dockerfile.collector -t devlogs-collector .
+#
+# Run:
+#   docker run -p 8080:8080 \
+#     -e DEVLOGS_OPENSEARCH_URL=https://admin:pass@opensearch:9200/devlogs \
+#     devlogs-collector
+#
+# Or in forward mode:
+#   docker run -p 8080:8080 \
+#     -e DEVLOGS_FORWARD_URL=https://central-collector.example.com \
+#     devlogs-collector
+
+FROM python:3.11-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy package files
+COPY pyproject.toml README.md LICENSE ./
+COPY src/ ./src/
+
+# Install the package
+RUN pip install --no-cache-dir -e .
+
+# Create non-root user for security
+RUN useradd -r -u 1000 collector
+USER collector
+
+# Expose default port
+EXPOSE 8080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+# Default command
+CMD ["devlogs-collector", "serve", "--host", "0.0.0.0", "--port", "8080"]

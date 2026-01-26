@@ -7,6 +7,7 @@ import {
   setContext,
   setArea,
   setOperationId,
+  setFields,
   setFeatures,
   withOperation,
   originalConsole,
@@ -16,7 +17,7 @@ let initialized = false;
 let client: DevlogsOpenSearchClient | null = null;
 
 /**
- * Initialize the devlogs browser client.
+ * Initialize the devlogs browser client (v2.0).
  *
  * This intercepts console.log/warn/error/debug/info and forwards
  * all log messages to the OpenSearch index.
@@ -25,8 +26,9 @@ let client: DevlogsOpenSearchClient | null = null;
  * ```js
  * devlogs.init({
  *   url: 'http://admin:admin@localhost:9200',
- *   area: 'frontend',
- *   loggerName: 'my-app'
+ *   application: 'my-frontend',
+ *   component: 'dashboard',
+ *   area: 'ui',
  * });
  *
  * console.log('App started'); // Forwarded to index
@@ -42,11 +44,14 @@ export function init(options: DevlogsOptions): void {
   client = new DevlogsOpenSearchClient(config);
 
   setContext({
+    application: options.application,
+    component: options.component,
     area: options.area || null,
     operationId: options.operationId || null,
-    loggerName: options.loggerName || 'browser',
     pathname: typeof window !== 'undefined' ? window.location.pathname : '/',
-    features: {},
+    environment: options.environment || null,
+    version: options.version || null,
+    fields: {},
   });
 
   interceptConsole(client);
@@ -74,10 +79,10 @@ export function isInitialized(): boolean {
 }
 
 // Re-export context utilities
-export { setArea, setOperationId, setFeatures, withOperation };
+export { setArea, setOperationId, setFields, setFeatures, withOperation };
 
 // Re-export types for TypeScript users
-export type { DevlogsOptions, LogContext, LogDocument } from './types';
+export type { DevlogsOptions, LogContext, LogDocument, LogSource, LogProcess } from './types';
 
 // Re-export build info utilities
 export {

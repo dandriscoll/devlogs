@@ -11,48 +11,80 @@ export interface DevlogsConfig {
 }
 
 /**
- * Options for initializing the devlogs client
+ * Options for initializing the devlogs client (v2.0)
  */
 export interface DevlogsOptions {
   /** OpenSearch URL in format: http://user:pass@host:port */
   url: string;
   /** Index name (default: devlogs-0001) */
   index?: string;
+  /** Application name (required for v2.0 schema) */
+  application: string;
+  /** Component name (required for v2.0 schema) */
+  component: string;
   /** Application area/subsystem identifier */
   area?: string;
   /** Operation ID for log correlation */
   operationId?: string;
-  /** Logger name (default: browser) */
-  loggerName?: string;
+  /** Environment (e.g., 'development', 'production') */
+  environment?: string;
+  /** Application version */
+  version?: string;
 }
 
 /**
  * Current logging context
  */
 export interface LogContext {
+  application: string;
+  component: string;
   area: string | null;
   operationId: string | null;
-  loggerName: string;
   pathname: string;
-  features: Record<string, unknown>;
+  environment: string | null;
+  version: string | null;
+  fields: Record<string, unknown>;
 }
 
 /**
- * Log document matching the devlogs schema
+ * Source location info in log document (v2.0)
  */
-export interface LogDocument {
-  doc_type: 'log_entry';
-  timestamp: string;
-  level: string;
-  levelno: number;
-  logger_name: string;
-  message: string;
+export interface LogSource {
+  logger: string;
   pathname: string;
   lineno: number | null;
   funcName: string | null;
+}
+
+/**
+ * Process info in log document (v2.0)
+ */
+export interface LogProcess {
+  id: number | null;
+  thread: number | null;
+}
+
+/**
+ * Log document matching the devlogs v2.0 schema
+ */
+export interface LogDocument {
+  doc_type: 'log_entry';
+  // Required fields
+  application: string;
+  component: string;
+  timestamp: string;
+  // Top-level log fields
+  message: string;
+  level: string;
   area: string | null;
+  // Optional metadata
+  environment?: string | null;
+  version?: string | null;
   operation_id: string | null;
-  features: Record<string, unknown>;
+  fields?: Record<string, unknown>;
+  // Source and process info
+  source: LogSource;
+  process: LogProcess;
 }
 
 /**

@@ -27,18 +27,23 @@ If you don't have OpenSearch running and you want to stand one up:
 >    import os
 >    import logging
 >    if os.getenv("ENVIRONMENT") != "production":
->        from devlogs.handler import OpenSearchHandler
+>        from devlogs.handler import DevlogsHandler
 >        from devlogs.build_info import resolve_build_info
 >
 >        # Resolve build info (reads .build.json or generates)
 >        build_info = resolve_build_info(write_if_missing=True)
 >
->        handler = OpenSearchHandler(level=logging.INFO)
+>        handler = DevlogsHandler(
+>            application="my-app",  # Required: your app name
+>            component="api",       # Required: component name
+>            level=logging.INFO,
+>            version=build_info.build_id,
+>        )
 >        logging.getLogger().addHandler(handler)
 >        logging.getLogger().setLevel(logging.INFO)
 >
->        # Log startup with build info
->        logging.info("App started", extra={"features": {"build_id": build_info.build_id, "branch": build_info.branch}})
+>        # Log startup
+>        logging.info("App started")
 >    ```
 > 4. Run `devlogs init` (inside the virtualenv if one is set up) and verify the index is healthy.
 > 5. Ask the user if they want MCP set up; if yes, state which agent you are (`copilot`, `claude`, or `codex`) and run `devlogs initmcp <agent>`.
@@ -74,19 +79,22 @@ If you don't have OpenSearch running and you want to stand one up:
 
 	# Only enable devlogs in development
 	if os.getenv("ENVIRONMENT") != "production":
-	    from devlogs.handler import OpenSearchHandler
+	    from devlogs.handler import DevlogsHandler
 	    from devlogs.build_info import resolve_build_info
 
 	    # Get build info (reads .build.json or generates)
 	    build_info = resolve_build_info(write_if_missing=True)
 
-	    logging.getLogger().addHandler(OpenSearchHandler(level=logging.DEBUG))
+	    handler = DevlogsHandler(
+	        application="my-app",
+	        component="default",
+	        level=logging.DEBUG,
+	        version=build_info.build_id,
+	    )
+	    logging.getLogger().addHandler(handler)
 	    logging.getLogger().setLevel(logging.DEBUG)
 
-	    # Include build_id in logs
-	    logging.info("Hello from devlogs!", extra={
-	        "features": {"build_id": build_info.build_id, "branch": build_info.branch}
-	    })
+	    logging.info("Hello from devlogs!")
 	```
 
 5. **Tail logs from CLI:**
@@ -123,12 +131,60 @@ This writes MCP config files in the standard locations:
 
 ## Features
 
-- Standard `logging.Handler` for OpenSearch
+- **DevlogsHandler** - Standard `logging.Handler` for OpenSearch with v2.0 schema
+- **HTTP Collector Service** for centralized log ingestion
+- **Devlogs Record Format v2.0** - Standardized schema with `application`, `component`, top-level `message`/`level`/`area`
 - Context manager for operation_id/area
-- Structured feature pairs on log entries (`extra={"features": {...}}`)
+- Structured custom fields on log entries (`extra={"features": {...}}` stored as `fields`)
 - CLI and Linux shell wrapper
 - Minimal embeddable web UI
 - Robust tests (pytest)
+
+> **Note:** Version 2.0.0 introduces breaking changes. See [MIGRATION-V2.md](MIGRATION-V2.md) for upgrade instructions.
+
+## HTTP Collector
+
+The devlogs collector is a standalone HTTP service for centralized log ingestion. It supports two modes:
+
+- **Forward mode**: Proxy requests to an upstream collector
+- **Ingest mode**: Write directly to OpenSearch
+
+### Quick Start
+
+```bash
+# Start collector in ingest mode
+DEVLOGS_OPENSEARCH_HOST=localhost DEVLOGS_INDEX=devlogs-myapp devlogs-collector serve
+
+# Start collector in forward mode
+DEVLOGS_FORWARD_URL=https://central-collector.example.com devlogs-collector serve
+```
+
+### Using the Python Client
+
+```python
+from devlogs.devlogs_client import create_client
+
+client = create_client(
+    collector_url="http://localhost:8080",
+    application="my-app",
+    component="api-server",
+)
+
+client.emit(
+    message="Request processed",
+    level="info",
+    fields={"user_id": "123", "duration_ms": 45}
+)
+```
+
+### Docker
+
+```bash
+docker build -f Dockerfile.collector -t devlogs-collector .
+docker run -p 8080:8080 -e DEVLOGS_OPENSEARCH_URL=https://admin:pass@opensearch:9200/devlogs devlogs-collector
+```
+
+See [HOWTO-COLLECTOR.md](HOWTO-COLLECTOR.md) for complete collector documentation.
 
 ## Jenkins Integration
 
@@ -185,11 +241,22 @@ Build the binary with `./build-standalone.sh` and host it somewhere accessible. 
 
 ### Environment Variables
 
-- OpenSearch connection: `DEVLOGS_OPENSEARCH_HOST`, `DEVLOGS_OPENSEARCH_PORT`, `DEVLOGS_OPENSEARCH_USER`, `DEVLOGS_OPENSEARCH_PASS`
-- OpenSearch URL shortcut: `DEVLOGS_OPENSEARCH_URL` (e.g., `https://user:pass@host:9200/index`)
-- SSL/TLS: `DEVLOGS_OPENSEARCH_VERIFY_CERTS`, `DEVLOGS_OPENSEARCH_CA_CERT`
-- Index: `DEVLOGS_INDEX`
-- Retention (supports duration strings like `24h`, `7d`): `DEVLOGS_RETENTION_DEBUG`, `DEVLOGS_RETENTION_INFO`, `DEVLOGS_RETENTION_WARNING`
+**Collector Configuration:**
+- `DEVLOGS_URL` - Collector base URL (where apps send logs)
+- `DEVLOGS_FORWARD_URL` - Forward mode: proxy to this upstream URL
+
+**OpenSearch Admin Connection:**
+- `DEVLOGS_OPENSEARCH_HOST`, `DEVLOGS_OPENSEARCH_PORT`, `DEVLOGS_OPENSEARCH_USER`, `DEVLOGS_OPENSEARCH_PASS`
+- `DEVLOGS_OPENSEARCH_URL` - URL shortcut (e.g., `https://user:pass@host:9200/index`)
+- `DEVLOGS_OPENSEARCH_VERIFY_CERTS`, `DEVLOGS_OPENSEARCH_CA_CERT` - SSL/TLS settings
+
+**Index & Retention:**
+- `DEVLOGS_INDEX` - Target index name
+- `DEVLOGS_RETENTION_DEBUG`, `DEVLOGS_RETENTION_INFO`, `DEVLOGS_RETENTION_WARNING` - Retention policy (e.g., `24h`, `7d`)
+
+**Collector Limits (Future Provisions):**
+- `DEVLOGS_COLLECTOR_RATE_LIMIT` - Max requests/second (0 = unlimited)
+- `DEVLOGS_COLLECTOR_MAX_PAYLOAD_SIZE` - Max payload bytes (0 = unlimited)
 
 See [.env.example](.env.example) for a complete configuration template.
 
@@ -230,7 +297,7 @@ Devlogs is a development tool. The examples above show how to conditionally enab
 ```toml
 # pyproject.toml
 [project.optional-dependencies]
-dev = ["devlogs>=1.1.0"]
+dev = ["devlogs>=2.0.0"]
 ```
 
 Install with `pip install ".[dev]"` in development, `pip install .` in production.
@@ -271,9 +338,13 @@ bi = resolve_build_info(write_if_missing=True)
 # bi.branch = "main"
 # bi.source = "file" | "env" | "generated"
 
-# Use with logger
-handler = OpenSearchHandler(level=logging.INFO)
-logging.info("Started", extra={"features": {"build_id": bi.build_id, "branch": bi.branch}})
+# Use with DevlogsHandler
+handler = DevlogsHandler(
+    application="my-app",
+    component="api",
+    version=bi.build_id,  # Include build info in handler
+)
+logging.info("Started")
 ```
 
 The build info is resolved from (in priority order):
@@ -285,6 +356,9 @@ See [docs/build-info.md](docs/build-info.md) for CI integration examples and ful
 
 ## See Also
 
+- [MIGRATION-V2.md](MIGRATION-V2.md) - Migration guide from v1.x to v2.0
+- [HOWTO-COLLECTOR.md](HOWTO-COLLECTOR.md) - HTTP collector setup and deployment
+- [HOWTO-DEVLOGS-FORMAT.md](HOWTO-DEVLOGS-FORMAT.md) - Devlogs record format reference
 - [docs/build-info.md](docs/build-info.md) - Build info helper guide
 - [HOWTO-CLI.md](HOWTO-CLI.md) - Complete CLI reference
 - [HOWTO.md](HOWTO.md) - Integration guide

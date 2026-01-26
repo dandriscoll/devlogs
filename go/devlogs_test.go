@@ -35,6 +35,12 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Timeout != 30*time.Second {
 		t.Errorf("expected Timeout=30s, got %v", cfg.Timeout)
 	}
+	if cfg.Application != "unknown" {
+		t.Errorf("expected Application=unknown, got %s", cfg.Application)
+	}
+	if cfg.Component != "go" {
+		t.Errorf("expected Component=go, got %s", cfg.Component)
+	}
 }
 
 func TestLoadConfigFromEnvironment(t *testing.T) {
@@ -44,12 +50,16 @@ func TestLoadConfigFromEnvironment(t *testing.T) {
 	os.Setenv("DEVLOGS_OPENSEARCH_USER", "testuser")
 	os.Setenv("DEVLOGS_OPENSEARCH_PASS", "testpass")
 	os.Setenv("DEVLOGS_INDEX", "test-index")
+	os.Setenv("DEVLOGS_APPLICATION", "test-app")
+	os.Setenv("DEVLOGS_COMPONENT", "test-component")
 	defer func() {
 		os.Unsetenv("DEVLOGS_OPENSEARCH_HOST")
 		os.Unsetenv("DEVLOGS_OPENSEARCH_PORT")
 		os.Unsetenv("DEVLOGS_OPENSEARCH_USER")
 		os.Unsetenv("DEVLOGS_OPENSEARCH_PASS")
 		os.Unsetenv("DEVLOGS_INDEX")
+		os.Unsetenv("DEVLOGS_APPLICATION")
+		os.Unsetenv("DEVLOGS_COMPONENT")
 	}()
 
 	cfg, err := LoadConfig()
@@ -71,6 +81,12 @@ func TestLoadConfigFromEnvironment(t *testing.T) {
 	}
 	if cfg.Index != "test-index" {
 		t.Errorf("expected Index=test-index, got %s", cfg.Index)
+	}
+	if cfg.Application != "test-app" {
+		t.Errorf("expected Application=test-app, got %s", cfg.Application)
+	}
+	if cfg.Component != "test-component" {
+		t.Errorf("expected Component=test-component, got %s", cfg.Component)
 	}
 }
 
@@ -117,25 +133,6 @@ func TestNormalizeLevel(t *testing.T) {
 		result := NormalizeLevel(tc.level)
 		if result != tc.expected {
 			t.Errorf("NormalizeLevel(%v) = %s, expected %s", tc.level, result, tc.expected)
-		}
-	}
-}
-
-func TestLevelNumber(t *testing.T) {
-	tests := []struct {
-		level    slog.Level
-		expected int
-	}{
-		{slog.LevelDebug, 10},
-		{slog.LevelInfo, 20},
-		{slog.LevelWarn, 30},
-		{slog.LevelError, 40},
-	}
-
-	for _, tc := range tests {
-		result := LevelNumber(tc.level)
-		if result != tc.expected {
-			t.Errorf("LevelNumber(%v) = %d, expected %d", tc.level, result, tc.expected)
 		}
 	}
 }
@@ -259,7 +256,7 @@ func TestConnectionErrorUnwrap(t *testing.T) {
 	}
 }
 
-// --- Formatter Tests ---
+// --- Formatter Tests (v2.0 schema) ---
 
 func TestFormatLogDocument(t *testing.T) {
 	SetArea("test-area")
@@ -269,19 +266,23 @@ func TestFormatLogDocument(t *testing.T) {
 	r := slog.NewRecord(time.Now(), slog.LevelInfo, "test message", 0)
 	r.AddAttrs(slog.String("key", "value"))
 
-	doc := FormatLogDocument(ctx, r, "test-logger")
+	cfg := DefaultConfig()
+	cfg.Application = "test-app"
+	cfg.Component = "test-component"
+
+	doc := FormatLogDocument(ctx, r, cfg)
 
 	if doc.DocType != "log_entry" {
 		t.Errorf("expected doc_type=log_entry, got %s", doc.DocType)
 	}
+	if doc.Application != "test-app" {
+		t.Errorf("expected application=test-app, got %s", doc.Application)
+	}
+	if doc.Component != "test-component" {
+		t.Errorf("expected component=test-component, got %s", doc.Component)
+	}
 	if doc.Level != "info" {
 		t.Errorf("expected level=info, got %s", doc.Level)
-	}
-	if doc.LevelNo != 20 {
-		t.Errorf("expected levelno=20, got %d", doc.LevelNo)
-	}
-	if doc.LoggerName != "test-logger" {
-		t.Errorf("expected logger_name=test-logger, got %s", doc.LoggerName)
 	}
 	if doc.Message != "test message" {
 		t.Errorf("expected message='test message', got %s", doc.Message)
@@ -292,8 +293,16 @@ func TestFormatLogDocument(t *testing.T) {
 	if doc.Area == nil || *doc.Area != "test-area" {
 		t.Errorf("expected area=test-area, got %v", doc.Area)
 	}
-	if doc.Features["key"] != "value" {
-		t.Errorf("expected features.key=value, got %v", doc.Features["key"])
+	if doc.Fields["key"] != "value" {
+		t.Errorf("expected fields.key=value, got %v", doc.Fields["key"])
+	}
+	// Check source struct
+	if doc.Source.Logger != "test-component" {
+		t.Errorf("expected source.logger=test-component, got %s", doc.Source.Logger)
+	}
+	// Check process struct
+	if doc.Process.ID == 0 {
+		t.Error("expected process.id to be non-zero")
 	}
 }
 
@@ -302,10 +311,29 @@ func TestFormatLogDocumentTimestamp(t *testing.T) {
 	now := time.Now()
 	r := slog.NewRecord(now, slog.LevelInfo, "test", 0)
 
-	doc := FormatLogDocument(ctx, r, "test")
+	cfg := DefaultConfig()
+	doc := FormatLogDocument(ctx, r, cfg)
 
 	if !strings.HasSuffix(doc.Timestamp, "Z") {
 		t.Errorf("expected timestamp to end with Z, got %s", doc.Timestamp)
+	}
+}
+
+func TestFormatLogDocumentWithOptionalFields(t *testing.T) {
+	ctx := context.Background()
+	r := slog.NewRecord(time.Now(), slog.LevelInfo, "test", 0)
+
+	cfg := DefaultConfig()
+	cfg.Environment = "production"
+	cfg.Version = "1.2.3"
+
+	doc := FormatLogDocument(ctx, r, cfg)
+
+	if doc.Environment == nil || *doc.Environment != "production" {
+		t.Errorf("expected environment=production, got %v", doc.Environment)
+	}
+	if doc.Version == nil || *doc.Version != "1.2.3" {
+		t.Errorf("expected version=1.2.3, got %v", doc.Version)
 	}
 }
 
@@ -352,10 +380,19 @@ func TestClientIndex(t *testing.T) {
 	client := NewClient(cfg)
 
 	doc := &LogDocument{
-		DocType:    "log_entry",
-		Message:    "test",
-		Level:      "info",
-		LoggerName: "test",
+		DocType:     "log_entry",
+		Application: "test-app",
+		Component:   "test",
+		Timestamp:   time.Now().UTC().Format("2006-01-02T15:04:05.000Z"),
+		Message:     "test",
+		Level:       "info",
+		Source: LogSource{
+			Logger: "test",
+		},
+		Process: LogProcess{
+			ID:     1,
+			Thread: 1,
+		},
 	}
 
 	err := client.Index(context.Background(), doc)
@@ -365,6 +402,9 @@ func TestClientIndex(t *testing.T) {
 
 	if receivedDoc["doc_type"] != "log_entry" {
 		t.Errorf("expected doc_type=log_entry, got %v", receivedDoc["doc_type"])
+	}
+	if receivedDoc["application"] != "test-app" {
+		t.Errorf("expected application=test-app, got %v", receivedDoc["application"])
 	}
 }
 
@@ -462,5 +502,23 @@ func TestHandlerWithGroup(t *testing.T) {
 	h := newHandler.(*Handler)
 	if len(h.groups) != 1 || h.groups[0] != "mygroup" {
 		t.Errorf("expected groups=[mygroup], got %v", h.groups)
+	}
+}
+
+func TestHandlerWithApplication(t *testing.T) {
+	cfg := DefaultConfig()
+	handler, _ := NewHandler(cfg, WithApplication("custom-app"))
+
+	if handler.cfg.Application != "custom-app" {
+		t.Errorf("expected Application=custom-app, got %s", handler.cfg.Application)
+	}
+}
+
+func TestHandlerWithComponent(t *testing.T) {
+	cfg := DefaultConfig()
+	handler, _ := NewHandler(cfg, WithComponent("custom-component"))
+
+	if handler.cfg.Component != "custom-component" {
+		t.Errorf("expected Component=custom-component, got %s", handler.cfg.Component)
 	}
 }

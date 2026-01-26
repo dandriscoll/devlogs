@@ -1,10 +1,30 @@
 namespace Devlogs.Configuration;
 
 /// <summary>
-/// Configuration options for Devlogs.
+/// Configuration options for Devlogs (v2.0).
 /// </summary>
 public sealed class DevlogsOptions
 {
+    /// <summary>
+    /// Application name (required for v2.0 schema).
+    /// </summary>
+    public string Application { get; set; } = "unknown";
+
+    /// <summary>
+    /// Component name within the application (required for v2.0 schema).
+    /// </summary>
+    public string Component { get; set; } = "default";
+
+    /// <summary>
+    /// Deployment environment (e.g., 'development', 'production').
+    /// </summary>
+    public string? Environment { get; set; }
+
+    /// <summary>
+    /// Application version.
+    /// </summary>
+    public string? Version { get; set; }
+
     /// <summary>
     /// OpenSearch host address.
     /// </summary>

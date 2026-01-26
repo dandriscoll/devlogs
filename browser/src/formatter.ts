@@ -1,17 +1,6 @@
 import type { LogContext, LogDocument, ConsoleMethod } from './types';
 
 /**
- * Python logging level numbers for compatibility
- */
-const LEVEL_MAP: Record<ConsoleMethod, number> = {
-  debug: 10,
-  info: 20,
-  log: 20,  // Treat console.log as INFO level
-  warn: 30,
-  error: 40,
-};
-
-/**
  * Normalize console method name to standard log level
  */
 function normalizeLevel(method: ConsoleMethod): string {
@@ -42,18 +31,18 @@ function formatMessage(args: unknown[]): string {
 }
 
 /**
- * Extract features from console arguments if an object is provided
+ * Extract fields from console arguments if an object is provided
  */
-function extractFeatures(
+function extractFields(
   args: unknown[],
-  contextFeatures: Record<string, unknown>
+  contextFields: Record<string, unknown>
 ): Record<string, unknown> {
-  const features: Record<string, unknown> = {
+  const fields: Record<string, unknown> = {
     userAgent: navigator.userAgent,
-    ...contextFeatures,
+    ...contextFields,
   };
 
-  // If last argument is a plain object, merge it as features
+  // If last argument is a plain object, merge it as fields
   const lastArg = args[args.length - 1];
   if (
     lastArg &&
@@ -61,32 +50,58 @@ function extractFeatures(
     !Array.isArray(lastArg) &&
     !(lastArg instanceof Error)
   ) {
-    Object.assign(features, lastArg);
+    Object.assign(fields, lastArg);
   }
 
-  return features;
+  return fields;
 }
 
 /**
- * Format a log entry into the devlogs document schema
+ * Format a log entry into the devlogs v2.0 document schema
  */
 export function formatLogDocument(
   method: ConsoleMethod,
   args: unknown[],
   context: LogContext
 ): LogDocument {
-  return {
+  const fields = extractFields(args, context.fields);
+
+  const doc: LogDocument = {
     doc_type: 'log_entry',
+    // Required fields
+    application: context.application,
+    component: context.component,
     timestamp: new Date().toISOString(),
-    level: normalizeLevel(method),
-    levelno: LEVEL_MAP[method],
-    logger_name: context.loggerName,
+    // Top-level log fields
     message: formatMessage(args),
-    pathname: context.pathname,
-    lineno: null,
-    funcName: null,
+    level: normalizeLevel(method),
     area: context.area,
+    // Optional metadata
     operation_id: context.operationId,
-    features: extractFeatures(args, context.features),
+    // Source info
+    source: {
+      logger: 'browser',
+      pathname: context.pathname,
+      lineno: null,
+      funcName: null,
+    },
+    // Process info (not applicable in browser)
+    process: {
+      id: null,
+      thread: null,
+    },
   };
+
+  // Add optional fields only if set
+  if (context.environment) {
+    doc.environment = context.environment;
+  }
+  if (context.version) {
+    doc.version = context.version;
+  }
+  if (Object.keys(fields).length > 0) {
+    doc.fields = fields;
+  }
+
+  return doc;
 }

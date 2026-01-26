@@ -6,8 +6,9 @@ import pytest
 
 from devlogs.context import operation
 from devlogs.handler import (
+    DevlogsHandler,
     DiagnosticsHandler,
-    OpenSearchHandler,
+    OpenSearchHandler,  # Backward compatibility alias
     _coerce_feature_value,
     _normalize_features,
     _extract_features,
@@ -128,18 +129,18 @@ class TestExtractFeatures:
         assert result == {"key": "value"}
 
 
-class TestOpenSearchHandler:
-    """Tests for OpenSearchHandler class."""
+class TestDevlogsHandler:
+    """Tests for DevlogsHandler class (v2.0 schema)."""
 
     def setup_method(self):
         """Reset circuit breaker state before each test."""
-        OpenSearchHandler._circuit_open = False
-        OpenSearchHandler._circuit_open_until = 0.0
-        OpenSearchHandler._last_error_printed = 0.0
+        DevlogsHandler._circuit_open = False
+        DevlogsHandler._circuit_open_until = 0.0
+        DevlogsHandler._last_error_printed = 0.0
 
     def test_format_record_basic(self):
-        """Test format_record produces correct document structure."""
-        handler = OpenSearchHandler()
+        """Test format_record produces correct v2.0 document structure."""
+        handler = DevlogsHandler(application="test-app", component="api")
         record = logging.LogRecord(
             name="test.logger",
             level=logging.INFO,
@@ -151,17 +152,28 @@ class TestOpenSearchHandler:
         )
         doc = handler.format_record(record)
 
-        assert doc["logger_name"] == "test.logger"
-        assert doc["level"] == "info"
-        assert doc["levelno"] == logging.INFO
-        assert doc["pathname"] == "/path/to/file.py"
-        assert doc["lineno"] == 42
-        assert "test message" in doc["message"]
+        # Required schema fields
+        assert doc["application"] == "test-app"
+        assert doc["component"] == "api"
         assert "timestamp" in doc
 
-    def test_format_record_with_features(self):
-        """Test format_record includes features when present."""
-        handler = OpenSearchHandler()
+        # Top-level log fields
+        assert "test message" in doc["message"]
+        assert doc["level"] == "info"
+
+        # Source info in nested object
+        assert doc["source"]["logger"] == "test.logger"
+        assert doc["source"]["pathname"] == "/path/to/file.py"
+        assert doc["source"]["lineno"] == 42
+        assert "funcName" in doc["source"]  # May be None for manually created records
+
+        # Process info in nested object
+        assert "id" in doc["process"]
+        assert "thread" in doc["process"]
+
+    def test_format_record_with_fields(self):
+        """Test format_record includes fields when present."""
+        handler = DevlogsHandler(application="test-app", component="api")
         record = logging.LogRecord(
             name="test",
             level=logging.INFO,
@@ -174,11 +186,11 @@ class TestOpenSearchHandler:
         record.features = {"user_id": 123, "action": "login"}
         doc = handler.format_record(record)
 
-        assert doc["features"] == {"user_id": 123, "action": "login"}
+        assert doc["fields"] == {"user_id": 123, "action": "login"}
 
-    def test_format_record_without_features(self):
-        """Test format_record omits features when not present."""
-        handler = OpenSearchHandler()
+    def test_format_record_without_fields(self):
+        """Test format_record omits fields when not present."""
+        handler = DevlogsHandler(application="test-app", component="api")
         record = logging.LogRecord(
             name="test",
             level=logging.INFO,
@@ -190,13 +202,38 @@ class TestOpenSearchHandler:
         )
         doc = handler.format_record(record)
 
-        assert "features" not in doc
+        assert "fields" not in doc
+
+    def test_format_record_with_optional_fields(self):
+        """Test format_record includes optional fields when configured."""
+        handler = DevlogsHandler(
+            application="test-app",
+            component="api",
+            environment="production",
+            version="1.2.3",
+        )
+        record = logging.LogRecord(
+            name="test",
+            level=logging.INFO,
+            pathname="",
+            lineno=0,
+            msg="msg",
+            args=(),
+            exc_info=None,
+        )
+        doc = handler.format_record(record)
+
+        assert doc["environment"] == "production"
+        assert doc["version"] == "1.2.3"
 
     def test_emit_indexes_document(self):
         """Test emit calls client.index."""
         mock_client = MagicMock()
-        handler = OpenSearchHandler(
-            opensearch_client=mock_client, index_name="test-index"
+        handler = DevlogsHandler(
+            application="test-app",
+            component="api",
+            opensearch_client=mock_client,
+            index_name="test-index",
         )
         record = logging.LogRecord(
             name="test",
@@ -214,10 +251,12 @@ class TestOpenSearchHandler:
         call_kwargs = mock_client.index.call_args.kwargs
         assert call_kwargs["index"] == "test-index"
         assert call_kwargs["body"]["doc_type"] == "log_entry"
+        assert call_kwargs["body"]["application"] == "test-app"
+        assert call_kwargs["body"]["component"] == "api"
 
     def test_emit_without_client_does_not_fail(self):
         """Test emit with no client doesn't raise."""
-        handler = OpenSearchHandler()  # No client
+        handler = DevlogsHandler(application="test-app", component="api")
         record = logging.LogRecord(
             name="test",
             level=logging.INFO,
@@ -234,8 +273,11 @@ class TestOpenSearchHandler:
         """Test circuit breaker opens after indexing failure."""
         mock_client = MagicMock()
         mock_client.index.side_effect = Exception("Connection failed")
-        handler = OpenSearchHandler(
-            opensearch_client=mock_client, index_name="test-index"
+        handler = DevlogsHandler(
+            application="test-app",
+            component="api",
+            opensearch_client=mock_client,
+            index_name="test-index",
         )
         record = logging.LogRecord(
             name="test",
@@ -250,18 +292,21 @@ class TestOpenSearchHandler:
         with patch("builtins.print"):  # Suppress error output
             handler.emit(record)
 
-        assert OpenSearchHandler._circuit_open is True
-        assert OpenSearchHandler._circuit_open_until > time.time()
+        assert DevlogsHandler._circuit_open is True
+        assert DevlogsHandler._circuit_open_until > time.time()
 
     def test_circuit_breaker_skips_indexing_when_open(self):
         """Test circuit breaker skips indexing when open."""
         mock_client = MagicMock()
-        handler = OpenSearchHandler(
-            opensearch_client=mock_client, index_name="test-index"
+        handler = DevlogsHandler(
+            application="test-app",
+            component="api",
+            opensearch_client=mock_client,
+            index_name="test-index",
         )
         # Open circuit breaker
-        OpenSearchHandler._circuit_open = True
-        OpenSearchHandler._circuit_open_until = time.time() + 60
+        DevlogsHandler._circuit_open = True
+        DevlogsHandler._circuit_open_until = time.time() + 60
 
         record = logging.LogRecord(
             name="test",
@@ -279,12 +324,15 @@ class TestOpenSearchHandler:
     def test_circuit_breaker_resets_on_success(self):
         """Test circuit breaker resets after successful indexing."""
         mock_client = MagicMock()
-        handler = OpenSearchHandler(
-            opensearch_client=mock_client, index_name="test-index"
+        handler = DevlogsHandler(
+            application="test-app",
+            component="api",
+            opensearch_client=mock_client,
+            index_name="test-index",
         )
         # Open circuit breaker but set time in past
-        OpenSearchHandler._circuit_open = True
-        OpenSearchHandler._circuit_open_until = time.time() - 1
+        DevlogsHandler._circuit_open = True
+        DevlogsHandler._circuit_open_until = time.time() - 1
 
         record = logging.LogRecord(
             name="test",
@@ -298,20 +346,23 @@ class TestOpenSearchHandler:
         with patch("builtins.print"):
             handler.emit(record)
 
-        assert OpenSearchHandler._circuit_open is False
+        assert DevlogsHandler._circuit_open is False
 
     def test_error_throttling(self):
         """Test errors are only printed periodically."""
         mock_client = MagicMock()
         mock_client.index.side_effect = Exception("Connection failed")
-        handler = OpenSearchHandler(
-            opensearch_client=mock_client, index_name="test-index"
+        handler = DevlogsHandler(
+            application="test-app",
+            component="api",
+            opensearch_client=mock_client,
+            index_name="test-index",
         )
 
         with patch("builtins.print") as mock_print:
             # First error - should print
-            OpenSearchHandler._circuit_open = False
-            OpenSearchHandler._last_error_printed = 0.0
+            DevlogsHandler._circuit_open = False
+            DevlogsHandler._last_error_printed = 0.0
             record = logging.LogRecord(
                 name="test", level=logging.INFO, pathname="", lineno=0,
                 msg="test", args=(), exc_info=None,
@@ -321,9 +372,23 @@ class TestOpenSearchHandler:
 
             # Immediate second error - should not print (throttled)
             mock_print.reset_mock()
-            OpenSearchHandler._circuit_open = False  # Reset for second attempt
+            DevlogsHandler._circuit_open = False  # Reset for second attempt
             handler.emit(record)
             # Print might be called or not depending on timing
+
+
+class TestOpenSearchHandlerBackwardCompatibility:
+    """Tests for backward compatibility alias."""
+
+    def test_opensearch_handler_is_devlogs_handler(self):
+        """Test OpenSearchHandler is an alias for DevlogsHandler."""
+        assert OpenSearchHandler is DevlogsHandler
+
+    def test_opensearch_handler_works_with_defaults(self):
+        """Test OpenSearchHandler works with default parameters."""
+        handler = OpenSearchHandler()
+        assert handler.application == "unknown"
+        assert handler.component == "default"
 
 
 class TestDiagnosticsHandler:
@@ -331,8 +396,8 @@ class TestDiagnosticsHandler:
 
     def setup_method(self):
         """Reset circuit breaker state before each test."""
-        OpenSearchHandler._circuit_open = False
-        OpenSearchHandler._circuit_open_until = 0.0
+        DevlogsHandler._circuit_open = False
+        DevlogsHandler._circuit_open_until = 0.0
 
     def test_generates_operation_id_if_missing(self):
         """Test DiagnosticsHandler generates operation_id if not set."""

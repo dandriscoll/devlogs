@@ -11,36 +11,72 @@ import (
 	"time"
 )
 
-// LogDocument represents the document structure sent to OpenSearch.
-type LogDocument struct {
-	DocType     string                 `json:"doc_type"`
-	Timestamp   string                 `json:"timestamp"`
-	Level       string                 `json:"level"`
-	LevelNo     int                    `json:"levelno"`
-	LoggerName  string                 `json:"logger_name"`
-	Message     string                 `json:"message"`
-	Pathname    *string                `json:"pathname"`
-	LineNo      *int                   `json:"lineno"`
-	FuncName    *string                `json:"funcName"`
-	Area        *string                `json:"area"`
-	OperationID *string                `json:"operation_id"`
-	Thread      int                    `json:"thread"`
-	Process     int                    `json:"process"`
-	Exception   *string                `json:"exception,omitempty"`
-	Features    map[string]interface{} `json:"features,omitempty"`
+// LogSource contains source location info (v2.0 schema).
+type LogSource struct {
+	Logger   string  `json:"logger"`
+	Pathname *string `json:"pathname"`
+	LineNo   *int    `json:"lineno"`
+	FuncName *string `json:"funcName"`
 }
 
-// FormatLogDocument converts an slog.Record to a LogDocument.
-func FormatLogDocument(ctx context.Context, r slog.Record, loggerName string) *LogDocument {
+// LogProcess contains process/thread info (v2.0 schema).
+type LogProcess struct {
+	ID     int `json:"id"`
+	Thread int `json:"thread"`
+}
+
+// LogDocument represents the document structure sent to OpenSearch (v2.0 schema).
+type LogDocument struct {
+	DocType string `json:"doc_type"`
+
+	// Required fields
+	Application string `json:"application"`
+	Component   string `json:"component"`
+	Timestamp   string `json:"timestamp"`
+
+	// Top-level log fields
+	Message string  `json:"message"`
+	Level   string  `json:"level"`
+	Area    *string `json:"area"`
+
+	// Optional metadata
+	Environment *string `json:"environment,omitempty"`
+	Version     *string `json:"version,omitempty"`
+	OperationID *string `json:"operation_id"`
+
+	// Custom fields (renamed from features)
+	Fields map[string]interface{} `json:"fields,omitempty"`
+
+	// Source and process info
+	Source    LogSource  `json:"source"`
+	Process   LogProcess `json:"process"`
+	Exception *string    `json:"exception,omitempty"`
+}
+
+// FormatLogDocument converts an slog.Record to a LogDocument using v2.0 schema.
+func FormatLogDocument(ctx context.Context, r slog.Record, cfg *Config) *LogDocument {
 	doc := &LogDocument{
-		DocType:    "log_entry",
-		Timestamp:  r.Time.UTC().Format("2006-01-02T15:04:05.000Z"),
-		Level:      NormalizeLevel(r.Level),
-		LevelNo:    LevelNumber(r.Level),
-		LoggerName: loggerName,
-		Message:    r.Message,
-		Thread:     getGoroutineID(),
-		Process:    os.Getpid(),
+		DocType:     "log_entry",
+		Application: cfg.Application,
+		Component:   cfg.Component,
+		Timestamp:   r.Time.UTC().Format("2006-01-02T15:04:05.000Z"),
+		Message:     r.Message,
+		Level:       NormalizeLevel(r.Level),
+		Source: LogSource{
+			Logger: cfg.Component, // Use component as default logger name
+		},
+		Process: LogProcess{
+			ID:     os.Getpid(),
+			Thread: getGoroutineID(),
+		},
+	}
+
+	// Optional metadata
+	if cfg.Environment != "" {
+		doc.Environment = &cfg.Environment
+	}
+	if cfg.Version != "" {
+		doc.Version = &cfg.Version
 	}
 
 	// Extract source info
@@ -48,13 +84,15 @@ func FormatLogDocument(ctx context.Context, r slog.Record, loggerName string) *L
 		frames := runtime.CallersFrames([]uintptr{r.PC})
 		frame, _ := frames.Next()
 		if frame.File != "" {
-			doc.Pathname = &frame.File
+			doc.Source.Pathname = &frame.File
 		}
 		if frame.Line > 0 {
-			doc.LineNo = &frame.Line
+			doc.Source.LineNo = &frame.Line
 		}
 		if frame.Function != "" {
-			doc.FuncName = &frame.Function
+			doc.Source.FuncName = &frame.Function
+			// Use function name as logger if available
+			doc.Source.Logger = frame.Function
 		}
 	}
 
@@ -66,14 +104,14 @@ func FormatLogDocument(ctx context.Context, r slog.Record, loggerName string) *L
 		doc.OperationID = &opID
 	}
 
-	// Extract features from record attributes
-	features := make(map[string]interface{})
+	// Extract fields from record attributes (renamed from features)
+	fields := make(map[string]interface{})
 	r.Attrs(func(a slog.Attr) bool {
-		features[a.Key] = resolveValue(a.Value)
+		fields[a.Key] = resolveValue(a.Value)
 		return true
 	})
-	if len(features) > 0 {
-		doc.Features = features
+	if len(fields) > 0 {
+		doc.Fields = fields
 	}
 
 	return doc

@@ -10,14 +10,25 @@ import (
 	"github.com/joho/godotenv"
 )
 
-// Config holds all devlogs configuration options.
+// Config holds all devlogs configuration options (v2.0).
 type Config struct {
-	Host                   string
-	Port                   int
-	User                   string
-	Password               string
-	Timeout                time.Duration
-	Index                  string
+	// Required for v2.0 schema
+	Application string
+	Component   string
+
+	// Optional metadata
+	Environment string
+	Version     string
+
+	// OpenSearch connection
+	Host     string
+	Port     int
+	User     string
+	Password string
+	Timeout  time.Duration
+	Index    string
+
+	// Circuit breaker settings
 	CircuitBreakerDuration time.Duration
 	ErrorPrintInterval     time.Duration
 }
@@ -25,6 +36,8 @@ type Config struct {
 // DefaultConfig returns a Config with default values.
 func DefaultConfig() *Config {
 	return &Config{
+		Application:            "unknown",
+		Component:              "go",
 		Host:                   "localhost",
 		Port:                   9200,
 		User:                   "admin",
@@ -54,6 +67,20 @@ func LoadConfigWithEnvFile(path string) (*Config, error) {
 
 func loadFromEnv() (*Config, error) {
 	cfg := DefaultConfig()
+
+	// v2.0 schema fields
+	if app := os.Getenv("DEVLOGS_APPLICATION"); app != "" {
+		cfg.Application = app
+	}
+	if comp := os.Getenv("DEVLOGS_COMPONENT"); comp != "" {
+		cfg.Component = comp
+	}
+	if env := os.Getenv("DEVLOGS_ENVIRONMENT"); env != "" {
+		cfg.Environment = env
+	}
+	if ver := os.Getenv("DEVLOGS_VERSION"); ver != "" {
+		cfg.Version = ver
+	}
 
 	// Check for URL shortcut first
 	if osURL := os.Getenv("DEVLOGS_OPENSEARCH_URL"); osURL != "" {

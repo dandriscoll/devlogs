@@ -1,4 +1,7 @@
-# OpenSearchHandler implementation
+# DevlogsHandler implementation
+#
+# A Python logging handler that writes log records to OpenSearch using
+# the devlogs record schema (v2.0).
 
 import logging
 import time
@@ -48,8 +51,22 @@ def _extract_features(record: logging.LogRecord) -> Optional[Dict[str, Any]]:
 	return _normalize_features(getattr(record, "features", None))
 
 
-class OpenSearchHandler(logging.Handler):
-	"""Logging handler that writes log records to OpenSearch."""
+class DevlogsHandler(logging.Handler):
+	"""Logging handler that writes log records to OpenSearch.
+
+	Uses the devlogs v2.0 schema with required application and component fields,
+	and top-level message, level, and area fields.
+
+	Usage:
+		from devlogs.handler import DevlogsHandler
+
+		handler = DevlogsHandler(
+			application="my-app",
+			component="api",
+			level=logging.INFO,
+		)
+		logging.getLogger().addHandler(handler)
+	"""
 	# Circuit breaker state shared across all instances
 	_circuit_open = False
 	_circuit_open_until = 0.0
@@ -57,111 +74,180 @@ class OpenSearchHandler(logging.Handler):
 	_last_error_printed = 0.0
 	_error_print_interval = 10.0  # only print errors every 10 seconds
 
-	def __init__(self, level=logging.DEBUG, opensearch_client=None, index_name=None):
+	def __init__(
+		self,
+		application: str = "unknown",
+		component: str = "default",
+		level: int = logging.DEBUG,
+		opensearch_client: Any = None,
+		index_name: Optional[str] = None,
+		environment: Optional[str] = None,
+		version: Optional[str] = None,
+	):
+		"""Initialize the DevlogsHandler.
+
+		Args:
+			application: Application name (required for devlogs schema)
+			component: Component name within the application
+			level: Minimum log level to handle
+			opensearch_client: OpenSearch client instance (auto-created if None)
+			index_name: Target OpenSearch index (from config if None)
+			environment: Deployment environment (optional)
+			version: Application version (optional)
+		"""
 		super().__init__(level)
+		self.application = application
+		self.component = component
+		self.environment = environment
+		self.version = version
 		self.client = opensearch_client
 		self.index_name = index_name
 
-	def emit(self, record):
+	def emit(self, record: logging.LogRecord) -> None:
+		"""Emit a log record to OpenSearch."""
 		# Build log document
 		doc = self.format_record(record)
 
 		# Circuit breaker: skip indexing if we know the index is unavailable
 		current_time = time.time()
-		if OpenSearchHandler._circuit_open and current_time < OpenSearchHandler._circuit_open_until:
+		if DevlogsHandler._circuit_open and current_time < DevlogsHandler._circuit_open_until:
 			# Silently fail - circuit is open
 			return
 
-		# Index document (flat schema - no routing)
+		# Index document
 		try:
 			if self.client:
-				# All logs are flat "log_entry" documents
 				doc["doc_type"] = "log_entry"
 				self.client.index(index=self.index_name, body=doc)
 				# Success - close circuit breaker if it was open
-				if OpenSearchHandler._circuit_open:
-					OpenSearchHandler._circuit_open = False
+				if DevlogsHandler._circuit_open:
+					DevlogsHandler._circuit_open = False
 					print(f"[devlogs] Connection restored, resuming indexing")
 		except Exception as e:
 			# Open circuit breaker to prevent further attempts
-			OpenSearchHandler._circuit_open = True
-			OpenSearchHandler._circuit_open_until = current_time + OpenSearchHandler._circuit_breaker_duration
+			DevlogsHandler._circuit_open = True
+			DevlogsHandler._circuit_open_until = current_time + DevlogsHandler._circuit_breaker_duration
 
 			# Only print error occasionally to avoid log spam
-			if current_time - OpenSearchHandler._last_error_printed > OpenSearchHandler._error_print_interval:
-				print(f"[devlogs] Failed to index log, pausing indexing for {OpenSearchHandler._circuit_breaker_duration}s: {e}")
-				OpenSearchHandler._last_error_printed = current_time
+			if current_time - DevlogsHandler._last_error_printed > DevlogsHandler._error_print_interval:
+				print(f"[devlogs] Failed to index log, pausing indexing for {DevlogsHandler._circuit_breaker_duration}s: {e}")
+				DevlogsHandler._last_error_printed = current_time
 
-	def format_record(self, record):
-		# Compose log document with context
+	def format_record(self, record: logging.LogRecord) -> Dict[str, Any]:
+		"""Format a log record into a devlogs schema document.
+
+		Returns a document with the devlogs v2.0 schema:
+		- Required: application, component, timestamp
+		- Top-level: message, level, area
+		- Optional: environment, version, fields, identity
+		"""
+		# Generate timestamp
 		timestamp = None
 		if getattr(record, "created", None) is not None:
 			timestamp = datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat().replace("+00:00", "Z")
-		doc = {
+
+		# Build document with devlogs v2.0 schema
+		doc: Dict[str, Any] = {
+			# Required fields
+			"application": self.application,
+			"component": self.component,
 			"timestamp": timestamp,
-			"level": normalize_level(record.levelname),
-			"levelno": record.levelno,
-			"logger_name": record.name,
+			# Top-level log fields
 			"message": self.format(record),
+			"level": normalize_level(record.levelname),
+			"area": getattr(record, "area", None) or get_area(),
+		}
+
+		# Optional standardized fields
+		if self.environment:
+			doc["environment"] = self.environment
+		if self.version:
+			doc["version"] = self.version
+
+		# Operation ID for request correlation
+		operation_id = getattr(record, "operation_id", None) or get_operation_id()
+		if operation_id:
+			doc["operation_id"] = operation_id
+
+		# Custom fields (renamed from 'features')
+		fields = _extract_features(record)
+		if fields:
+			doc["fields"] = fields
+
+		# Source location info (useful for debugging)
+		doc["source"] = {
+			"logger": record.name,
 			"pathname": record.pathname,
 			"lineno": record.lineno,
 			"funcName": record.funcName,
-			"thread": record.thread,
-			"process": record.process,
-			"exception": getattr(record, "exc_text", None),
-			"area": get_area(),
-			"operation_id": get_operation_id(),
 		}
-		features = _extract_features(record)
-		if features:
-			doc["features"] = features
+
+		# Process/thread info
+		doc["process"] = {
+			"id": record.process,
+			"thread": record.thread,
+		}
+
+		# Exception info if present
+		exc_text = getattr(record, "exc_text", None)
+		if exc_text:
+			doc["exception"] = exc_text
+
 		return doc
 
 
-class DiagnosticsHandler(OpenSearchHandler):
-	"""Diagnostics handler that always accepts DEBUG."""
-	def __init__(self, opensearch_client=None, index_name=None):
-		super().__init__(level=logging.DEBUG, opensearch_client=opensearch_client, index_name=index_name)
+# Backward compatibility alias
+OpenSearchHandler = DevlogsHandler
 
-	def emit(self, record):
+
+class DiagnosticsHandler(DevlogsHandler):
+	"""Diagnostics handler that always accepts DEBUG level.
+
+	Auto-generates operation_id if not set.
+	"""
+	def __init__(
+		self,
+		application: str = "diagnostics",
+		component: str = "default",
+		opensearch_client: Any = None,
+		index_name: Optional[str] = None,
+	):
+		super().__init__(
+			application=application,
+			component=component,
+			level=logging.DEBUG,
+			opensearch_client=opensearch_client,
+			index_name=index_name,
+		)
+
+	def emit(self, record: logging.LogRecord) -> None:
 		# Circuit breaker: skip indexing if we know the index is unavailable
 		current_time = time.time()
-		if OpenSearchHandler._circuit_open and current_time < OpenSearchHandler._circuit_open_until:
+		if DevlogsHandler._circuit_open and current_time < DevlogsHandler._circuit_open_until:
 			# Silently fail - circuit is open
 			return
 
 		doc = self.format_record(record)
-		operation_id = doc.get("operation_id")
-		if not operation_id:
-			operation_id = str(uuid.uuid4())
-			doc["operation_id"] = operation_id
 
-		# All logs are flat "log_entry" documents (no routing)
+		# Auto-generate operation_id if not present
+		if not doc.get("operation_id"):
+			doc["operation_id"] = str(uuid.uuid4())
+
 		doc["doc_type"] = "log_entry"
 
 		try:
 			if self.client:
 				self.client.index(index=self.index_name, body=doc)
 				# Success - close circuit breaker if it was open
-				if OpenSearchHandler._circuit_open:
-					OpenSearchHandler._circuit_open = False
+				if DevlogsHandler._circuit_open:
+					DevlogsHandler._circuit_open = False
 					print(f"[devlogs] Connection restored, resuming indexing")
 		except Exception as e:
 			# Open circuit breaker to prevent further attempts
-			OpenSearchHandler._circuit_open = True
-			OpenSearchHandler._circuit_open_until = current_time + OpenSearchHandler._circuit_breaker_duration
+			DevlogsHandler._circuit_open = True
+			DevlogsHandler._circuit_open_until = current_time + DevlogsHandler._circuit_breaker_duration
 
 			# Only print error occasionally to avoid log spam
-			if current_time - OpenSearchHandler._last_error_printed > OpenSearchHandler._error_print_interval:
-				print(f"[devlogs] Failed to index log, pausing indexing for {OpenSearchHandler._circuit_breaker_duration}s: {e}")
-				OpenSearchHandler._last_error_printed = current_time
-
-	def format_record(self, record):
-		doc = super().format_record(record)
-		extra_area = getattr(record, "area", None)
-		extra_operation = getattr(record, "operation_id", None)
-		if extra_area:
-			doc["area"] = extra_area
-		if extra_operation:
-			doc["operation_id"] = extra_operation
-		return doc
+			if current_time - DevlogsHandler._last_error_printed > DevlogsHandler._error_print_interval:
+				print(f"[devlogs] Failed to index log, pausing indexing for {DevlogsHandler._circuit_breaker_duration}s: {e}")
+				DevlogsHandler._last_error_printed = current_time

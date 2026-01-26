@@ -5,14 +5,14 @@ import (
 	"log/slog"
 )
 
-// Handler implements slog.Handler for devlogs.
+// Handler implements slog.Handler for devlogs (v2.0).
 type Handler struct {
-	client     *Client
-	level      slog.Level
-	loggerName string
-	attrs      []slog.Attr
-	groups     []string
-	cb         *CircuitBreaker
+	client *Client
+	cfg    *Config
+	level  slog.Level
+	attrs  []slog.Attr
+	groups []string
+	cb     *CircuitBreaker
 }
 
 // HandlerOption configures a Handler.
@@ -25,11 +25,37 @@ func WithLevel(level slog.Level) HandlerOption {
 	}
 }
 
-// WithLoggerName sets the logger name included in documents.
-func WithLoggerName(name string) HandlerOption {
+// WithApplication sets the application name for v2.0 schema.
+func WithApplication(name string) HandlerOption {
 	return func(h *Handler) {
-		h.loggerName = name
+		h.cfg.Application = name
 	}
+}
+
+// WithComponent sets the component name for v2.0 schema.
+func WithComponent(name string) HandlerOption {
+	return func(h *Handler) {
+		h.cfg.Component = name
+	}
+}
+
+// WithEnvironment sets the environment for v2.0 schema.
+func WithEnvironment(env string) HandlerOption {
+	return func(h *Handler) {
+		h.cfg.Environment = env
+	}
+}
+
+// WithVersion sets the version for v2.0 schema.
+func WithVersion(version string) HandlerOption {
+	return func(h *Handler) {
+		h.cfg.Version = version
+	}
+}
+
+// WithLoggerName sets the logger name (deprecated, use WithComponent).
+func WithLoggerName(name string) HandlerOption {
+	return WithComponent(name)
 }
 
 // NewHandler creates a new devlogs slog.Handler.
@@ -41,10 +67,10 @@ func NewHandler(cfg *Config, opts ...HandlerOption) (*Handler, error) {
 // NewHandlerWithClient creates a handler with a custom client.
 func NewHandlerWithClient(client *Client, cfg *Config, opts ...HandlerOption) *Handler {
 	h := &Handler{
-		client:     client,
-		level:      slog.LevelDebug,
-		loggerName: "go",
-		cb:         DefaultCircuitBreaker(),
+		client: client,
+		cfg:    cfg,
+		level:  slog.LevelDebug,
+		cb:     DefaultCircuitBreaker(),
 	}
 
 	for _, opt := range opts {
@@ -66,19 +92,13 @@ func (h *Handler) Handle(ctx context.Context, r slog.Record) error {
 		return nil
 	}
 
-	// Build logger name with groups
-	loggerName := h.loggerName
-	for _, g := range h.groups {
-		loggerName += "." + g
-	}
-
 	// Add handler-level attrs to record
 	for _, a := range h.attrs {
 		r.AddAttrs(a)
 	}
 
-	// Format document
-	doc := FormatLogDocument(ctx, r, loggerName)
+	// Format document with v2.0 schema
+	doc := FormatLogDocument(ctx, r, h.cfg)
 
 	// Fire-and-forget indexing
 	go func() {

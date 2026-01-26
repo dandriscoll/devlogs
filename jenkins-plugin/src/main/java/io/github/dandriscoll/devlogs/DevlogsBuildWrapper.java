@@ -1,6 +1,7 @@
 package io.github.dandriscoll.devlogs;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import hudson.EnvVars;
 import hudson.Extension;
@@ -21,8 +22,13 @@ import javax.annotation.Nonnull;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.Serializable;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.util.Base64;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -32,7 +38,11 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <pre>
  * pipeline {
  *     options {
- *         devlogs(url: 'https://admin:password@opensearch.example.com:9200/devlogs-myproject')
+ *         // Collector mode (recommended):
+ *         devlogs(url: 'https://collector.example.com', application: 'myapp')
+ *
+ *         // Direct to OpenSearch (legacy):
+ *         devlogs(url: 'https://admin:password@opensearch.example.com:9200/devlogs-myproject', pipeline: false)
  *     }
  *     stages {
  *         stage('Build') {
@@ -47,10 +57,19 @@ import java.util.concurrent.atomic.AtomicInteger;
  * Or configured via the Jenkins UI on the job configuration page.
  */
 public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializable {
-    private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 2L;
 
     private String url;
     private String index;
+
+    // v2.0 schema fields
+    private String application;
+    private String component = "jenkins";
+    private String environment;
+    private String version;
+
+    // Mode: true = collector API (default), false = direct OpenSearch bulk API
+    private boolean pipeline = true;
 
     @DataBoundConstructor
     public DevlogsBuildWrapper() {
@@ -75,6 +94,51 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
         this.index = index;
     }
 
+    public String getApplication() {
+        return application;
+    }
+
+    @DataBoundSetter
+    public void setApplication(String application) {
+        this.application = application;
+    }
+
+    public String getComponent() {
+        return component;
+    }
+
+    @DataBoundSetter
+    public void setComponent(String component) {
+        this.component = component;
+    }
+
+    public String getEnvironment() {
+        return environment;
+    }
+
+    @DataBoundSetter
+    public void setEnvironment(String environment) {
+        this.environment = environment;
+    }
+
+    public String getVersion() {
+        return version;
+    }
+
+    @DataBoundSetter
+    public void setVersion(String version) {
+        this.version = version;
+    }
+
+    public boolean getPipeline() {
+        return pipeline;
+    }
+
+    @DataBoundSetter
+    public void setPipeline(boolean pipeline) {
+        this.pipeline = pipeline;
+    }
+
     @Override
     public void setUp(Context context, Run<?, ?> build, FilePath workspace,
                       Launcher launcher, TaskListener listener, EnvVars initialEnvironment)
@@ -83,11 +147,15 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
         String resolvedUrl = initialEnvironment.expand(url);
 
         if (resolvedUrl == null || resolvedUrl.trim().isEmpty()) {
-            listener.getLogger().println("[Devlogs] No URL configured, skipping log streaming");
+            listener.getLogger().println("[devlogs] No URL configured, skipping log streaming");
             return;
         }
 
-        listener.getLogger().println("[Devlogs] Streaming logs to " + maskUrl(resolvedUrl));
+        if (pipeline) {
+            listener.getLogger().println("[devlogs] Streaming logs to collector: " + maskUrl(resolvedUrl));
+        } else {
+            listener.getLogger().println("[devlogs] Streaming logs directly to OpenSearch: " + maskUrl(resolvedUrl));
+        }
     }
 
     @Override
@@ -95,7 +163,15 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
         if (url == null || url.trim().isEmpty()) {
             return null;
         }
-        return new DevlogsConsoleLogFilter(url, index, build);
+
+        // Derive application from job name if not specified
+        String resolvedApplication = application;
+        if (resolvedApplication == null || resolvedApplication.trim().isEmpty()) {
+            resolvedApplication = build.getParent().getFullName();
+        }
+
+        return new DevlogsConsoleLogFilter(url, index, build,
+            resolvedApplication, component, environment, version, pipeline);
     }
 
     /**
@@ -125,7 +201,7 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
      * Console log filter that intercepts and streams logs to devlogs.
      */
     private static class DevlogsConsoleLogFilter extends ConsoleLogFilter implements Serializable {
-        private static final long serialVersionUID = 1L;
+        private static final long serialVersionUID = 2L;
 
         private final String url;
         private final String index;
@@ -133,12 +209,24 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
         private final String jobName;
         private final int buildNumber;
         private final String buildUrl;
+        private final String application;
+        private final String component;
+        private final String environment;
+        private final String version;
+        private final boolean pipeline;
         private final AtomicInteger seq = new AtomicInteger(0);
 
-        public DevlogsConsoleLogFilter(String url, String index, Run<?, ?> run) {
+        public DevlogsConsoleLogFilter(String url, String index, Run<?, ?> run,
+                                       String application, String component,
+                                       String environment, String version, boolean pipeline) {
             this.url = url;
+            this.application = application;
+            this.component = component;
+            this.environment = environment;
+            this.version = version;
+            this.pipeline = pipeline;
 
-            // Extract index from URL if not provided separately
+            // Extract index from URL if not provided separately (for direct mode)
             if (index == null || index.trim().isEmpty()) {
                 this.index = extractIndexFromUrl(url);
             } else {
@@ -155,7 +243,11 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
             try {
                 int lastSlash = url.lastIndexOf('/');
                 if (lastSlash > 0 && lastSlash < url.length() - 1) {
-                    return url.substring(lastSlash + 1);
+                    String potential = url.substring(lastSlash + 1);
+                    // Don't treat API paths as index names
+                    if (!potential.startsWith("v1") && !potential.equals("logs")) {
+                        return potential;
+                    }
                 }
             } catch (Exception e) {
                 // Fall back to default
@@ -167,7 +259,8 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
         @Override
         public OutputStream decorateLogger(Run build, OutputStream logger)
                 throws IOException, InterruptedException {
-            return new DevlogsOutputStream(logger, url, index, runId, jobName, buildNumber, buildUrl, seq);
+            return new DevlogsOutputStream(logger, url, index, runId, jobName, buildNumber, buildUrl, seq,
+                application, component, environment, version, pipeline);
         }
     }
 
@@ -175,7 +268,7 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
      * OutputStream that captures log lines and sends them to devlogs.
      */
     private static class DevlogsOutputStream extends OutputStream implements Serializable {
-        private static final long serialVersionUID = 1L;
+        private static final long serialVersionUID = 2L;
         private static final int BUFFER_SIZE = 8192;
         private static final int BATCH_SIZE = 10;
         private static final long BATCH_TIMEOUT_MS = 10000;
@@ -188,20 +281,33 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
         private final int buildNumber;
         private final String buildUrl;
         private final AtomicInteger seq;
+        private final String application;
+        private final String component;
+        private final String environment;
+        private final String version;
+        private final boolean pipeline;
 
         private final byte[] buffer = new byte[BUFFER_SIZE];
         private int bufferPos = 0;
         private final StringBuilder lineBuffer = new StringBuilder();
         private final StringBuilder batchBuffer = new StringBuilder();
+        private final JsonArray collectorBatch = new JsonArray();
         private int batchCount = 0;
         private long lastBatchTime = System.currentTimeMillis();
         private String currentLineTimestamp = null;
+        private final String authHeader;
+        private boolean errorReported = false;
 
         private transient OkHttpClient client;
         private transient Gson gson;
 
+        private static final DateTimeFormatter ISO_FORMATTER =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(ZoneOffset.UTC);
+
         public DevlogsOutputStream(OutputStream delegate, String url, String index, String runId,
-                                   String jobName, int buildNumber, String buildUrl, AtomicInteger seq) {
+                                   String jobName, int buildNumber, String buildUrl, AtomicInteger seq,
+                                   String application, String component, String environment,
+                                   String version, boolean pipeline) {
             this.delegate = delegate;
             this.index = index;
             this.runId = runId;
@@ -209,14 +315,62 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
             this.buildNumber = buildNumber;
             this.buildUrl = buildUrl;
             this.seq = seq;
+            this.application = application;
+            this.component = component;
+            this.environment = environment;
+            this.version = version;
+            this.pipeline = pipeline;
 
-            // Extract base URL (without index)
-            int lastSlash = url.lastIndexOf('/');
-            if (lastSlash > 0) {
-                this.baseUrl = url.substring(0, lastSlash);
-            } else {
-                this.baseUrl = url;
+            // Parse URL to extract credentials and base URL
+            String parsedBaseUrl = url;
+            String parsedAuthHeader = null;
+
+            try {
+                URI uri = new URI(url);
+                String userInfo = uri.getUserInfo();
+                if (userInfo != null && !userInfo.isEmpty()) {
+                    // Build auth header from credentials
+                    parsedAuthHeader = "Basic " + Base64.getEncoder().encodeToString(
+                        userInfo.getBytes(StandardCharsets.UTF_8));
+
+                    // Rebuild URL without credentials
+                    int port = uri.getPort();
+                    String portStr = (port > 0) ? ":" + port : "";
+                    String path = uri.getPath();
+
+                    if (pipeline) {
+                        // For collector mode, keep the base path
+                        parsedBaseUrl = uri.getScheme() + "://" + uri.getHost() + portStr + (path != null ? path : "");
+                    } else {
+                        // For direct mode, remove trailing path segment (index name)
+                        if (path != null && path.lastIndexOf('/') > 0) {
+                            path = path.substring(0, path.lastIndexOf('/'));
+                        } else {
+                            path = "";
+                        }
+                        parsedBaseUrl = uri.getScheme() + "://" + uri.getHost() + portStr + path;
+                    }
+                } else {
+                    if (!pipeline) {
+                        // No credentials in URL, extract base URL the simple way (direct mode)
+                        int lastSlash = url.lastIndexOf('/');
+                        if (lastSlash > 0) {
+                            parsedBaseUrl = url.substring(0, lastSlash);
+                        }
+                    }
+                }
+            } catch (URISyntaxException e) {
+                if (!pipeline) {
+                    // Fall back to simple extraction (direct mode only)
+                    int lastSlash = url.lastIndexOf('/');
+                    if (lastSlash > 0) {
+                        parsedBaseUrl = url.substring(0, lastSlash);
+                    }
+                }
             }
+
+            this.baseUrl = parsedBaseUrl;
+            this.authHeader = parsedAuthHeader;
 
             initTransients();
         }
@@ -264,7 +418,7 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
                 processBuffer();
             }
             if (lineBuffer.length() > 0) {
-                String timestamp = (currentLineTimestamp != null) ? currentLineTimestamp : Instant.now().toString();
+                String timestamp = (currentLineTimestamp != null) ? currentLineTimestamp : formatTimestamp();
                 sendLine(lineBuffer.toString(), timestamp);
                 lineBuffer.setLength(0);
                 currentLineTimestamp = null;
@@ -287,18 +441,22 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
             for (char c : text.toCharArray()) {
                 if (c == '\n') {
                     if (lineBuffer.length() > 0) {
-                        String timestamp = (currentLineTimestamp != null) ? currentLineTimestamp : Instant.now().toString();
+                        String timestamp = (currentLineTimestamp != null) ? currentLineTimestamp : formatTimestamp();
                         sendLine(lineBuffer.toString(), timestamp);
                         lineBuffer.setLength(0);
                         currentLineTimestamp = null;
                     }
                 } else {
                     if (lineBuffer.length() == 0 && currentLineTimestamp == null) {
-                        currentLineTimestamp = Instant.now().toString();
+                        currentLineTimestamp = formatTimestamp();
                     }
                     lineBuffer.append(c);
                 }
             }
+        }
+
+        private String formatTimestamp() {
+            return ISO_FORMATTER.format(Instant.now());
         }
 
         private void sendLine(String line, String timestamp) {
@@ -312,20 +470,75 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
                     flushBatch();
                 }
 
-                JsonObject doc = new JsonObject();
-                doc.addProperty("doc_type", "log_entry");
-                doc.addProperty("timestamp", timestamp);
-                doc.addProperty("run_id", runId);
-                doc.addProperty("job", jobName);
-                doc.addProperty("build_number", buildNumber);
-                doc.addProperty("build_url", buildUrl);
-                doc.addProperty("seq", seq.incrementAndGet());
-                doc.addProperty("message", line);
-                doc.addProperty("source", "jenkins");
-                doc.addProperty("level", "info");
+                if (pipeline) {
+                    // Collector mode: v2.0 schema
+                    JsonObject doc = new JsonObject();
+                    doc.addProperty("application", application);
+                    doc.addProperty("component", component);
+                    doc.addProperty("timestamp", timestamp);
+                    doc.addProperty("message", line);
+                    doc.addProperty("level", "info");
+                    doc.addProperty("area", jobName);
 
-                batchBuffer.append("{\"index\":{\"_index\":\"").append(index).append("\"}}\n");
-                batchBuffer.append(gson.toJson(doc)).append("\n");
+                    if (environment != null && !environment.isEmpty()) {
+                        doc.addProperty("environment", environment);
+                    }
+                    if (version != null && !version.isEmpty()) {
+                        doc.addProperty("version", version);
+                    }
+
+                    // Build metadata goes in fields
+                    JsonObject fields = new JsonObject();
+                    fields.addProperty("run_id", runId);
+                    fields.addProperty("job", jobName);
+                    fields.addProperty("build_number", buildNumber);
+                    fields.addProperty("build_url", buildUrl);
+                    fields.addProperty("seq", seq.incrementAndGet());
+                    doc.add("fields", fields);
+
+                    collectorBatch.add(doc);
+                } else {
+                    // Direct mode: v2.0 schema with bulk API format
+                    JsonObject doc = new JsonObject();
+                    doc.addProperty("doc_type", "log_entry");
+                    doc.addProperty("application", application);
+                    doc.addProperty("component", component);
+                    doc.addProperty("timestamp", timestamp);
+                    doc.addProperty("message", line);
+                    doc.addProperty("level", "info");
+                    doc.addProperty("area", jobName);
+
+                    if (environment != null && !environment.isEmpty()) {
+                        doc.addProperty("environment", environment);
+                    }
+                    if (version != null && !version.isEmpty()) {
+                        doc.addProperty("version", version);
+                    }
+
+                    // Build metadata in fields
+                    JsonObject fields = new JsonObject();
+                    fields.addProperty("run_id", runId);
+                    fields.addProperty("job", jobName);
+                    fields.addProperty("build_number", buildNumber);
+                    fields.addProperty("build_url", buildUrl);
+                    fields.addProperty("seq", seq.incrementAndGet());
+                    doc.add("fields", fields);
+
+                    // Source info (v2.0 schema)
+                    JsonObject source = new JsonObject();
+                    source.addProperty("logger", "jenkins");
+                    doc.add("source", source);
+
+                    // Process info (v2.0 schema)
+                    JsonObject process = new JsonObject();
+                    process.addProperty("id", buildNumber);
+                    process.addProperty("thread", seq.get());
+                    doc.add("process", process);
+
+                    batchBuffer.append("{\"index\":{\"_index\":\"").append(index).append("\"}}\n");
+                    batchBuffer.append(gson.toJson(doc)).append("\n");
+                }
+
                 batchCount++;
 
                 if (batchCount == 1) {
@@ -336,7 +549,19 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
                     flushBatch();
                 }
             } catch (Exception e) {
-                System.err.println("Warning: Failed to send log to devlogs: " + e.getMessage());
+                // Don't fail the build if logging fails
+            }
+        }
+
+        private void consoleError(String message) {
+            if (errorReported) return;
+            errorReported = true;
+            try {
+                String line = "[devlogs] " + message + "\n";
+                delegate.write(line.getBytes(StandardCharsets.UTF_8));
+                delegate.flush();
+            } catch (IOException e) {
+                // Can't write to console
             }
         }
 
@@ -346,20 +571,60 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
             try {
                 initTransients();
 
-                String bulkUrl = baseUrl + "/_bulk";
-                RequestBody body = RequestBody.create(
-                    batchBuffer.toString(),
-                    MediaType.parse("application/x-ndjson")
-                );
+                Request request;
 
-                Request request = new Request.Builder()
-                    .url(bulkUrl)
-                    .post(body)
-                    .build();
+                if (pipeline) {
+                    // Collector mode: POST to /v1/logs with JSON array
+                    String collectorUrl = baseUrl.endsWith("/") ? baseUrl + "v1/logs" : baseUrl + "/v1/logs";
+
+                    JsonObject payload = new JsonObject();
+                    payload.add("records", collectorBatch);
+
+                    RequestBody body = RequestBody.create(
+                        gson.toJson(payload),
+                        MediaType.parse("application/json")
+                    );
+
+                    Request.Builder requestBuilder = new Request.Builder()
+                        .url(collectorUrl)
+                        .post(body);
+
+                    if (authHeader != null) {
+                        requestBuilder.addHeader("Authorization", authHeader);
+                    }
+
+                    request = requestBuilder.build();
+
+                    // Clear collector batch
+                    while (collectorBatch.size() > 0) {
+                        collectorBatch.remove(0);
+                    }
+                } else {
+                    // Direct mode: POST to /_bulk with NDJSON
+                    String bulkUrl = baseUrl + "/_bulk";
+
+                    RequestBody body = RequestBody.create(
+                        batchBuffer.toString(),
+                        MediaType.parse("application/x-ndjson")
+                    );
+
+                    Request.Builder requestBuilder = new Request.Builder()
+                        .url(bulkUrl)
+                        .post(body);
+
+                    if (authHeader != null) {
+                        requestBuilder.addHeader("Authorization", authHeader);
+                    }
+
+                    request = requestBuilder.build();
+                }
 
                 try (Response response = client.newCall(request).execute()) {
                     if (!response.isSuccessful()) {
-                        System.err.println("Warning: Devlogs bulk request failed: " + response.code());
+                        String responseBody = response.body() != null ? response.body().string() : "";
+                        String detail = responseBody.length() > 100 ? responseBody.substring(0, 100) + "..." : responseBody;
+                        String target = pipeline ? "collector" : "OpenSearch";
+                        consoleError("ERROR: Failed to send logs to " + target + ". HTTP " + response.code() + ": " + detail);
                     }
                 }
 
@@ -367,7 +632,8 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
                 batchCount = 0;
                 lastBatchTime = System.currentTimeMillis();
             } catch (Exception e) {
-                System.err.println("Warning: Failed to flush logs to devlogs: " + e.getMessage());
+                String target = pipeline ? "collector" : "OpenSearch";
+                consoleError("ERROR: Failed to send logs to " + target + ": " + e.getMessage());
                 batchBuffer.setLength(0);
                 batchCount = 0;
                 lastBatchTime = System.currentTimeMillis();

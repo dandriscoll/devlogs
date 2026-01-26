@@ -1,9 +1,24 @@
 <?jelly escape-by-default='true'?>
 <j:jelly xmlns:j="jelly:core" xmlns:f="/lib/form">
-  <f:entry title="Devlogs URL" field="url" description="OpenSearch URL with index (e.g., https://user:pass@host:9200/devlogs-myproject)">
+  <f:entry title="URL" field="url" description="Collector URL (e.g., https://collector.example.com) or OpenSearch URL for direct mode">
     <f:textbox />
   </f:entry>
-  <f:entry title="Index (optional)" field="index" description="Override the index name extracted from the URL">
+  <f:entry title="Application" field="application" description="Application name (defaults to job name)">
+    <f:textbox />
+  </f:entry>
+  <f:entry title="Component" field="component" description="Component name (defaults to 'jenkins')">
+    <f:textbox default="jenkins" />
+  </f:entry>
+  <f:entry title="Environment (optional)" field="environment" description="Deployment environment (e.g., production, staging)">
+    <f:textbox />
+  </f:entry>
+  <f:entry title="Version (optional)" field="version" description="Application version">
+    <f:textbox />
+  </f:entry>
+  <f:entry title="Use Collector API" field="pipeline" description="Use collector endpoint (default) or direct OpenSearch bulk API">
+    <f:checkbox default="true" />
+  </f:entry>
+  <f:entry title="Index (optional, direct mode only)" field="index" description="Override the index name for direct OpenSearch mode">
     <f:textbox />
   </f:entry>
 </j:jelly>
