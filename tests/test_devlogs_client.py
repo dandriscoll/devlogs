@@ -4,7 +4,65 @@ import json
 import pytest
 from unittest.mock import Mock, patch
 
-from devlogs.devlogs_client import DevlogsClient, create_client, emit_log
+from devlogs.devlogs_client import DevlogsClient, create_client, emit_log, _parse_collector_url
+
+
+class TestParseCollectorUrl:
+    """Tests for URL parsing - distinguishes collector vs OpenSearch URLs."""
+
+    def test_no_userinfo(self):
+        """Plain URL without credentials."""
+        url, token = _parse_collector_url("http://localhost:8080")
+        assert url == "http://localhost:8080"
+        assert token is None
+
+    def test_collector_url_token_in_username(self):
+        """Collector URL: token in username position only."""
+        url, token = _parse_collector_url("http://mytoken@localhost:8080")
+        assert url == "http://localhost:8080"
+        assert token == "mytoken"
+
+    def test_opensearch_url_user_and_password(self):
+        """OpenSearch URL: both username and password - keep credentials in URL."""
+        url, token = _parse_collector_url("http://admin:secretpass@localhost:9200")
+        assert url == "http://admin:secretpass@localhost:9200"
+        assert token is None
+
+    def test_opensearch_url_preserves_all_parts(self):
+        """OpenSearch URL preserves scheme, path, query."""
+        url, token = _parse_collector_url("https://user:pass@opensearch.example.com:9200/_bulk?refresh=true")
+        assert url == "https://user:pass@opensearch.example.com:9200/_bulk?refresh=true"
+        assert token is None
+
+    def test_collector_url_preserves_port(self):
+        url, token = _parse_collector_url("http://token@localhost:9999")
+        assert url == "http://localhost:9999"
+        assert token == "token"
+
+    def test_collector_url_preserves_path(self):
+        url, token = _parse_collector_url("http://token@localhost:8080/path/to/api")
+        assert url == "http://localhost:8080/path/to/api"
+        assert token == "token"
+
+    def test_collector_url_https_scheme(self):
+        url, token = _parse_collector_url("https://token@example.com")
+        assert url == "https://example.com"
+        assert token == "token"
+
+    def test_collector_url_encoded_token(self):
+        url, token = _parse_collector_url("http://my%3Atoken%40special@localhost:8080")
+        assert url == "http://localhost:8080"
+        assert token == "my:token@special"
+
+    def test_empty_url(self):
+        url, token = _parse_collector_url("")
+        assert url == ""
+        assert token is None
+
+    def test_devlogs_token_format(self):
+        url, token = _parse_collector_url("http://dl1_myapp_abcdefghijklmnopqrstuvwxyz123456@localhost:8080")
+        assert url == "http://localhost:8080"
+        assert token == "dl1_myapp_abcdefghijklmnopqrstuvwxyz123456"
 
 
 class TestDevlogsClient:
@@ -115,6 +173,46 @@ class TestDevlogsClient:
         )
         headers = client._get_headers()
         assert headers["Authorization"] == "Bearer my-secret-token"
+
+    def test_get_headers_with_token_in_url(self):
+        """Collector URL: token in username position extracts Bearer auth."""
+        client = DevlogsClient(
+            collector_url="http://url-token@localhost:8080",
+            application="test-app",
+            component="api",
+        )
+        headers = client._get_headers()
+        assert headers["Authorization"] == "Bearer url-token"
+
+    def test_auth_token_param_overrides_url_token(self):
+        client = DevlogsClient(
+            collector_url="http://url-token@localhost:8080",
+            application="test-app",
+            component="api",
+            auth_token="param-token",
+        )
+        headers = client._get_headers()
+        assert headers["Authorization"] == "Bearer param-token"
+
+    def test_get_endpoint_strips_userinfo_for_collector_url(self):
+        """Collector URL: userinfo is stripped from endpoint."""
+        client = DevlogsClient(
+            collector_url="http://mytoken@localhost:8080",
+            application="test-app",
+            component="api",
+        )
+        assert client._get_endpoint() == "http://localhost:8080/v1/logs"
+
+    def test_opensearch_url_keeps_credentials(self):
+        """OpenSearch URL: credentials remain in URL, no Bearer token."""
+        client = DevlogsClient(
+            collector_url="https://admin:password@opensearch.example.com:9200",
+            application="test-app",
+            component="api",
+        )
+        headers = client._get_headers()
+        assert "Authorization" not in headers
+        assert client._get_endpoint() == "https://admin:password@opensearch.example.com:9200/v1/logs"
 
     def test_emit_sends_single_record(self):
         client = DevlogsClient(

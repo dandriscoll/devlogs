@@ -9,7 +9,7 @@
 
     <!-- NuGet Package Metadata -->
     <PackageId>Devlogs</PackageId>
-    <Version>2.0.1</Version>
+    <Version>2.0.2</Version>
     <Authors>Dan Driscoll</Authors>
     <Company>Dan Driscoll</Company>
     <Description>Developer-focused logging library that ships logs to OpenSearch with operation correlation</Description>
