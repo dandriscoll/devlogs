@@ -34,15 +34,21 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * Build wrapper that streams all console output to a devlogs instance.
  *
+ * URL type is auto-detected based on credentials format:
+ * - Collector URL: token in username position only (e.g., http://token@host:port)
+ *   Token is extracted and sent as Bearer auth header
+ * - OpenSearch URL: both username AND password (e.g., http://user:pass@host:port)
+ *   Credentials are used for HTTP Basic auth, data sent via bulk API
+ *
  * This can be used in declarative pipelines via the options block:
  * <pre>
  * pipeline {
  *     options {
- *         // Collector mode (recommended):
- *         devlogs(url: 'https://collector.example.com', application: 'myapp')
+ *         // Collector mode (auto-detected: token only in URL):
+ *         devlogs(url: 'https://dl1_myapp_secret@collector.example.com', application: 'myapp')
  *
- *         // Direct to OpenSearch (legacy):
- *         devlogs(url: 'https://admin:password@opensearch.example.com:9200/devlogs-myproject', pipeline: false)
+ *         // OpenSearch mode (auto-detected: user:password in URL):
+ *         devlogs(url: 'https://admin:password@opensearch.example.com:9200/devlogs-myproject')
  *     }
  *     stages {
  *         stage('Build') {
@@ -68,8 +74,9 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
     private String environment;
     private String version;
 
-    // Mode: true = collector API (default), false = direct OpenSearch bulk API
-    private boolean pipeline = true;
+    // Mode: true = collector API, false = direct OpenSearch bulk API
+    // Auto-detected from URL: user:pass = OpenSearch, token-only = collector
+    private Boolean pipeline = null;
 
     @DataBoundConstructor
     public DevlogsBuildWrapper() {
@@ -130,13 +137,49 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
         this.version = version;
     }
 
-    public boolean getPipeline() {
+    public Boolean getPipeline() {
         return pipeline;
     }
 
     @DataBoundSetter
-    public void setPipeline(boolean pipeline) {
+    public void setPipeline(Boolean pipeline) {
         this.pipeline = pipeline;
+    }
+
+    /**
+     * Detect whether URL is a collector URL or OpenSearch URL.
+     *
+     * - Collector URL: token in username position only (e.g., http://token@host:port)
+     * - OpenSearch URL: both username AND password (e.g., http://user:pass@host:port)
+     *
+     * @param url The URL to analyze
+     * @return true if collector mode, false if OpenSearch mode
+     */
+    private boolean isCollectorUrl(String url) {
+        try {
+            URI uri = new URI(url);
+            String userInfo = uri.getUserInfo();
+            if (userInfo == null || userInfo.isEmpty()) {
+                // No credentials - assume collector mode
+                return true;
+            }
+            // If userInfo contains ':', it has both user and password (OpenSearch)
+            // If no ':', it's just a token (collector)
+            return !userInfo.contains(":");
+        } catch (URISyntaxException e) {
+            // Can't parse, assume collector mode
+            return true;
+        }
+    }
+
+    /**
+     * Get the effective pipeline mode, auto-detecting from URL if not explicitly set.
+     */
+    private boolean getEffectivePipeline(String resolvedUrl) {
+        if (pipeline != null) {
+            return pipeline;
+        }
+        return isCollectorUrl(resolvedUrl);
     }
 
     @Override
@@ -151,7 +194,8 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
             return;
         }
 
-        if (pipeline) {
+        boolean effectivePipeline = getEffectivePipeline(resolvedUrl);
+        if (effectivePipeline) {
             listener.getLogger().println("[devlogs] Streaming logs to collector: " + maskUrl(resolvedUrl));
         } else {
             listener.getLogger().println("[devlogs] Streaming logs directly to OpenSearch: " + maskUrl(resolvedUrl));
@@ -170,8 +214,9 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
             resolvedApplication = build.getParent().getFullName();
         }
 
+        boolean effectivePipeline = getEffectivePipeline(url);
         return new DevlogsConsoleLogFilter(url, index, build,
-            resolvedApplication, component, environment, version, pipeline);
+            resolvedApplication, component, environment, version, effectivePipeline);
     }
 
     /**
@@ -322,6 +367,8 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
             this.pipeline = pipeline;
 
             // Parse URL to extract credentials and base URL
+            // Collector URLs (token-only) use Bearer auth
+            // OpenSearch URLs (user:password) use Basic auth
             String parsedBaseUrl = url;
             String parsedAuthHeader = null;
 
@@ -329,19 +376,21 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
                 URI uri = new URI(url);
                 String userInfo = uri.getUserInfo();
                 if (userInfo != null && !userInfo.isEmpty()) {
-                    // Build auth header from credentials
-                    parsedAuthHeader = "Basic " + Base64.getEncoder().encodeToString(
-                        userInfo.getBytes(StandardCharsets.UTF_8));
-
                     // Rebuild URL without credentials
                     int port = uri.getPort();
                     String portStr = (port > 0) ? ":" + port : "";
                     String path = uri.getPath();
 
                     if (pipeline) {
-                        // For collector mode, keep the base path
+                        // Collector mode: token in username position, use Bearer auth
+                        // userInfo is just the token (no colon)
+                        parsedAuthHeader = "Bearer " + userInfo;
                         parsedBaseUrl = uri.getScheme() + "://" + uri.getHost() + portStr + (path != null ? path : "");
                     } else {
+                        // OpenSearch mode: user:password, use Basic auth
+                        parsedAuthHeader = "Basic " + Base64.getEncoder().encodeToString(
+                            userInfo.getBytes(StandardCharsets.UTF_8));
+
                         // For direct mode, remove trailing path segment (index name)
                         if (path != null && path.lastIndexOf('/') > 0) {
                             path = path.substring(0, path.lastIndexOf('/'));

@@ -66,8 +66,9 @@ public class DevlogsStep extends Step implements Serializable {
     private String environment;
     private String version;
 
-    // Mode: true = collector API (default), false = direct OpenSearch bulk API
-    private boolean pipeline = true;
+    // Mode: true = collector API, false = direct OpenSearch bulk API
+    // Auto-detected from URL: user:pass = OpenSearch, token-only = collector
+    private Boolean pipeline = null;
 
     @DataBoundConstructor
     public DevlogsStep() {
@@ -137,13 +138,49 @@ public class DevlogsStep extends Step implements Serializable {
         this.version = version;
     }
 
-    public boolean getPipeline() {
+    public Boolean getPipeline() {
         return pipeline;
     }
 
     @DataBoundSetter
-    public void setPipeline(boolean pipeline) {
+    public void setPipeline(Boolean pipeline) {
         this.pipeline = pipeline;
+    }
+
+    /**
+     * Detect whether URL is a collector URL or OpenSearch URL.
+     *
+     * - Collector URL: token in username position only (e.g., http://token@host:port)
+     * - OpenSearch URL: both username AND password (e.g., http://user:pass@host:port)
+     *
+     * @param url The URL to analyze
+     * @return true if collector mode, false if OpenSearch mode
+     */
+    private static boolean isCollectorUrl(String url) {
+        try {
+            URI uri = new URI(url);
+            String userInfo = uri.getUserInfo();
+            if (userInfo == null || userInfo.isEmpty()) {
+                // No credentials - assume collector mode
+                return true;
+            }
+            // If userInfo contains ':', it has both user and password (OpenSearch)
+            // If no ':', it's just a token (collector)
+            return !userInfo.contains(":");
+        } catch (URISyntaxException e) {
+            // Can't parse, assume collector mode
+            return true;
+        }
+    }
+
+    /**
+     * Get the effective pipeline mode, auto-detecting from URL if not explicitly set.
+     */
+    private boolean getEffectivePipeline(String resolvedUrl) {
+        if (pipeline != null) {
+            return pipeline;
+        }
+        return isCollectorUrl(resolvedUrl);
     }
 
     /**
@@ -188,8 +225,9 @@ public class DevlogsStep extends Step implements Serializable {
             }
         }
 
+        boolean effectivePipeline = getEffectivePipeline(resolvedUrl);
         return new DevlogsStepExecution(context, resolvedUrl, index, credentialsId,
-            resolvedApplication, component, environment, version, pipeline);
+            resolvedApplication, component, environment, version, effectivePipeline);
     }
 
     @Extension
@@ -326,9 +364,10 @@ public class DevlogsStep extends Step implements Serializable {
                 throw new IllegalStateException("Run context is not available");
             }
 
-            // Log mode info
+            // Log mode info (mask credentials in URL)
+            String maskedUrl = url.replaceAll("://[^:]+:[^@]+@", "://****:****@");
             if (pipeline) {
-                consoleLog("Streaming logs to collector: " + url);
+                consoleLog("Streaming logs to collector: " + maskedUrl);
             } else {
                 // Extract index name for logging (direct mode)
                 String indexName = index;
@@ -491,6 +530,8 @@ public class DevlogsStep extends Step implements Serializable {
             this.pipeline = pipeline;
 
             // Parse URL to extract credentials and base URL
+            // Collector URLs (token-only) use Bearer auth
+            // OpenSearch URLs (user:password) use Basic auth
             String parsedBaseUrl = url;
             String parsedAuthHeader = null;
 
@@ -498,19 +539,20 @@ public class DevlogsStep extends Step implements Serializable {
                 URI uri = new URI(url);
                 String userInfo = uri.getUserInfo();
                 if (userInfo != null && !userInfo.isEmpty()) {
-                    // Build auth header from credentials
-                    parsedAuthHeader = "Basic " + Base64.getEncoder().encodeToString(
-                        userInfo.getBytes(StandardCharsets.UTF_8));
-
                     // Rebuild URL without credentials
                     int port = uri.getPort();
                     String portStr = (port > 0) ? ":" + port : "";
                     String path = uri.getPath();
 
                     if (pipeline) {
-                        // For collector mode, keep the base path
+                        // Collector mode: token in username position, use Bearer auth
+                        parsedAuthHeader = "Bearer " + userInfo;
                         parsedBaseUrl = uri.getScheme() + "://" + uri.getHost() + portStr + (path != null ? path : "");
                     } else {
+                        // OpenSearch mode: user:password, use Basic auth
+                        parsedAuthHeader = "Basic " + Base64.getEncoder().encodeToString(
+                            userInfo.getBytes(StandardCharsets.UTF_8));
+
                         // For direct mode, remove trailing path segment (index name)
                         if (path != null && path.lastIndexOf('/') > 0) {
                             path = path.substring(0, path.lastIndexOf('/'));

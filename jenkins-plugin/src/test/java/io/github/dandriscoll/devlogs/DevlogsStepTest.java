@@ -90,4 +90,80 @@ public class DevlogsStepTest {
         step.setCredentialsId("my-creds");
         assertEquals("my-creds", step.getCredentialsId());
     }
+
+    @Test
+    public void testOpenSearchUrlAutoDetection() throws Exception {
+        // OpenSearch URL (user:password) should be detected and show OpenSearch mode
+        WorkflowJob job = jenkins.createProject(WorkflowJob.class, "test-opensearch-url");
+        job.setDefinition(new CpsFlowDefinition(
+            "devlogs(url: 'https://admin:password@opensearch.example.com:9200/myindex') {\n" +
+            "  echo 'Test'\n" +
+            "}\n",
+            true
+        ));
+
+        WorkflowRun run = jenkins.buildAndAssertSuccess(job);
+        jenkins.assertLogContains("Streaming logs directly to OpenSearch index 'myindex'", run);
+    }
+
+    @Test
+    public void testCollectorUrlAutoDetection() throws Exception {
+        // Collector URL (token only, no password) should be detected as collector mode
+        WorkflowJob job = jenkins.createProject(WorkflowJob.class, "test-collector-url");
+        job.setDefinition(new CpsFlowDefinition(
+            "devlogs(url: 'https://dl1_mytoken@collector.example.com') {\n" +
+            "  echo 'Test'\n" +
+            "}\n",
+            true
+        ));
+
+        WorkflowRun run = jenkins.buildAndAssertSuccess(job);
+        jenkins.assertLogContains("Streaming logs to collector", run);
+    }
+
+    @Test
+    public void testPlainUrlDefaultsToCollector() throws Exception {
+        // URL without credentials should default to collector mode
+        WorkflowJob job = jenkins.createProject(WorkflowJob.class, "test-plain-url");
+        job.setDefinition(new CpsFlowDefinition(
+            "devlogs(url: 'https://collector.example.com') {\n" +
+            "  echo 'Test'\n" +
+            "}\n",
+            true
+        ));
+
+        WorkflowRun run = jenkins.buildAndAssertSuccess(job);
+        jenkins.assertLogContains("Streaming logs to collector", run);
+    }
+
+    @Test
+    public void testPipelineParameterOverridesAutoDetection() throws Exception {
+        // Explicit pipeline: false should override auto-detection
+        WorkflowJob job = jenkins.createProject(WorkflowJob.class, "test-pipeline-override");
+        job.setDefinition(new CpsFlowDefinition(
+            "devlogs(url: 'https://token@example.com', pipeline: false) {\n" +
+            "  echo 'Test'\n" +
+            "}\n",
+            true
+        ));
+
+        WorkflowRun run = jenkins.buildAndAssertSuccess(job);
+        jenkins.assertLogContains("Streaming logs directly to OpenSearch", run);
+    }
+
+    @Test
+    public void testPipelineNullAllowsAutoDetection() {
+        // When pipeline is null, auto-detection should be used
+        DevlogsStep step = new DevlogsStep();
+        assertNull(step.getPipeline());
+
+        step.setPipeline(true);
+        assertEquals(Boolean.TRUE, step.getPipeline());
+
+        step.setPipeline(false);
+        assertEquals(Boolean.FALSE, step.getPipeline());
+
+        step.setPipeline(null);
+        assertNull(step.getPipeline());
+    }
 }
