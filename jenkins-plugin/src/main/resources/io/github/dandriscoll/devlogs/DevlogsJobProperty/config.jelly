@@ -1,0 +1,19 @@
+<?jelly escape-by-default='true'?>
+<j:jelly xmlns:j="jelly:core" xmlns:f="/lib/form">
+    <f:entry title="Credentials ID" field="credentialsId"
+             description="ID of a Secret Text credential containing the OpenSearch URL">
+        <f:textbox/>
+    </f:entry>
+    <f:entry title="Application" field="application"
+             description="Application name (defaults to job name)">
+        <f:textbox/>
+    </f:entry>
+    <f:entry title="Component" field="component"
+             description="Component name (default: jenkins)">
+        <f:textbox default="jenkins"/>
+    </f:entry>
+    <f:entry title="Environment" field="environment"
+             description="Environment name (optional)">
+        <f:textbox/>
+    </f:entry>
+</j:jelly>

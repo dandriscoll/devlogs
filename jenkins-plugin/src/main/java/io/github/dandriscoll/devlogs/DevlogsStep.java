@@ -1,32 +1,21 @@
 package io.github.dandriscoll.devlogs;
 
 import com.cloudbees.plugins.credentials.CredentialsProvider;
-import com.google.gson.Gson;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonObject;
 import hudson.Extension;
-import hudson.console.ConsoleLogFilter;
 import hudson.model.Run;
 import hudson.model.TaskListener;
-import okhttp3.*;
 import org.jenkinsci.plugins.plaincredentials.StringCredentials;
 import org.jenkinsci.plugins.workflow.steps.*;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.DataBoundSetter;
 
 import javax.annotation.Nonnull;
-import java.io.IOException;
-import java.io.OutputStream;
 import java.io.Serializable;
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.nio.charset.StandardCharsets;
-import java.time.Instant;
-import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
-import java.util.Base64;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.regex.Pattern;
 
 /**
@@ -52,6 +41,9 @@ import java.util.regex.Pattern;
  */
 public class DevlogsStep extends Step implements Serializable {
     private static final long serialVersionUID = 2L;
+    private static final String VERSION = "2.0.2";
+    private static final Logger LOGGER = Logger.getLogger(DevlogsStep.class.getName());
+    private static final String DEBUG_PREFIX = "[DEVLOGS-DEBUG] ";
 
     // Pattern to detect environment variable prefixes like "DEVLOGS_OPENSEARCH_URL="
     private static final Pattern ENV_PREFIX_PATTERN = Pattern.compile("^[A-Z][A-Z0-9_]*=");
@@ -157,6 +149,9 @@ public class DevlogsStep extends Step implements Serializable {
      * @return true if collector mode, false if OpenSearch mode
      */
     private static boolean isCollectorUrl(String url) {
+        if (url == null || url.isEmpty()) {
+            return true;  // Default to collector mode if no URL
+        }
         try {
             URI uri = new URI(url);
             String userInfo = uri.getUserInfo();
@@ -190,30 +185,44 @@ public class DevlogsStep extends Step implements Serializable {
      * @return The resolved URL, or null if not configured
      */
     private String resolveUrl(Run<?, ?> run) {
+        LOGGER.log(Level.INFO, DEBUG_PREFIX + "resolveUrl() called, url=" + (url != null ? "[set]" : "null") +
+            ", credentialsId=" + (credentialsId != null ? credentialsId : "null"));
+
         // Direct URL takes precedence
         if (url != null && !url.trim().isEmpty()) {
+            LOGGER.log(Level.INFO, DEBUG_PREFIX + "resolveUrl() using direct URL");
             return url;
         }
 
         // Look up credentialsId
         if (credentialsId != null && !credentialsId.trim().isEmpty()) {
+            LOGGER.log(Level.INFO, DEBUG_PREFIX + "resolveUrl() looking up credentialsId: " + credentialsId);
             StringCredentials creds = CredentialsProvider.findCredentialById(
                 credentialsId,
                 StringCredentials.class,
                 run
             );
             if (creds != null) {
+                LOGGER.log(Level.INFO, DEBUG_PREFIX + "resolveUrl() found credentials, returning URL");
                 return creds.getSecret().getPlainText();
+            } else {
+                LOGGER.log(Level.WARNING, DEBUG_PREFIX + "resolveUrl() credentials NOT FOUND for id: " + credentialsId);
             }
         }
 
+        LOGGER.log(Level.WARNING, DEBUG_PREFIX + "resolveUrl() returning null - no URL configured");
         return null;
     }
 
     @Override
     public StepExecution start(StepContext context) throws Exception {
+        LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsStep.start() called");
         Run<?, ?> run = context.get(Run.class);
+        LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsStep.start() run=" +
+            (run != null ? run.getFullDisplayName() : "null"));
         String resolvedUrl = resolveUrl(run);
+        LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsStep.start() resolvedUrl=" +
+            (resolvedUrl != null ? "[resolved]" : "null"));
 
         // Derive application from job name if not specified
         String resolvedApplication = application;
@@ -224,8 +233,12 @@ public class DevlogsStep extends Step implements Serializable {
                 resolvedApplication = "jenkins";
             }
         }
+        LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsStep.start() resolvedApplication=" + resolvedApplication);
 
         boolean effectivePipeline = getEffectivePipeline(resolvedUrl);
+        LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsStep.start() effectivePipeline=" + effectivePipeline +
+            ", component=" + component + ", index=" + index);
+        LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsStep.start() returning DevlogsStepExecution");
         return new DevlogsStepExecution(context, resolvedUrl, index, credentialsId,
             resolvedApplication, component, environment, version, effectivePipeline);
     }
@@ -302,6 +315,7 @@ public class DevlogsStep extends Step implements Serializable {
      */
     public static class DevlogsStepExecution extends AbstractStepExecutionImpl {
         private static final long serialVersionUID = 2L;
+        private static final String DEBUG_PREFIX = "[DEVLOGS-DEBUG] ";
 
         private final String url;
         private final String index;
@@ -311,12 +325,17 @@ public class DevlogsStep extends Step implements Serializable {
         private final String environment;
         private final String version;
         private final boolean pipeline;
-        private transient DevlogsConsoleLogFilter filter;
 
         public DevlogsStepExecution(StepContext context, String url, String index, String credentialsId,
                                     String application, String component, String environment,
                                     String version, boolean pipeline) {
             super(context);
+            LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsStepExecution constructor called");
+            LOGGER.log(Level.INFO, DEBUG_PREFIX + "  url=" + (url != null ? "[set]" : "null"));
+            LOGGER.log(Level.INFO, DEBUG_PREFIX + "  index=" + index);
+            LOGGER.log(Level.INFO, DEBUG_PREFIX + "  application=" + application);
+            LOGGER.log(Level.INFO, DEBUG_PREFIX + "  component=" + component);
+            LOGGER.log(Level.INFO, DEBUG_PREFIX + "  pipeline=" + pipeline);
             this.url = url;
             this.index = index;
             this.credentialsId = credentialsId;
@@ -332,20 +351,26 @@ public class DevlogsStep extends Step implements Serializable {
                 TaskListener listener = getContext().get(TaskListener.class);
                 if (listener != null) {
                     listener.getLogger().println("[devlogs] " + message);
+                    LOGGER.log(Level.INFO, DEBUG_PREFIX + "consoleLog() wrote: " + message);
+                } else {
+                    LOGGER.log(Level.WARNING, DEBUG_PREFIX + "consoleLog() - TaskListener is null, message: " + message);
                 }
             } catch (Exception e) {
-                // Ignore - can't log to console
+                LOGGER.log(Level.WARNING, DEBUG_PREFIX + "consoleLog() exception: " + e.getMessage());
             }
         }
 
         @Override
         public boolean start() throws Exception {
+            LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsStepExecution.start() called");
+
             // Check if URL is missing
             if (url == null || url.trim().isEmpty()) {
                 String credInfo = (credentialsId != null && !credentialsId.isEmpty())
                     ? "Credential '" + credentialsId + "' not found or empty."
                     : "No credentialsId or url parameter provided.";
                 consoleLog("WARNING: " + credInfo + " Devlogs disabled for this build.");
+                LOGGER.log(Level.WARNING, DEBUG_PREFIX + "DevlogsStepExecution.start() - URL missing, devlogs disabled");
                 getContext().newBodyInvoker().withCallback(BodyExecutionCallback.wrap(getContext())).start();
                 return false;
             }
@@ -355,21 +380,75 @@ public class DevlogsStep extends Step implements Serializable {
             if (validationError != null) {
                 consoleLog("ERROR: " + validationError);
                 consoleLog("Devlogs disabled for this build.");
+                LOGGER.log(Level.WARNING, DEBUG_PREFIX + "DevlogsStepExecution.start() - URL validation failed: " + validationError);
                 getContext().newBodyInvoker().withCallback(BodyExecutionCallback.wrap(getContext())).start();
                 return false;
             }
 
             Run<?, ?> run = getContext().get(Run.class);
             if (run == null) {
+                LOGGER.log(Level.SEVERE, DEBUG_PREFIX + "DevlogsStepExecution.start() - Run context is null!");
                 throw new IllegalStateException("Run context is not available");
             }
+            LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsStepExecution.start() - Run: " + run.getFullDisplayName());
+
+            // Log step start with version
+            LOGGER.log(Level.INFO, DEBUG_PREFIX + "Devlogs plugin v" + VERSION + " starting for build " +
+                run.getParent().getFullName() + "#" + run.getNumber());
+            consoleLog("Devlogs plugin v" + VERSION + " starting");
+
+            // Ensure DevlogsJobProperty is set on the job for LogStorageFactory
+            hudson.model.Job<?, ?> job = run.getParent();
+            DevlogsJobProperty existingProp = job.getProperty(DevlogsJobProperty.class);
+            if (existingProp == null) {
+                LOGGER.log(Level.INFO, DEBUG_PREFIX + "Setting DevlogsJobProperty on job for future builds");
+                try {
+                    DevlogsJobProperty prop = new DevlogsJobProperty(credentialsId);
+                    prop.setApplication(application);
+                    prop.setComponent(component);
+                    prop.setEnvironment(environment);
+                    job.addProperty(prop);
+                    LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsJobProperty set successfully");
+                } catch (Exception e) {
+                    LOGGER.log(Level.WARNING, DEBUG_PREFIX + "Failed to set DevlogsJobProperty: " + e.getMessage());
+                }
+            } else {
+                LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsJobProperty already present on job");
+            }
+
+            // Check if LogStorageFactory is already handling this build
+            // (DevlogsLogStorage is active - no need for TaskListenerDecorator)
+            boolean logStorageActive = DevlogsLogStorage.isActiveForBuild(run.getExternalizableId());
+            if (logStorageActive) {
+                LOGGER.log(Level.INFO, DEBUG_PREFIX + "LogStorageFactory is active - skipping TaskListenerDecorator");
+                consoleLog("Log streaming active via LogStorage (full capture mode)");
+                final String buildId = run.getParent().getFullName() + "#" + run.getNumber();
+                getContext().newBodyInvoker()
+                    .withCallback(new BodyExecutionCallback() {
+                        @Override
+                        public void onSuccess(StepContext context, Object result) {
+                            LOGGER.log(Level.INFO, DEBUG_PREFIX + "Build completed successfully: " + buildId);
+                            context.onSuccess(result);
+                        }
+
+                        @Override
+                        public void onFailure(StepContext context, Throwable t) {
+                            LOGGER.log(Level.INFO, DEBUG_PREFIX + "Build completed with failure: " + buildId);
+                            context.onFailure(t);
+                        }
+                    })
+                    .start();
+                return false;
+            }
+
+            // LogStorageFactory not active - fall back to TaskListenerDecorator
+            LOGGER.log(Level.INFO, DEBUG_PREFIX + "LogStorageFactory not active - using TaskListenerDecorator fallback");
 
             // Log mode info (mask credentials in URL)
             String maskedUrl = url.replaceAll("://[^:]+:[^@]+@", "://****:****@");
             if (pipeline) {
                 consoleLog("Streaming logs to collector: " + maskedUrl);
             } else {
-                // Extract index name for logging (direct mode)
                 String indexName = index;
                 if (indexName == null || indexName.trim().isEmpty()) {
                     int lastSlash = url.lastIndexOf('/');
@@ -379,476 +458,65 @@ public class DevlogsStep extends Step implements Serializable {
                         indexName = "devlogs";
                     }
                 }
-                consoleLog("Streaming logs directly to OpenSearch index '" + indexName + "'");
+                consoleLog("Streaming logs directly to OpenSearch index '" + indexName + "' (partial capture - next build will use full capture)");
             }
 
-            // Create and register the log filter
-            filter = new DevlogsConsoleLogFilter(url, index, run,
+            // Create action with config and decorator
+            DevlogsAction action = new DevlogsAction(url, index, run,
                 application, component, environment, version, pipeline);
+            run.addAction(action);
+
+            DevlogsGlobalDecorator decorator = new DevlogsGlobalDecorator(action);
+
+            org.jenkinsci.plugins.workflow.log.TaskListenerDecorator existingDecorator =
+                getContext().get(org.jenkinsci.plugins.workflow.log.TaskListenerDecorator.class);
+
+            final String buildId = run.getParent().getFullName() + "#" + run.getNumber();
 
             getContext().newBodyInvoker()
-                .withContext(BodyInvoker.mergeConsoleLogFilters(getContext().get(ConsoleLogFilter.class), filter))
-                .withCallback(BodyExecutionCallback.wrap(getContext()))
+                .withContext(org.jenkinsci.plugins.workflow.log.TaskListenerDecorator.merge(
+                    existingDecorator,
+                    decorator))
+                .withCallback(new BodyExecutionCallback() {
+                    @Override
+                    public void onSuccess(StepContext context, Object result) {
+                        LOGGER.log(Level.INFO, DEBUG_PREFIX + "Build completed successfully: " + buildId);
+                        try {
+                            TaskListener listener = context.get(TaskListener.class);
+                            if (listener != null) {
+                                listener.getLogger().println("[devlogs] Build complete, logs streamed successfully");
+                            }
+                        } catch (Exception e) {
+                            // ignore
+                        }
+                        context.onSuccess(result);
+                    }
+
+                    @Override
+                    public void onFailure(StepContext context, Throwable t) {
+                        LOGGER.log(Level.INFO, DEBUG_PREFIX + "Build completed with failure: " + buildId);
+                        try {
+                            TaskListener listener = context.get(TaskListener.class);
+                            if (listener != null) {
+                                listener.getLogger().println("[devlogs] Build complete (with failure), logs streamed");
+                            }
+                        } catch (Exception e) {
+                            // ignore
+                        }
+                        context.onFailure(t);
+                    }
+                })
                 .start();
 
+            LOGGER.log(Level.INFO, DEBUG_PREFIX + "Body invoker started, returning false (async)");
             return false;
         }
 
         @Override
         public void stop(@Nonnull Throwable cause) throws Exception {
-            if (filter != null) {
-                filter.close();
-            }
+            LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsStepExecution.stop() called: " + cause.getMessage());
+            LOGGER.log(Level.INFO, "Devlogs plugin v" + VERSION + " stopped");
             getContext().onFailure(cause);
-        }
-    }
-
-    /**
-     * Console log filter that intercepts and streams logs to devlogs.
-     */
-    private static class DevlogsConsoleLogFilter extends ConsoleLogFilter implements Serializable {
-        private static final long serialVersionUID = 2L;
-
-        private final String url;
-        private final String index;
-        private final String runId;
-        private final String jobName;
-        private final int buildNumber;
-        private final String buildUrl;
-        private final String application;
-        private final String component;
-        private final String environment;
-        private final String version;
-        private final boolean pipeline;
-        private final AtomicInteger seq = new AtomicInteger(0);
-
-        public DevlogsConsoleLogFilter(String url, String index, Run<?, ?> run,
-                                       String application, String component,
-                                       String environment, String version, boolean pipeline) {
-            this.url = url;
-            this.application = application;
-            this.component = component;
-            this.environment = environment;
-            this.version = version;
-            this.pipeline = pipeline;
-
-            // Extract index from URL if not provided separately (for direct mode)
-            if (index == null || index.trim().isEmpty()) {
-                this.index = extractIndexFromUrl(url);
-            } else {
-                this.index = index;
-            }
-
-            this.runId = run.getExternalizableId();
-            this.jobName = run.getParent().getFullName();
-            this.buildNumber = run.getNumber();
-            this.buildUrl = run.getUrl();
-        }
-
-        private String extractIndexFromUrl(String url) {
-            try {
-                int lastSlash = url.lastIndexOf('/');
-                if (lastSlash > 0 && lastSlash < url.length() - 1) {
-                    String potential = url.substring(lastSlash + 1);
-                    // Don't treat API paths as index names
-                    if (!potential.startsWith("v1") && !potential.equals("logs")) {
-                        return potential;
-                    }
-                }
-            } catch (Exception e) {
-                // Fall back to default
-            }
-            return "devlogs";
-        }
-
-        @Override
-        public OutputStream decorateLogger(Run build, OutputStream logger) throws IOException, InterruptedException {
-            return new DevlogsOutputStream(logger, url, index, runId, jobName, buildNumber, buildUrl, seq,
-                application, component, environment, version, pipeline);
-        }
-
-        public void close() {
-            // Cleanup if needed
-        }
-    }
-
-    /**
-     * OutputStream that captures log lines and sends them to devlogs.
-     */
-    private static class DevlogsOutputStream extends OutputStream implements Serializable {
-        private static final long serialVersionUID = 2L;
-        private static final int BUFFER_SIZE = 8192;
-        private static final int BATCH_SIZE = 10;
-        private static final long BATCH_TIMEOUT_MS = 10000; // 10 seconds
-
-        private final OutputStream delegate;
-        private final String baseUrl;
-        private final String index;
-        private final String runId;
-        private final String jobName;
-        private final int buildNumber;
-        private final String buildUrl;
-        private final AtomicInteger seq;
-        private final String application;
-        private final String component;
-        private final String environment;
-        private final String version;
-        private final boolean pipeline;
-
-        private final byte[] buffer = new byte[BUFFER_SIZE];
-        private int bufferPos = 0;
-        private final StringBuilder lineBuffer = new StringBuilder();
-        private final StringBuilder batchBuffer = new StringBuilder();
-        private final JsonArray collectorBatch = new JsonArray();
-        private int batchCount = 0;
-        private long lastBatchTime = System.currentTimeMillis();
-        private String currentLineTimestamp = null;
-        private final String authHeader;
-        private boolean errorReported = false; // Only report first error to avoid spam
-
-        private transient OkHttpClient client;
-        private transient Gson gson;
-
-        private static final DateTimeFormatter ISO_FORMATTER =
-            DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(ZoneOffset.UTC);
-
-        public DevlogsOutputStream(OutputStream delegate, String url, String index, String runId,
-                                   String jobName, int buildNumber, String buildUrl, AtomicInteger seq,
-                                   String application, String component, String environment,
-                                   String version, boolean pipeline) {
-            this.delegate = delegate;
-            this.index = index;
-            this.runId = runId;
-            this.jobName = jobName;
-            this.buildNumber = buildNumber;
-            this.buildUrl = buildUrl;
-            this.seq = seq;
-            this.application = application;
-            this.component = component;
-            this.environment = environment;
-            this.version = version;
-            this.pipeline = pipeline;
-
-            // Parse URL to extract credentials and base URL
-            // Collector URLs (token-only) use Bearer auth
-            // OpenSearch URLs (user:password) use Basic auth
-            String parsedBaseUrl = url;
-            String parsedAuthHeader = null;
-
-            try {
-                URI uri = new URI(url);
-                String userInfo = uri.getUserInfo();
-                if (userInfo != null && !userInfo.isEmpty()) {
-                    // Rebuild URL without credentials
-                    int port = uri.getPort();
-                    String portStr = (port > 0) ? ":" + port : "";
-                    String path = uri.getPath();
-
-                    if (pipeline) {
-                        // Collector mode: token in username position, use Bearer auth
-                        parsedAuthHeader = "Bearer " + userInfo;
-                        parsedBaseUrl = uri.getScheme() + "://" + uri.getHost() + portStr + (path != null ? path : "");
-                    } else {
-                        // OpenSearch mode: user:password, use Basic auth
-                        parsedAuthHeader = "Basic " + Base64.getEncoder().encodeToString(
-                            userInfo.getBytes(StandardCharsets.UTF_8));
-
-                        // For direct mode, remove trailing path segment (index name)
-                        if (path != null && path.lastIndexOf('/') > 0) {
-                            path = path.substring(0, path.lastIndexOf('/'));
-                        } else {
-                            path = "";
-                        }
-                        parsedBaseUrl = uri.getScheme() + "://" + uri.getHost() + portStr + path;
-                    }
-                } else {
-                    if (!pipeline) {
-                        // No credentials in URL, extract base URL the simple way (direct mode)
-                        int lastSlash = url.lastIndexOf('/');
-                        if (lastSlash > 0) {
-                            parsedBaseUrl = url.substring(0, lastSlash);
-                        }
-                    }
-                }
-            } catch (URISyntaxException e) {
-                if (!pipeline) {
-                    // Fall back to simple extraction (direct mode only)
-                    int lastSlash = url.lastIndexOf('/');
-                    if (lastSlash > 0) {
-                        parsedBaseUrl = url.substring(0, lastSlash);
-                    }
-                }
-            }
-
-            this.baseUrl = parsedBaseUrl;
-            this.authHeader = parsedAuthHeader;
-
-            initTransients();
-        }
-
-        private void initTransients() {
-            if (client == null) {
-                client = new OkHttpClient.Builder()
-                    .followRedirects(true)
-                    .followSslRedirects(true)
-                    .build();
-            }
-            if (gson == null) {
-                gson = new Gson();
-            }
-        }
-
-        @Override
-        public void write(int b) throws IOException {
-            delegate.write(b);
-
-            buffer[bufferPos++] = (byte) b;
-
-            if (b == '\n' || bufferPos >= BUFFER_SIZE) {
-                processBuffer();
-            }
-        }
-
-        @Override
-        public void write(byte[] b, int off, int len) throws IOException {
-            delegate.write(b, off, len);
-
-            for (int i = 0; i < len; i++) {
-                buffer[bufferPos++] = b[off + i];
-
-                if (b[off + i] == '\n' || bufferPos >= BUFFER_SIZE) {
-                    processBuffer();
-                }
-            }
-        }
-
-        @Override
-        public void flush() throws IOException {
-            delegate.flush();
-            if (bufferPos > 0) {
-                processBuffer();
-            }
-            if (lineBuffer.length() > 0) {
-                String timestamp = (currentLineTimestamp != null) ? currentLineTimestamp : formatTimestamp();
-                sendLine(lineBuffer.toString(), timestamp);
-                lineBuffer.setLength(0);
-                currentLineTimestamp = null;
-            }
-            flushBatch();
-        }
-
-        @Override
-        public void close() throws IOException {
-            flush();
-            delegate.close();
-        }
-
-        private void processBuffer() {
-            if (bufferPos == 0) return;
-
-            String text = new String(buffer, 0, bufferPos, StandardCharsets.UTF_8);
-            bufferPos = 0;
-
-            for (char c : text.toCharArray()) {
-                if (c == '\n') {
-                    if (lineBuffer.length() > 0) {
-                        String timestamp = (currentLineTimestamp != null) ? currentLineTimestamp : formatTimestamp();
-                        sendLine(lineBuffer.toString(), timestamp);
-                        lineBuffer.setLength(0);
-                        currentLineTimestamp = null;
-                    }
-                } else {
-                    if (lineBuffer.length() == 0 && currentLineTimestamp == null) {
-                        currentLineTimestamp = formatTimestamp();
-                    }
-                    lineBuffer.append(c);
-                }
-            }
-        }
-
-        private String formatTimestamp() {
-            return ISO_FORMATTER.format(Instant.now());
-        }
-
-        private void sendLine(String line, String timestamp) {
-            if (line.trim().isEmpty()) return;
-
-            try {
-                initTransients();
-
-                long currentTime = System.currentTimeMillis();
-                if (batchCount > 0 && (currentTime - lastBatchTime) >= BATCH_TIMEOUT_MS) {
-                    flushBatch();
-                }
-
-                if (pipeline) {
-                    // Collector mode: v2.0 schema
-                    JsonObject doc = new JsonObject();
-                    doc.addProperty("application", application);
-                    doc.addProperty("component", component);
-                    doc.addProperty("timestamp", timestamp);
-                    doc.addProperty("message", line);
-                    doc.addProperty("level", "info");
-                    doc.addProperty("area", jobName);
-
-                    if (environment != null && !environment.isEmpty()) {
-                        doc.addProperty("environment", environment);
-                    }
-                    if (version != null && !version.isEmpty()) {
-                        doc.addProperty("version", version);
-                    }
-
-                    // Build metadata goes in fields
-                    JsonObject fields = new JsonObject();
-                    fields.addProperty("run_id", runId);
-                    fields.addProperty("job", jobName);
-                    fields.addProperty("build_number", buildNumber);
-                    fields.addProperty("build_url", buildUrl);
-                    fields.addProperty("seq", seq.incrementAndGet());
-                    doc.add("fields", fields);
-
-                    collectorBatch.add(doc);
-                } else {
-                    // Direct mode: v2.0 schema with bulk API format
-                    JsonObject doc = new JsonObject();
-                    doc.addProperty("doc_type", "log_entry");
-                    doc.addProperty("application", application);
-                    doc.addProperty("component", component);
-                    doc.addProperty("timestamp", timestamp);
-                    doc.addProperty("message", line);
-                    doc.addProperty("level", "info");
-                    doc.addProperty("area", jobName);
-
-                    if (environment != null && !environment.isEmpty()) {
-                        doc.addProperty("environment", environment);
-                    }
-                    if (version != null && !version.isEmpty()) {
-                        doc.addProperty("version", version);
-                    }
-
-                    // Build metadata in fields
-                    JsonObject fields = new JsonObject();
-                    fields.addProperty("run_id", runId);
-                    fields.addProperty("job", jobName);
-                    fields.addProperty("build_number", buildNumber);
-                    fields.addProperty("build_url", buildUrl);
-                    fields.addProperty("seq", seq.incrementAndGet());
-                    doc.add("fields", fields);
-
-                    // Source info (v2.0 schema)
-                    JsonObject source = new JsonObject();
-                    source.addProperty("logger", "jenkins");
-                    doc.add("source", source);
-
-                    // Process info (v2.0 schema)
-                    JsonObject process = new JsonObject();
-                    process.addProperty("id", buildNumber);
-                    process.addProperty("thread", seq.get());
-                    doc.add("process", process);
-
-                    batchBuffer.append("{\"index\":{\"_index\":\"").append(index).append("\"}}\n");
-                    batchBuffer.append(gson.toJson(doc)).append("\n");
-                }
-
-                batchCount++;
-
-                if (batchCount == 1) {
-                    lastBatchTime = currentTime;
-                }
-
-                if (batchCount >= BATCH_SIZE) {
-                    flushBatch();
-                }
-            } catch (Exception e) {
-                // Don't fail the build if logging fails
-            }
-        }
-
-        private void consoleError(String message) {
-            if (errorReported) return; // Only report first error
-            errorReported = true;
-            try {
-                String line = "[devlogs] " + message + "\n";
-                delegate.write(line.getBytes(StandardCharsets.UTF_8));
-                delegate.flush();
-            } catch (IOException e) {
-                // Can't write to console
-            }
-        }
-
-        private void flushBatch() {
-            if (batchCount == 0) return;
-
-            try {
-                initTransients();
-
-                Request request;
-
-                if (pipeline) {
-                    // Collector mode: POST to /v1/logs with JSON array
-                    String collectorUrl = baseUrl.endsWith("/") ? baseUrl + "v1/logs" : baseUrl + "/v1/logs";
-
-                    JsonObject payload = new JsonObject();
-                    payload.add("records", collectorBatch);
-
-                    RequestBody body = RequestBody.create(
-                        gson.toJson(payload),
-                        MediaType.parse("application/json")
-                    );
-
-                    Request.Builder requestBuilder = new Request.Builder()
-                        .url(collectorUrl)
-                        .post(body);
-
-                    if (authHeader != null) {
-                        requestBuilder.addHeader("Authorization", authHeader);
-                    }
-
-                    request = requestBuilder.build();
-
-                    // Clear collector batch
-                    while (collectorBatch.size() > 0) {
-                        collectorBatch.remove(0);
-                    }
-                } else {
-                    // Direct mode: POST to /_bulk with NDJSON
-                    String bulkUrl = baseUrl + "/_bulk";
-
-                    RequestBody body = RequestBody.create(
-                        batchBuffer.toString(),
-                        MediaType.parse("application/x-ndjson")
-                    );
-
-                    Request.Builder requestBuilder = new Request.Builder()
-                        .url(bulkUrl)
-                        .post(body);
-
-                    if (authHeader != null) {
-                        requestBuilder.addHeader("Authorization", authHeader);
-                    }
-
-                    request = requestBuilder.build();
-                }
-
-                try (Response response = client.newCall(request).execute()) {
-                    if (!response.isSuccessful()) {
-                        String responseBody = response.body() != null ? response.body().string() : "";
-                        String detail = responseBody.length() > 100 ? responseBody.substring(0, 100) + "..." : responseBody;
-                        String target = pipeline ? "collector" : "OpenSearch";
-                        consoleError("ERROR: Failed to send logs to " + target + ". HTTP " + response.code() + ": " + detail);
-                    }
-                }
-
-                batchBuffer.setLength(0);
-                batchCount = 0;
-                lastBatchTime = System.currentTimeMillis();
-            } catch (Exception e) {
-                String target = pipeline ? "collector" : "OpenSearch";
-                consoleError("ERROR: Failed to send logs to " + target + ": " + e.getMessage());
-                batchBuffer.setLength(0);
-                batchCount = 0;
-                lastBatchTime = System.currentTimeMillis();
-            }
         }
     }
 }

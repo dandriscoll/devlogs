@@ -1,0 +1,24 @@
+<?jelly escape-by-default='true'?>
+<j:jelly xmlns:j="jelly:core" xmlns:f="/lib/form">
+    <f:section title="Devlogs">
+        <f:entry title="Enable Devlogs" field="enabled">
+            <f:checkbox/>
+        </f:entry>
+        <f:entry title="Credentials ID" field="credentialsId"
+                 description="ID of a Secret Text credential containing the OpenSearch URL (e.g., https://user:pass@host:9200/index)">
+            <f:textbox/>
+        </f:entry>
+        <f:entry title="Application" field="application"
+                 description="Application name for log entries (defaults to job name if empty)">
+            <f:textbox/>
+        </f:entry>
+        <f:entry title="Component" field="component"
+                 description="Component name for log entries (default: jenkins)">
+            <f:textbox default="jenkins"/>
+        </f:entry>
+        <f:entry title="Environment" field="environment"
+                 description="Environment name for log entries (optional)">
+            <f:textbox/>
+        </f:entry>
+    </f:section>
+</j:jelly>

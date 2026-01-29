@@ -62,6 +62,14 @@
           <testTarget>17</testTarget>
         </configuration>
       </plugin>
+      <!-- Skip access-modifier-checker: LogStorageFactory/LogStorage are beta APIs -->
+      <plugin>
+        <groupId>org.kohsuke</groupId>
+        <artifactId>access-modifier-checker</artifactId>
+        <configuration>
+          <failOnError>false</failOnError>
+        </configuration>
+      </plugin>
     </plugins>
   </build>
 
@@ -99,6 +107,10 @@
     <dependency>
       <groupId>org.jenkins-ci.plugins.workflow</groupId>
       <artifactId>workflow-step-api</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.jenkins-ci.plugins.workflow</groupId>
+      <artifactId>workflow-api</artifactId>
     </dependency>
     <dependency>
       <groupId>org.jenkins-ci.plugins.workflow</groupId>
