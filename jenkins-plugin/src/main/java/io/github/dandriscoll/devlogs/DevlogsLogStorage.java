@@ -33,12 +33,10 @@ import java.util.logging.Logger;
  */
 public class DevlogsLogStorage implements LogStorage {
     private static final Logger LOGGER = Logger.getLogger(DevlogsLogStorage.class.getName());
-    private static final String DEBUG_PREFIX = "[DEVLOGS-DEBUG] ";
     private static final DateTimeFormatter ISO_FORMATTER =
         DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(ZoneOffset.UTC);
 
     private final LogStorage delegate;
-    private final String url;
     private final String baseUrl;
     private final String index;
     private final String authHeader;
@@ -63,19 +61,16 @@ public class DevlogsLogStorage implements LogStorage {
                              String component, String environment, String jobName,
                              int buildNumber, String buildUrl, String buildId,
                              Runnable cleanupCallback) {
-        LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsLogStorage constructor for build " + buildNumber);
-
         // Get the log file from the build directory
         File logFile;
         try {
             Run<?, ?> run = (Run<?, ?>) owner.getExecutable();
             logFile = new File(run.getRootDir(), "log");
         } catch (IOException e) {
-            LOGGER.log(Level.WARNING, DEBUG_PREFIX + "Could not get build directory, using fallback", e);
+            LOGGER.log(Level.WARNING, "Could not get build directory, using fallback", e);
             logFile = new File("devlogs-fallback-" + buildNumber + ".log");
         }
         this.delegate = FileLogStorage.forFile(logFile);
-        this.url = url;
         this.application = application;
         this.component = component != null ? component : "jenkins";
         this.environment = environment;
@@ -120,16 +115,13 @@ public class DevlogsLogStorage implements LogStorage {
                 }
             }
         } catch (URISyntaxException e) {
-            LOGGER.log(Level.WARNING, DEBUG_PREFIX + "URL parse error: " + e.getMessage());
+            LOGGER.log(Level.WARNING, "URL parse error: " + e.getMessage());
         }
 
         this.baseUrl = parsedBaseUrl;
         this.index = parsedIndex;
         this.authHeader = parsedAuthHeader;
         this.pipelineMode = parsedPipelineMode;
-
-        LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsLogStorage created: baseUrl=" + parsedBaseUrl +
-            ", index=" + parsedIndex + ", pipelineMode=" + parsedPipelineMode);
 
         activeBuilds.put(buildId, true);
         initTransients();
@@ -150,7 +142,6 @@ public class DevlogsLogStorage implements LogStorage {
     @Nonnull
     @Override
     public BuildListener overallListener() throws IOException, InterruptedException {
-        LOGGER.log(Level.INFO, DEBUG_PREFIX + "overallListener() called for build " + buildNumber);
         BuildListener delegateListener = delegate.overallListener();
         return new DevlogsBuildListener(delegateListener, this, "overall");
     }
@@ -158,7 +149,6 @@ public class DevlogsLogStorage implements LogStorage {
     @Nonnull
     @Override
     public TaskListener nodeListener(@Nonnull FlowNode node) throws IOException, InterruptedException {
-        LOGGER.log(Level.FINE, DEBUG_PREFIX + "nodeListener() called for node " + node.getId());
         TaskListener delegateListener = delegate.nodeListener(node);
         return new DevlogsTaskListener(delegateListener, this, node.getId());
     }
@@ -167,14 +157,12 @@ public class DevlogsLogStorage implements LogStorage {
     @Override
     public AnnotatedLargeText<FlowExecutionOwner.Executable> overallLog(
             @Nonnull FlowExecutionOwner.Executable build, boolean complete) {
-        // Delegate to FileLogStorage for reading
         return delegate.overallLog(build, complete);
     }
 
     @Nonnull
     @Override
     public AnnotatedLargeText<FlowNode> stepLog(@Nonnull FlowNode node, boolean complete) {
-        // Delegate to FileLogStorage for reading
         return delegate.stepLog(node, complete);
     }
 
@@ -185,12 +173,6 @@ public class DevlogsLogStorage implements LogStorage {
         if (line.trim().isEmpty()) return;
 
         int seqNum = seq.incrementAndGet();
-
-        // Log first few lines for debugging
-        if (seqNum <= 5 || seqNum % 50 == 0) {
-            String preview = line.length() > 60 ? line.substring(0, 60) + "..." : line;
-            LOGGER.log(Level.INFO, DEBUG_PREFIX + "sendLine() seq=" + seqNum + ": " + preview);
-        }
 
         try {
             initTransients();
@@ -229,7 +211,6 @@ public class DevlogsLogStorage implements LogStorage {
             // Send immediately (no batching for reliability)
             String targetUrl;
             RequestBody body;
-            MediaType mediaType;
 
             if (pipelineMode) {
                 targetUrl = baseUrl.endsWith("/") ? baseUrl + "v1/logs" : baseUrl + "/v1/logs";
@@ -258,12 +239,12 @@ public class DevlogsLogStorage implements LogStorage {
                 if (!response.isSuccessful()) {
                     String responseBody = response.body() != null ? response.body().string() : "";
                     String preview = responseBody.length() > 100 ? responseBody.substring(0, 100) : responseBody;
-                    LOGGER.log(Level.WARNING, DEBUG_PREFIX + "Send failed HTTP " + response.code() + ": " + preview);
+                    LOGGER.log(Level.WARNING, "Failed to send log to devlogs, HTTP " + response.code() + ": " + preview);
                 }
             }
 
         } catch (Exception e) {
-            LOGGER.log(Level.WARNING, DEBUG_PREFIX + "sendLine() exception: " + e.getMessage());
+            LOGGER.log(Level.WARNING, "Failed to send log line to devlogs: " + e.getMessage());
         }
     }
 
@@ -278,8 +259,6 @@ public class DevlogsLogStorage implements LogStorage {
      * Called when the build completes to clean up.
      */
     void cleanup() {
-        LOGGER.log(Level.INFO, DEBUG_PREFIX + "cleanup() called for build " + buildNumber +
-            ", total lines sent: " + seq.get());
         activeBuilds.remove(buildId);
         if (cleanupCallback != null) {
             cleanupCallback.run();
@@ -309,8 +288,6 @@ public class DevlogsLogStorage implements LogStorage {
             this.storage = storage;
             this.outputStream = new DevlogsOutputStream(delegate.getLogger(), storage, nodeId);
             this.printStream = new PrintStream(outputStream, true, StandardCharsets.UTF_8);
-            LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsBuildListener created for node " + nodeId +
-                ", delegate class: " + delegate.getClass().getName());
         }
 
         @Nonnull
@@ -321,8 +298,6 @@ public class DevlogsLogStorage implements LogStorage {
 
         @Override
         public void close() throws IOException {
-            LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsBuildListener.close() called, " +
-                "total lines from overall: " + outputStream.lineCount);
             outputStream.close();
             if (delegate instanceof Closeable) {
                 ((Closeable) delegate).close();
@@ -338,16 +313,13 @@ public class DevlogsLogStorage implements LogStorage {
         private static final long serialVersionUID = 1L;
 
         private final TaskListener delegate;
-        private final DevlogsLogStorage storage;
         private final DevlogsOutputStream outputStream;
         private final PrintStream printStream;
 
         DevlogsTaskListener(TaskListener delegate, DevlogsLogStorage storage, String nodeId) {
             this.delegate = delegate;
-            this.storage = storage;
             this.outputStream = new DevlogsOutputStream(delegate.getLogger(), storage, nodeId);
             this.printStream = new PrintStream(outputStream, true, StandardCharsets.UTF_8);
-            LOGGER.log(Level.FINE, DEBUG_PREFIX + "DevlogsTaskListener created for node " + nodeId);
         }
 
         @Nonnull
@@ -358,7 +330,6 @@ public class DevlogsLogStorage implements LogStorage {
 
         @Override
         public void close() throws IOException {
-            LOGGER.log(Level.FINE, DEBUG_PREFIX + "DevlogsTaskListener.close() for node, lines: " + outputStream.lineCount);
             outputStream.close();
             if (delegate instanceof Closeable) {
                 ((Closeable) delegate).close();
@@ -375,25 +346,19 @@ public class DevlogsLogStorage implements LogStorage {
         private final String nodeId;
         private final StringBuilder lineBuffer = new StringBuilder();
         private String currentLineTimestamp = null;
-        int lineCount = 0;
-        long byteCount = 0;
 
         DevlogsOutputStream(OutputStream delegate, DevlogsLogStorage storage, String nodeId) {
             this.delegate = delegate;
             this.storage = storage;
             this.nodeId = nodeId;
-            LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsOutputStream created for node=" + nodeId +
-                ", delegate=" + delegate.getClass().getName());
         }
 
         @Override
         public void write(int b) throws IOException {
             delegate.write(b);
-            byteCount++;
 
             if (b == '\n') {
                 if (lineBuffer.length() > 0) {
-                    lineCount++;
                     String timestamp = currentLineTimestamp != null ? currentLineTimestamp : formatTimestamp();
                     storage.sendLine(lineBuffer.toString(), timestamp, nodeId);
                     lineBuffer.setLength(0);
@@ -410,13 +375,11 @@ public class DevlogsLogStorage implements LogStorage {
         @Override
         public void write(byte[] b, int off, int len) throws IOException {
             delegate.write(b, off, len);
-            byteCount += len;
 
             for (int i = 0; i < len; i++) {
                 byte c = b[off + i];
                 if (c == '\n') {
                     if (lineBuffer.length() > 0) {
-                        lineCount++;
                         String timestamp = currentLineTimestamp != null ? currentLineTimestamp : formatTimestamp();
                         storage.sendLine(lineBuffer.toString(), timestamp, nodeId);
                         lineBuffer.setLength(0);
@@ -434,7 +397,6 @@ public class DevlogsLogStorage implements LogStorage {
         @Override
         public void flush() throws IOException {
             delegate.flush();
-            // Flush any remaining content in buffer
             if (lineBuffer.length() > 0) {
                 String timestamp = currentLineTimestamp != null ? currentLineTimestamp : formatTimestamp();
                 storage.sendLine(lineBuffer.toString(), timestamp, nodeId);
@@ -445,8 +407,6 @@ public class DevlogsLogStorage implements LogStorage {
 
         @Override
         public void close() throws IOException {
-            LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsOutputStream.close() node=" + nodeId +
-                ", bytes=" + byteCount + ", lines=" + lineCount);
             flush();
             delegate.close();
         }

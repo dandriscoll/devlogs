@@ -43,8 +43,6 @@ public class DevlogsStep extends Step implements Serializable {
     private static final long serialVersionUID = 2L;
     private static final String VERSION = "2.0.2";
     private static final Logger LOGGER = Logger.getLogger(DevlogsStep.class.getName());
-    private static final String DEBUG_PREFIX = "[DEVLOGS-DEBUG] ";
-
     // Pattern to detect environment variable prefixes like "DEVLOGS_OPENSEARCH_URL="
     private static final Pattern ENV_PREFIX_PATTERN = Pattern.compile("^[A-Z][A-Z0-9_]*=");
 
@@ -185,44 +183,32 @@ public class DevlogsStep extends Step implements Serializable {
      * @return The resolved URL, or null if not configured
      */
     private String resolveUrl(Run<?, ?> run) {
-        LOGGER.log(Level.INFO, DEBUG_PREFIX + "resolveUrl() called, url=" + (url != null ? "[set]" : "null") +
-            ", credentialsId=" + (credentialsId != null ? credentialsId : "null"));
-
         // Direct URL takes precedence
         if (url != null && !url.trim().isEmpty()) {
-            LOGGER.log(Level.INFO, DEBUG_PREFIX + "resolveUrl() using direct URL");
             return url;
         }
 
         // Look up credentialsId
         if (credentialsId != null && !credentialsId.trim().isEmpty()) {
-            LOGGER.log(Level.INFO, DEBUG_PREFIX + "resolveUrl() looking up credentialsId: " + credentialsId);
             StringCredentials creds = CredentialsProvider.findCredentialById(
                 credentialsId,
                 StringCredentials.class,
                 run
             );
             if (creds != null) {
-                LOGGER.log(Level.INFO, DEBUG_PREFIX + "resolveUrl() found credentials, returning URL");
                 return creds.getSecret().getPlainText();
             } else {
-                LOGGER.log(Level.WARNING, DEBUG_PREFIX + "resolveUrl() credentials NOT FOUND for id: " + credentialsId);
+                LOGGER.log(Level.WARNING, "Credentials not found for id: " + credentialsId);
             }
         }
 
-        LOGGER.log(Level.WARNING, DEBUG_PREFIX + "resolveUrl() returning null - no URL configured");
         return null;
     }
 
     @Override
     public StepExecution start(StepContext context) throws Exception {
-        LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsStep.start() called");
         Run<?, ?> run = context.get(Run.class);
-        LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsStep.start() run=" +
-            (run != null ? run.getFullDisplayName() : "null"));
         String resolvedUrl = resolveUrl(run);
-        LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsStep.start() resolvedUrl=" +
-            (resolvedUrl != null ? "[resolved]" : "null"));
 
         // Derive application from job name if not specified
         String resolvedApplication = application;
@@ -233,12 +219,8 @@ public class DevlogsStep extends Step implements Serializable {
                 resolvedApplication = "jenkins";
             }
         }
-        LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsStep.start() resolvedApplication=" + resolvedApplication);
 
         boolean effectivePipeline = getEffectivePipeline(resolvedUrl);
-        LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsStep.start() effectivePipeline=" + effectivePipeline +
-            ", component=" + component + ", index=" + index);
-        LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsStep.start() returning DevlogsStepExecution");
         return new DevlogsStepExecution(context, resolvedUrl, index, credentialsId,
             resolvedApplication, component, environment, version, effectivePipeline);
     }
@@ -315,7 +297,6 @@ public class DevlogsStep extends Step implements Serializable {
      */
     public static class DevlogsStepExecution extends AbstractStepExecutionImpl {
         private static final long serialVersionUID = 2L;
-        private static final String DEBUG_PREFIX = "[DEVLOGS-DEBUG] ";
 
         private final String url;
         private final String index;
@@ -330,12 +311,6 @@ public class DevlogsStep extends Step implements Serializable {
                                     String application, String component, String environment,
                                     String version, boolean pipeline) {
             super(context);
-            LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsStepExecution constructor called");
-            LOGGER.log(Level.INFO, DEBUG_PREFIX + "  url=" + (url != null ? "[set]" : "null"));
-            LOGGER.log(Level.INFO, DEBUG_PREFIX + "  index=" + index);
-            LOGGER.log(Level.INFO, DEBUG_PREFIX + "  application=" + application);
-            LOGGER.log(Level.INFO, DEBUG_PREFIX + "  component=" + component);
-            LOGGER.log(Level.INFO, DEBUG_PREFIX + "  pipeline=" + pipeline);
             this.url = url;
             this.index = index;
             this.credentialsId = credentialsId;
@@ -351,26 +326,20 @@ public class DevlogsStep extends Step implements Serializable {
                 TaskListener listener = getContext().get(TaskListener.class);
                 if (listener != null) {
                     listener.getLogger().println("[devlogs] " + message);
-                    LOGGER.log(Level.INFO, DEBUG_PREFIX + "consoleLog() wrote: " + message);
-                } else {
-                    LOGGER.log(Level.WARNING, DEBUG_PREFIX + "consoleLog() - TaskListener is null, message: " + message);
                 }
             } catch (Exception e) {
-                LOGGER.log(Level.WARNING, DEBUG_PREFIX + "consoleLog() exception: " + e.getMessage());
+                // ignore
             }
         }
 
         @Override
         public boolean start() throws Exception {
-            LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsStepExecution.start() called");
-
             // Check if URL is missing
             if (url == null || url.trim().isEmpty()) {
                 String credInfo = (credentialsId != null && !credentialsId.isEmpty())
                     ? "Credential '" + credentialsId + "' not found or empty."
                     : "No credentialsId or url parameter provided.";
                 consoleLog("WARNING: " + credInfo + " Devlogs disabled for this build.");
-                LOGGER.log(Level.WARNING, DEBUG_PREFIX + "DevlogsStepExecution.start() - URL missing, devlogs disabled");
                 getContext().newBodyInvoker().withCallback(BodyExecutionCallback.wrap(getContext())).start();
                 return false;
             }
@@ -380,69 +349,41 @@ public class DevlogsStep extends Step implements Serializable {
             if (validationError != null) {
                 consoleLog("ERROR: " + validationError);
                 consoleLog("Devlogs disabled for this build.");
-                LOGGER.log(Level.WARNING, DEBUG_PREFIX + "DevlogsStepExecution.start() - URL validation failed: " + validationError);
                 getContext().newBodyInvoker().withCallback(BodyExecutionCallback.wrap(getContext())).start();
                 return false;
             }
 
             Run<?, ?> run = getContext().get(Run.class);
             if (run == null) {
-                LOGGER.log(Level.SEVERE, DEBUG_PREFIX + "DevlogsStepExecution.start() - Run context is null!");
                 throw new IllegalStateException("Run context is not available");
             }
-            LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsStepExecution.start() - Run: " + run.getFullDisplayName());
 
-            // Log step start with version
-            LOGGER.log(Level.INFO, DEBUG_PREFIX + "Devlogs plugin v" + VERSION + " starting for build " +
-                run.getParent().getFullName() + "#" + run.getNumber());
             consoleLog("Devlogs plugin v" + VERSION + " starting");
 
             // Ensure DevlogsJobProperty is set on the job for LogStorageFactory
             hudson.model.Job<?, ?> job = run.getParent();
             DevlogsJobProperty existingProp = job.getProperty(DevlogsJobProperty.class);
             if (existingProp == null) {
-                LOGGER.log(Level.INFO, DEBUG_PREFIX + "Setting DevlogsJobProperty on job for future builds");
                 try {
                     DevlogsJobProperty prop = new DevlogsJobProperty(credentialsId);
                     prop.setApplication(application);
                     prop.setComponent(component);
                     prop.setEnvironment(environment);
                     job.addProperty(prop);
-                    LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsJobProperty set successfully");
                 } catch (Exception e) {
-                    LOGGER.log(Level.WARNING, DEBUG_PREFIX + "Failed to set DevlogsJobProperty: " + e.getMessage());
+                    LOGGER.log(Level.WARNING, "Failed to set DevlogsJobProperty: " + e.getMessage());
                 }
-            } else {
-                LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsJobProperty already present on job");
             }
 
             // Check if LogStorageFactory is already handling this build
-            // (DevlogsLogStorage is active - no need for TaskListenerDecorator)
             boolean logStorageActive = DevlogsLogStorage.isActiveForBuild(run.getExternalizableId());
             if (logStorageActive) {
-                LOGGER.log(Level.INFO, DEBUG_PREFIX + "LogStorageFactory is active - skipping TaskListenerDecorator");
                 consoleLog("Log streaming active via LogStorage (full capture mode)");
-                final String buildId = run.getParent().getFullName() + "#" + run.getNumber();
                 getContext().newBodyInvoker()
-                    .withCallback(new BodyExecutionCallback() {
-                        @Override
-                        public void onSuccess(StepContext context, Object result) {
-                            LOGGER.log(Level.INFO, DEBUG_PREFIX + "Build completed successfully: " + buildId);
-                            context.onSuccess(result);
-                        }
-
-                        @Override
-                        public void onFailure(StepContext context, Throwable t) {
-                            LOGGER.log(Level.INFO, DEBUG_PREFIX + "Build completed with failure: " + buildId);
-                            context.onFailure(t);
-                        }
-                    })
+                    .withCallback(BodyExecutionCallback.wrap(getContext()))
                     .start();
                 return false;
             }
-
-            // LogStorageFactory not active - fall back to TaskListenerDecorator
-            LOGGER.log(Level.INFO, DEBUG_PREFIX + "LogStorageFactory not active - using TaskListenerDecorator fallback");
 
             // Log mode info (mask credentials in URL)
             String maskedUrl = url.replaceAll("://[^:]+:[^@]+@", "://****:****@");
@@ -471,51 +412,18 @@ public class DevlogsStep extends Step implements Serializable {
             org.jenkinsci.plugins.workflow.log.TaskListenerDecorator existingDecorator =
                 getContext().get(org.jenkinsci.plugins.workflow.log.TaskListenerDecorator.class);
 
-            final String buildId = run.getParent().getFullName() + "#" + run.getNumber();
-
             getContext().newBodyInvoker()
                 .withContext(org.jenkinsci.plugins.workflow.log.TaskListenerDecorator.merge(
                     existingDecorator,
                     decorator))
-                .withCallback(new BodyExecutionCallback() {
-                    @Override
-                    public void onSuccess(StepContext context, Object result) {
-                        LOGGER.log(Level.INFO, DEBUG_PREFIX + "Build completed successfully: " + buildId);
-                        try {
-                            TaskListener listener = context.get(TaskListener.class);
-                            if (listener != null) {
-                                listener.getLogger().println("[devlogs] Build complete, logs streamed successfully");
-                            }
-                        } catch (Exception e) {
-                            // ignore
-                        }
-                        context.onSuccess(result);
-                    }
-
-                    @Override
-                    public void onFailure(StepContext context, Throwable t) {
-                        LOGGER.log(Level.INFO, DEBUG_PREFIX + "Build completed with failure: " + buildId);
-                        try {
-                            TaskListener listener = context.get(TaskListener.class);
-                            if (listener != null) {
-                                listener.getLogger().println("[devlogs] Build complete (with failure), logs streamed");
-                            }
-                        } catch (Exception e) {
-                            // ignore
-                        }
-                        context.onFailure(t);
-                    }
-                })
+                .withCallback(BodyExecutionCallback.wrap(getContext()))
                 .start();
 
-            LOGGER.log(Level.INFO, DEBUG_PREFIX + "Body invoker started, returning false (async)");
             return false;
         }
 
         @Override
         public void stop(@Nonnull Throwable cause) throws Exception {
-            LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsStepExecution.stop() called: " + cause.getMessage());
-            LOGGER.log(Level.INFO, "Devlogs plugin v" + VERSION + " stopped");
             getContext().onFailure(cause);
         }
     }

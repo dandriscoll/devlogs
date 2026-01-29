@@ -18,18 +18,16 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.Base64;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
  * Global TaskListenerDecorator that captures all pipeline console output.
- * This is applied via the Factory extension when a DevlogsAction is present on the build.
+ * This is applied via withContext() in DevlogsStep.
  */
 public final class DevlogsGlobalDecorator extends TaskListenerDecorator implements Serializable {
     private static final long serialVersionUID = 1L;
     private static final Logger LOGGER = Logger.getLogger(DevlogsGlobalDecorator.class.getName());
-    private static final String DEBUG_PREFIX = "[DEVLOGS-DEBUG] ";
 
     private final String url;
     private final String index;
@@ -45,7 +43,6 @@ public final class DevlogsGlobalDecorator extends TaskListenerDecorator implemen
     private final AtomicInteger seq;
 
     public DevlogsGlobalDecorator(DevlogsAction action) {
-        LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsGlobalDecorator constructor called for build " + action.getBuildNumber());
         this.url = action.getUrl();
         this.index = action.getIndex();
         this.runId = action.getRunId();
@@ -58,23 +55,14 @@ public final class DevlogsGlobalDecorator extends TaskListenerDecorator implemen
         this.version = action.getVersion();
         this.pipeline = action.isPipeline();
         this.seq = new AtomicInteger(0);
-        LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsGlobalDecorator created: index=" + index + ", pipeline=" + pipeline);
     }
 
     @Nonnull
     @Override
     public OutputStream decorate(@Nonnull OutputStream logger) throws IOException, InterruptedException {
-        LOGGER.log(Level.INFO, DEBUG_PREFIX + "decorate() called for build " + buildNumber +
-            ", logger class: " + logger.getClass().getName());
-        DevlogsOutputStream stream = new DevlogsOutputStream(logger, url, index, runId, jobName, buildNumber, buildUrl, seq,
+        return new DevlogsOutputStream(logger, url, index, runId, jobName, buildNumber, buildUrl, seq,
             application, component, environment, version, pipeline);
-        LOGGER.log(Level.INFO, DEBUG_PREFIX + "decorate() returning DevlogsOutputStream instance " + System.identityHashCode(stream));
-        return stream;
     }
-
-    // Factory removed - we use withContext() in DevlogsStep instead.
-    // The Factory was creating duplicate decorators, causing each log line
-    // to be sent twice and with conflicting seq numbers.
 
     /**
      * OutputStream that captures log lines and sends them to devlogs.
@@ -82,8 +70,8 @@ public final class DevlogsGlobalDecorator extends TaskListenerDecorator implemen
     private static class DevlogsOutputStream extends OutputStream implements Serializable {
         private static final long serialVersionUID = 2L;
         private static final int BUFFER_SIZE = 8192;
-        private static final int BATCH_SIZE = 1;  // Send immediately - streams may not be closed properly
-        private static final long BATCH_TIMEOUT_MS = 1000; // 1 second
+        private static final int BATCH_SIZE = 1;
+        private static final long BATCH_TIMEOUT_MS = 1000;
 
         private final OutputStream delegate;
         private final String baseUrl;
@@ -98,7 +86,6 @@ public final class DevlogsGlobalDecorator extends TaskListenerDecorator implemen
         private final String environment;
         private final String version;
         private final boolean pipeline;
-        private final int instanceId;
 
         private final byte[] buffer = new byte[BUFFER_SIZE];
         private int bufferPos = 0;
@@ -111,27 +98,16 @@ public final class DevlogsGlobalDecorator extends TaskListenerDecorator implemen
         private final String authHeader;
         private boolean errorReported = false;
 
-        // Debug counters
-        private final AtomicLong totalBytesWritten = new AtomicLong(0);
-        private final AtomicLong totalLinesProcessed = new AtomicLong(0);
-        private final AtomicLong totalBatchesSent = new AtomicLong(0);
-
         private transient OkHttpClient client;
         private transient Gson gson;
 
         private static final DateTimeFormatter ISO_FORMATTER =
             DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(ZoneOffset.UTC);
 
-        private static final AtomicInteger INSTANCE_COUNTER = new AtomicInteger(0);
-
         public DevlogsOutputStream(OutputStream delegate, String url, String index, String runId,
                                    String jobName, int buildNumber, String buildUrl, AtomicInteger seq,
                                    String application, String component, String environment,
                                    String version, boolean pipeline) {
-            this.instanceId = INSTANCE_COUNTER.incrementAndGet();
-            LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsOutputStream #" + instanceId + " constructor called for build " + buildNumber);
-            LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsOutputStream #" + instanceId + " delegate class: " + delegate.getClass().getName());
-
             this.delegate = delegate;
             this.index = index;
             this.runId = runId;
@@ -179,7 +155,6 @@ public final class DevlogsGlobalDecorator extends TaskListenerDecorator implemen
                     }
                 }
             } catch (URISyntaxException e) {
-                LOGGER.log(Level.WARNING, DEBUG_PREFIX + "DevlogsOutputStream #" + instanceId + " URL parse error: " + e.getMessage());
                 if (!pipeline) {
                     int lastSlash = url.lastIndexOf('/');
                     if (lastSlash > 0) {
@@ -190,8 +165,6 @@ public final class DevlogsGlobalDecorator extends TaskListenerDecorator implemen
 
             this.baseUrl = parsedBaseUrl;
             this.authHeader = parsedAuthHeader;
-            LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsOutputStream #" + instanceId + " baseUrl: " + parsedBaseUrl);
-            LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsOutputStream #" + instanceId + " authHeader present: " + (parsedAuthHeader != null));
             initTransients();
         }
 
@@ -210,7 +183,6 @@ public final class DevlogsGlobalDecorator extends TaskListenerDecorator implemen
         @Override
         public void write(int b) throws IOException {
             delegate.write(b);
-            totalBytesWritten.incrementAndGet();
             buffer[bufferPos++] = (byte) b;
             if (b == '\n' || bufferPos >= BUFFER_SIZE) {
                 processBuffer();
@@ -220,7 +192,6 @@ public final class DevlogsGlobalDecorator extends TaskListenerDecorator implemen
         @Override
         public void write(byte[] b, int off, int len) throws IOException {
             delegate.write(b, off, len);
-            totalBytesWritten.addAndGet(len);
             for (int i = 0; i < len; i++) {
                 buffer[bufferPos++] = b[off + i];
                 if (b[off + i] == '\n' || bufferPos >= BUFFER_SIZE) {
@@ -231,9 +202,6 @@ public final class DevlogsGlobalDecorator extends TaskListenerDecorator implemen
 
         @Override
         public void flush() throws IOException {
-            LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsOutputStream #" + instanceId + " flush() called, " +
-                "totalBytes=" + totalBytesWritten.get() + ", totalLines=" + totalLinesProcessed.get() +
-                ", batchCount=" + batchCount);
             delegate.flush();
             if (bufferPos > 0) {
                 processBuffer();
@@ -249,12 +217,8 @@ public final class DevlogsGlobalDecorator extends TaskListenerDecorator implemen
 
         @Override
         public void close() throws IOException {
-            LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsOutputStream #" + instanceId + " close() called, " +
-                "totalBytes=" + totalBytesWritten.get() + ", totalLines=" + totalLinesProcessed.get() +
-                ", totalBatches=" + totalBatchesSent.get());
             flush();
             delegate.close();
-            LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsOutputStream #" + instanceId + " closed successfully");
         }
 
         private void processBuffer() {
@@ -286,23 +250,11 @@ public final class DevlogsGlobalDecorator extends TaskListenerDecorator implemen
         private void sendLine(String line, String timestamp) {
             if (line.trim().isEmpty()) return;
 
-            totalLinesProcessed.incrementAndGet();
-            long lineNum = totalLinesProcessed.get();
-
-            // Log first 5 lines and every 10th line after that
-            if (lineNum <= 5 || lineNum % 10 == 0) {
-                String preview = line.length() > 50 ? line.substring(0, 50) + "..." : line;
-                LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsOutputStream #" + instanceId +
-                    " sendLine() line #" + lineNum + ": " + preview);
-            }
-
             try {
                 initTransients();
 
                 long currentTime = System.currentTimeMillis();
                 if (batchCount > 0 && (currentTime - lastBatchTime) >= BATCH_TIMEOUT_MS) {
-                    LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsOutputStream #" + instanceId +
-                        " batch timeout triggered, flushing " + batchCount + " items");
                     flushBatch();
                 }
 
@@ -369,22 +321,15 @@ public final class DevlogsGlobalDecorator extends TaskListenerDecorator implemen
                     lastBatchTime = currentTime;
                 }
                 if (batchCount >= BATCH_SIZE) {
-                    LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsOutputStream #" + instanceId +
-                        " batch size reached, flushing " + batchCount + " items");
                     flushBatch();
                 }
             } catch (Exception e) {
-                LOGGER.log(Level.WARNING, DEBUG_PREFIX + "DevlogsOutputStream #" + instanceId +
-                    " sendLine() exception: " + e.getMessage(), e);
+                LOGGER.log(Level.WARNING, "Failed to send log line to devlogs: " + e.getMessage());
             }
         }
 
         private void flushBatch() {
             if (batchCount == 0) return;
-
-            LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsOutputStream #" + instanceId +
-                " flushBatch() called with " + batchCount + " items");
-            totalBatchesSent.incrementAndGet();
 
             try {
                 initTransients();
@@ -435,18 +380,11 @@ public final class DevlogsGlobalDecorator extends TaskListenerDecorator implemen
                     request = requestBuilder.build();
                 }
 
-                LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsOutputStream #" + instanceId +
-                    " sending batch to " + targetUrl);
-
                 try (Response response = client.newCall(request).execute()) {
-                    if (response.isSuccessful()) {
-                        LOGGER.log(Level.INFO, DEBUG_PREFIX + "DevlogsOutputStream #" + instanceId +
-                            " batch sent successfully, HTTP " + response.code());
-                    } else {
+                    if (!response.isSuccessful()) {
                         String responseBody = response.body() != null ? response.body().string() : "";
                         String preview = responseBody.length() > 200 ? responseBody.substring(0, 200) + "..." : responseBody;
-                        LOGGER.log(Level.WARNING, DEBUG_PREFIX + "DevlogsOutputStream #" + instanceId +
-                            " batch send failed, HTTP " + response.code() + ": " + preview);
+                        LOGGER.log(Level.WARNING, "Failed to send logs to devlogs, HTTP " + response.code() + ": " + preview);
                         errorReported = true;
                     }
                 }
@@ -455,8 +393,7 @@ public final class DevlogsGlobalDecorator extends TaskListenerDecorator implemen
                 batchCount = 0;
                 lastBatchTime = System.currentTimeMillis();
             } catch (Exception e) {
-                LOGGER.log(Level.WARNING, DEBUG_PREFIX + "DevlogsOutputStream #" + instanceId +
-                    " flushBatch() exception: " + e.getMessage(), e);
+                LOGGER.log(Level.WARNING, "Failed to flush log batch to devlogs: " + e.getMessage());
                 errorReported = true;
                 batchBuffer.setLength(0);
                 batchCount = 0;

@@ -25,7 +25,6 @@ import java.util.logging.Logger;
 @Extension
 public class DevlogsLogStorageFactory implements LogStorageFactory {
     private static final Logger LOGGER = Logger.getLogger(DevlogsLogStorageFactory.class.getName());
-    private static final String DEBUG_PREFIX = "[DEVLOGS-DEBUG] ";
 
     // Cache of log storage instances by build ID
     private final Map<String, DevlogsLogStorage> storageCache = new ConcurrentHashMap<>();
@@ -44,21 +43,19 @@ public class DevlogsLogStorageFactory implements LogStorageFactory {
             // Check if devlogs is configured for this job
             DevlogsJobProperty property = job.getProperty(DevlogsJobProperty.class);
             if (property == null) {
-                return null; // Devlogs not configured for this job
-            }
-
-            String buildId = run.getExternalizableId();
-            LOGGER.log(Level.INFO, DEBUG_PREFIX + "LogStorageFactory: devlogs enabled for " + buildId);
-
-            String url = property.resolveUrl(run);
-            if (url == null || url.trim().isEmpty()) {
-                LOGGER.log(Level.WARNING, DEBUG_PREFIX + "LogStorageFactory: no URL for " + buildId);
                 return null;
             }
 
-            return storageCache.computeIfAbsent(buildId, id -> {
-                LOGGER.log(Level.INFO, DEBUG_PREFIX + "Creating DevlogsLogStorage for " + id);
-                return new DevlogsLogStorage(
+            String buildId = run.getExternalizableId();
+
+            String url = property.resolveUrl(run);
+            if (url == null || url.trim().isEmpty()) {
+                LOGGER.log(Level.WARNING, "Devlogs URL not configured for build " + buildId);
+                return null;
+            }
+
+            return storageCache.computeIfAbsent(buildId, id ->
+                new DevlogsLogStorage(
                     owner,
                     url,
                     property.getEffectiveApplication(run),
@@ -69,11 +66,11 @@ public class DevlogsLogStorageFactory implements LogStorageFactory {
                     run.getUrl(),
                     buildId,
                     () -> storageCache.remove(id)
-                );
-            });
+                )
+            );
 
         } catch (IOException e) {
-            LOGGER.log(Level.WARNING, DEBUG_PREFIX + "LogStorageFactory error", e);
+            LOGGER.log(Level.WARNING, "Error creating DevlogsLogStorage", e);
             return null;
         }
     }
