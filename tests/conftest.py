@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import uuid
 
@@ -17,6 +18,38 @@ from devlogs.opensearch.mappings import (
 	build_legacy_log_template,
 	get_template_names,
 )
+
+
+def _strip_url_path(url: str) -> str:
+	"""Strip the path (index) from an opensearch(s):// URL, preserving credentials."""
+	# Match: scheme://userinfo@host:port/path -> scheme://userinfo@host:port
+	return re.sub(r'(opensearchs?://[^/]+)/.*', r'\1', url)
+
+
+@pytest.fixture(autouse=True)
+def _strip_opensearch_url_index():
+	"""Strip index path from DEVLOGS_OPENSEARCH_URL so DEVLOGS_INDEX env var takes effect.
+
+	The opensearch:// URL format embeds the index in the path, which takes priority
+	over DEVLOGS_INDEX in config loading. Integration tests set DEVLOGS_INDEX to
+	point at ephemeral test indices, so we need to strip the path from the URL.
+	"""
+	url = os.getenv("DEVLOGS_OPENSEARCH_URL")
+	if url and url.startswith(("opensearch://", "opensearchs://")):
+		stripped = _strip_url_path(url)
+		os.environ["DEVLOGS_OPENSEARCH_URL"] = stripped
+
+	from devlogs import config as _config
+	prev_dotenv = _config._dotenv_loaded
+	_config._dotenv_loaded = True  # Prevent .env reload restoring the path
+
+	yield
+
+	_config._dotenv_loaded = prev_dotenv
+	if url is not None:
+		os.environ["DEVLOGS_OPENSEARCH_URL"] = url
+	elif "DEVLOGS_OPENSEARCH_URL" in os.environ:
+		del os.environ["DEVLOGS_OPENSEARCH_URL"]
 
 
 @pytest.fixture(scope="session")
@@ -59,6 +92,7 @@ def test_index(opensearch_client):
 		legacy_template_created = True
 	if not opensearch_client.indices.exists(index=index_name):
 		opensearch_client.indices.create(index=index_name)
+
 	previous_index = os.getenv("DEVLOGS_INDEX")
 	os.environ["DEVLOGS_INDEX"] = index_name
 	yield index_name
