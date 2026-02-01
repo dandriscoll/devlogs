@@ -144,7 +144,7 @@ class TestDevlogsClient:
             application="test-app",
             component="api",
         )
-        assert client._get_endpoint() == "http://localhost:8080/v1/logs"
+        assert client._get_endpoint() == "http://localhost:8080"
 
     def test_get_endpoint_strips_trailing_slash(self):
         client = DevlogsClient(
@@ -152,7 +152,7 @@ class TestDevlogsClient:
             application="test-app",
             component="api",
         )
-        assert client._get_endpoint() == "http://localhost:8080/v1/logs"
+        assert client._get_endpoint() == "http://localhost:8080"
 
     def test_get_headers_without_auth(self):
         client = DevlogsClient(
@@ -201,7 +201,7 @@ class TestDevlogsClient:
             application="test-app",
             component="api",
         )
-        assert client._get_endpoint() == "http://localhost:8080/v1/logs"
+        assert client._get_endpoint() == "http://localhost:8080"
 
     def test_opensearch_url_keeps_credentials(self):
         """OpenSearch URL: credentials remain in URL, no Bearer token."""
@@ -212,7 +212,7 @@ class TestDevlogsClient:
         )
         headers = client._get_headers()
         assert "Authorization" not in headers
-        assert client._get_endpoint() == "https://admin:password@opensearch.example.com:9200/v1/logs"
+        assert client._get_endpoint() == "https://admin:password@opensearch.example.com:9200"
 
     def test_emit_sends_single_record(self):
         client = DevlogsClient(
@@ -274,7 +274,7 @@ class TestDevlogsClient:
         import urllib.error
         with patch("devlogs.devlogs_client.urllib.request.urlopen") as mock_urlopen:
             mock_urlopen.side_effect = urllib.error.HTTPError(
-                "http://localhost:8080/v1/logs",
+                "http://localhost:8080",
                 400,
                 "Bad Request",
                 {},

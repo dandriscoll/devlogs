@@ -151,7 +151,7 @@ async def health():
     }
 
 
-@app.post("/v1/logs")
+@app.post("/")
 async def ingest_logs(request: Request):
     """Ingest log records.
 

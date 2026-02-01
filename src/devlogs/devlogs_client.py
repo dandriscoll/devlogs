@@ -161,8 +161,7 @@ class DevlogsClient:
 
     def _get_endpoint(self) -> str:
         """Get the collector endpoint URL."""
-        base = self._clean_url.rstrip("/")
-        return f"{base}/v1/logs"
+        return self._clean_url.rstrip("/")
 
     def _get_headers(self) -> Dict[str, str]:
         """Get request headers."""

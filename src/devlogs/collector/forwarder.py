@@ -24,7 +24,7 @@ def forward_request(
     Forwards the request body as-is, preserving relevant headers.
 
     Args:
-        forward_url: The upstream URL to forward to (should end with /v1/logs)
+        forward_url: The upstream URL to forward to
         body: The raw request body bytes
         content_type: The Content-Type header value
         auth_header: Optional Authorization header to forward
@@ -37,9 +37,7 @@ def forward_request(
     Raises:
         ForwardError: If the forward request fails
     """
-    # Ensure URL ends with /v1/logs
-    if not forward_url.endswith("/v1/logs"):
-        forward_url = forward_url.rstrip("/") + "/v1/logs"
+    forward_url = forward_url.rstrip("/")
 
     headers = {
         "Content-Type": content_type,

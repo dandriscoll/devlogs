@@ -119,15 +119,13 @@ class DevlogsHandler(logging.Handler):
 			except Exception:
 				parsed = None
 			if isinstance(parsed, CollectorURLConfig):
-				base = parsed.url.rstrip("/")
-				self._collector_endpoint = f"{base}/v1/logs"
+				self._collector_endpoint = parsed.url.rstrip("/")
 				self._collector_headers = {"Content-Type": "application/json"}
 				if parsed.token:
 					self._collector_headers["Authorization"] = f"Bearer {parsed.token}"
 			else:
 				# Treat as plain collector URL without token extraction
-				base = collector_url.rstrip("/")
-				self._collector_endpoint = f"{base}/v1/logs"
+				self._collector_endpoint = collector_url.rstrip("/")
 				self._collector_headers = {"Content-Type": "application/json"}
 
 	def emit(self, record: logging.LogRecord) -> None:
@@ -143,7 +141,7 @@ class DevlogsHandler(logging.Handler):
 
 		try:
 			if self._collector_endpoint:
-				# Collector mode: POST to /v1/logs
+				# Collector mode: POST to collector endpoint
 				data = json.dumps(doc).encode("utf-8")
 				req = urllib.request.Request(
 					self._collector_endpoint,

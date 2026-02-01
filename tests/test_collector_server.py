@@ -52,12 +52,12 @@ class TestHealthEndpoint:
 
 
 class TestIngestEndpoint:
-    """Tests for the POST /v1/logs endpoint."""
+    """Tests for the POST / endpoint."""
 
     def test_rejects_non_json_content_type(self, client, reset_config, monkeypatch):
         monkeypatch.setenv("DEVLOGS_OPENSEARCH_HOST", "localhost")
         response = client.post(
-            "/v1/logs",
+            "/",
             content="some text",
             headers={"Content-Type": "text/plain"}
         )
@@ -69,7 +69,7 @@ class TestIngestEndpoint:
     def test_rejects_invalid_json(self, client, reset_config, monkeypatch):
         monkeypatch.setenv("DEVLOGS_OPENSEARCH_HOST", "localhost")
         response = client.post(
-            "/v1/logs",
+            "/",
             content="not json",
             headers={"Content-Type": "application/json"}
         )
@@ -80,7 +80,7 @@ class TestIngestEndpoint:
     def test_rejects_missing_required_field(self, client, reset_config, monkeypatch):
         monkeypatch.setenv("DEVLOGS_OPENSEARCH_HOST", "localhost")
         response = client.post(
-            "/v1/logs",
+            "/",
             json={"application": "test"}  # Missing component and timestamp
         )
         assert response.status_code == 400
@@ -97,7 +97,7 @@ class TestIngestEndpoint:
 
         with patch("devlogs.collector.server.get_opensearch_client", return_value=mock_client):
             response = client.post(
-                "/v1/logs",
+                "/",
                 json={
                     "application": "test-app",
                     "component": "api",
@@ -131,7 +131,7 @@ class TestIngestEndpoint:
 
         with patch("devlogs.collector.server.get_opensearch_client", return_value=mock_client):
             response = client.post(
-                "/v1/logs",
+                "/",
                 json={
                     "records": [
                         {"application": "test-app", "component": "api", "timestamp": "2024-01-15T10:30:00Z"},
@@ -150,7 +150,7 @@ class TestIngestEndpoint:
     def test_validates_batch_record_errors(self, client, reset_config, monkeypatch):
         monkeypatch.setenv("DEVLOGS_OPENSEARCH_HOST", "localhost")
         response = client.post(
-            "/v1/logs",
+            "/",
             json={
                 "records": [
                     {"application": "test-app", "component": "api", "timestamp": "2024-01-15T10:30:00Z"},
@@ -171,7 +171,7 @@ class TestIngestEndpoint:
 
         with patch("devlogs.collector.server.get_opensearch_client", return_value=mock_client):
             response = client.post(
-                "/v1/logs",
+                "/",
                 json={
                     "application": "test-app",
                     "component": "api",
@@ -193,7 +193,7 @@ class TestIngestEndpoint:
 
         with patch("devlogs.collector.server.get_opensearch_client", return_value=mock_client):
             response = client.post(
-                "/v1/logs",
+                "/",
                 json={
                     "application": "test-app",
                     "component": "api",
@@ -218,7 +218,7 @@ class TestIngestEndpoint:
 
         with patch("devlogs.collector.server.get_opensearch_client", return_value=mock_client):
             response = client.post(
-                "/v1/logs",
+                "/",
                 json={
                     "application": "test-app",
                     "component": "api",
@@ -243,7 +243,7 @@ class TestIngestEndpoint:
 
         with patch("devlogs.collector.server.get_opensearch_client", return_value=mock_client):
             response = client.post(
-                "/v1/logs",
+                "/",
                 json={
                     "application": "test-app",
                     "component": "api",
@@ -269,7 +269,7 @@ class TestIngestEndpoint:
 
         with patch("devlogs.collector.server.get_opensearch_client", return_value=mock_client):
             response = client.post(
-                "/v1/logs",
+                "/",
                 json={
                     "application": "test-app",
                     "component": "api",
@@ -292,7 +292,7 @@ class TestIngestEndpoint:
 
         with patch("devlogs.collector.server.get_opensearch_client", return_value=mock_client):
             response = client.post(
-                "/v1/logs",
+                "/",
                 json={
                     "application": "test-app",
                     "component": "api",
@@ -319,7 +319,7 @@ class TestIngestEndpoint:
 
         with patch("devlogs.collector.server.get_opensearch_client", return_value=mock_client):
             response = client.post(
-                "/v1/logs",
+                "/",
                 json={
                     "application": "test-app",
                     "component": "api",
@@ -343,7 +343,7 @@ class TestIngestEndpoint:
 
         with patch("devlogs.collector.server.get_opensearch_client", return_value=mock_client):
             response = client.post(
-                "/v1/logs",
+                "/",
                 json={
                     "application": "test-app",
                     "component": "api",
@@ -365,7 +365,7 @@ class TestIngestEndpoint:
 
         with patch("devlogs.collector.server.get_opensearch_client", return_value=mock_client):
             response = client.post(
-                "/v1/logs",
+                "/",
                 json={
                     "application": "test-app",
                     "component": "api",
@@ -402,7 +402,7 @@ class TestIngestEndpoint:
 
         with patch("devlogs.collector.server.get_opensearch_client", return_value=mock_client):
             response = client.post(
-                "/v1/logs",
+                "/",
                 json={
                     "application": "test-app",
                     "component": "api",
@@ -431,7 +431,7 @@ class TestIndexRouting:
 
         with patch("devlogs.collector.server.get_opensearch_client", return_value=mock_client):
             response = client.post(
-                "/v1/logs",
+                "/",
                 json={
                     "records": [
                         {"application": "app1", "component": "api", "timestamp": "2024-01-15T10:30:00Z"},
@@ -462,7 +462,7 @@ class TestIndexRouting:
 
         with patch("devlogs.collector.server.get_opensearch_client", return_value=mock_client):
             response = client.post(
-                "/v1/logs",
+                "/",
                 json={
                     "application": "my-app",
                     "component": "api",
@@ -480,7 +480,7 @@ class TestNotConfiguredMode:
 
     def test_returns_503_when_not_configured(self, client, reset_config):
         response = client.post(
-            "/v1/logs",
+            "/",
             json={
                 "application": "test-app",
                 "component": "api",
@@ -507,7 +507,7 @@ class TestForwardMode:
             mock_urlopen.return_value = mock_response
 
             response = client.post(
-                "/v1/logs",
+                "/",
                 json={
                     "application": "test-app",
                     "component": "api",
@@ -531,7 +531,7 @@ class TestForwardMode:
             mock_urlopen.return_value = mock_response
 
             response = client.post(
-                "/v1/logs",
+                "/",
                 json={"application": "test", "component": "api", "timestamp": "2024-01-15T10:30:00Z"},
                 headers={"Authorization": "Bearer test-token"}
             )
@@ -547,7 +547,7 @@ class TestForwardMode:
         import urllib.error
         with patch("devlogs.collector.forwarder.urllib.request.urlopen") as mock_urlopen:
             mock_error = urllib.error.HTTPError(
-                "http://upstream:8080/v1/logs",
+                "http://upstream:8080/",
                 500,
                 "Internal Server Error",
                 {},
@@ -557,7 +557,7 @@ class TestForwardMode:
             mock_urlopen.side_effect = mock_error
 
             response = client.post(
-                "/v1/logs",
+                "/",
                 json={"application": "test", "component": "api", "timestamp": "2024-01-15T10:30:00Z"}
             )
 
