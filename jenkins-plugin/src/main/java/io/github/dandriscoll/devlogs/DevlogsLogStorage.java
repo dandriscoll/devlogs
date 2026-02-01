@@ -171,6 +171,7 @@ public class DevlogsLogStorage implements LogStorage {
      */
     void sendLine(String line, String timestamp, String nodeId) {
         if (line.trim().isEmpty()) return;
+        if (line.startsWith("ha:")) return;  // Jenkins console annotation
 
         int seqNum = seq.incrementAndGet();
 

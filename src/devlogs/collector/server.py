@@ -72,6 +72,30 @@ async def lifespan(app: FastAPI):
 
     yield
 
+    # Emit shutdown trace
+    if mode == "ingest":
+        try:
+            client = get_opensearch_client()
+            doc = DevlogsRecord(
+                application="devlogs-collector",
+                component="lifecycle",
+                timestamp=get_current_timestamp(),
+                message="Collector stopped",
+                level="info",
+                area="shutdown",
+                version=__version__,
+                fields={
+                    "mode": mode,
+                    "host": platform.node(),
+                },
+            )
+            doc.collected_ts = get_current_timestamp()
+            doc.client_ip = "127.0.0.1"
+            doc._identity = {"mode": "internal"}
+            client.index(index=cfg.index, body=doc.to_dict())
+        except Exception:
+            pass
+
 
 # Create FastAPI app for collector
 app = FastAPI(

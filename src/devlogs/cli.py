@@ -61,11 +61,17 @@ def main_callback(
 	_apply_common_options(env, url)
 
 
+_HIDDEN_FIELDS = {"run_id", "build_number", "build_url", "job", "node_id", "seq"}
+
+
 def _format_features(features):
 	if not features:
 		return ""
 	if isinstance(features, dict):
-		items = sorted(features.items(), key=lambda item: str(item[0]))
+		items = sorted(
+			((k, v) for k, v in features.items() if k not in _HIDDEN_FIELDS),
+			key=lambda item: str(item[0]),
+		)
 		parts = []
 		for key, value in items:
 			key_text = str(key)

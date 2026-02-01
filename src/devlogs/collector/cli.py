@@ -75,6 +75,8 @@ def serve(
             typer.echo(f"  OpenSearch: {cfg.opensearch_host}:{cfg.opensearch_port}")
             typer.echo(f"  Index: {cfg.index}")
 
+    from ..version import __version__
+    typer.echo(f"  Version: {__version__}")
     typer.echo(f"  Listening on: {host}:{port}")
     typer.echo()
 

@@ -249,6 +249,7 @@ public final class DevlogsGlobalDecorator extends TaskListenerDecorator implemen
 
         private void sendLine(String line, String timestamp) {
             if (line.trim().isEmpty()) return;
+            if (line.startsWith("ha:")) return;  // Jenkins console annotation
 
             try {
                 initTransients();
