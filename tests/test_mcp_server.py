@@ -66,6 +66,13 @@ class TestCreateClientAndIndex:
 
     def test_create_client_success(self, monkeypatch):
         """Test successful client creation."""
+        from devlogs import config
+
+        # Clear all config keys first to avoid env pollution
+        for key in config._DEVLOGS_CONFIG_KEYS:
+            monkeypatch.delenv(key, raising=False)
+        monkeypatch.delenv("DOTENV_PATH", raising=False)
+
         # Set environment variables directly
         monkeypatch.setenv("DEVLOGS_OPENSEARCH_HOST", "localhost")
         monkeypatch.setenv("DEVLOGS_OPENSEARCH_PORT", "9200")
@@ -73,9 +80,8 @@ class TestCreateClientAndIndex:
         monkeypatch.setenv("DEVLOGS_OPENSEARCH_PASS", "admin")
         monkeypatch.setenv("DEVLOGS_INDEX", "test-index")
 
-        # Reset config state to force reload
-        from devlogs import config
-        monkeypatch.setattr(config, "_dotenv_loaded", False)
+        # Reset config state to force reload, and prevent dotenv from loading
+        monkeypatch.setattr(config, "_dotenv_loaded", True)
 
         client, index = _create_client_and_index()
         assert client is not None
@@ -83,23 +89,14 @@ class TestCreateClientAndIndex:
 
     def test_create_client_missing_config(self, monkeypatch):
         """Test client creation with missing config."""
-        # Clear all env vars
-        for key in [
-            "DOTENV_PATH",
-            "DEVLOGS_OPENSEARCH_HOST",
-            "DEVLOGS_OPENSEARCH_PORT",
-            "DEVLOGS_OPENSEARCH_USER",
-            "DEVLOGS_OPENSEARCH_PASS",
-            "DEVLOGS_INDEX",
-            "DEVLOGS_OPENSEARCH_TIMEOUT",
-            "DEVLOGS_RETENTION_DEBUG",
-            "DEVLOGS_RETENTION_INFO",
-            "DEVLOGS_RETENTION_WARNING",
-        ]:
+        from devlogs import config
+
+        # Clear all config keys to avoid env pollution
+        for key in config._DEVLOGS_CONFIG_KEYS:
             monkeypatch.delenv(key, raising=False)
+        monkeypatch.delenv("DOTENV_PATH", raising=False)
 
         # Reset config state
-        from devlogs import config
         monkeypatch.setattr(config, "_dotenv_loaded", False)
         monkeypatch.setattr(config, "_custom_dotenv_path", None)
 
@@ -322,6 +319,8 @@ class TestMCPServerConfiguration:
 
     def test_dotenv_path_from_env_var(self, monkeypatch):
         """Test loading config from DOTENV_PATH environment variable."""
+        from devlogs import config
+
         with tempfile.NamedTemporaryFile(mode='w', suffix='.env', delete=False) as f:
             f.write("DEVLOGS_OPENSEARCH_HOST=env-test-host\n")
             f.write("DEVLOGS_OPENSEARCH_PORT=9200\n")
@@ -331,8 +330,8 @@ class TestMCPServerConfiguration:
             temp_path = f.name
 
         try:
-            # Clear existing env vars to avoid pollution
-            for key in ["DEVLOGS_OPENSEARCH_HOST", "DEVLOGS_OPENSEARCH_PORT", "DEVLOGS_INDEX"]:
+            # Clear all config keys to avoid pollution
+            for key in config._DEVLOGS_CONFIG_KEYS:
                 monkeypatch.delenv(key, raising=False)
 
             monkeypatch.setenv("DOTENV_PATH", temp_path)
@@ -348,6 +347,8 @@ class TestMCPServerConfiguration:
 
     def test_config_with_custom_port(self, monkeypatch):
         """Test configuration with custom port."""
+        from devlogs import config
+
         with tempfile.NamedTemporaryFile(mode='w', suffix='.env', delete=False) as f:
             f.write("DEVLOGS_OPENSEARCH_HOST=localhost\n")
             f.write("DEVLOGS_OPENSEARCH_PORT=9999\n")
@@ -357,8 +358,8 @@ class TestMCPServerConfiguration:
             temp_path = f.name
 
         try:
-            # Clear existing env vars to avoid pollution
-            for key in ["DEVLOGS_OPENSEARCH_HOST", "DEVLOGS_OPENSEARCH_PORT", "DEVLOGS_OPENSEARCH_USER", "DEVLOGS_OPENSEARCH_PASS", "DEVLOGS_INDEX"]:
+            # Clear all config keys to avoid pollution
+            for key in config._DEVLOGS_CONFIG_KEYS:
                 monkeypatch.delenv(key, raising=False)
 
             monkeypatch.setenv("DOTENV_PATH", temp_path)
