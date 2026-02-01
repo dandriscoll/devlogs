@@ -171,7 +171,7 @@ public class DevlogsLogStorage implements LogStorage {
      */
     void sendLine(String line, String timestamp, String nodeId) {
         if (line.trim().isEmpty()) return;
-        if (line.startsWith("ha:")) return;  // Jenkins console annotation
+        if (line.startsWith("ha:") || line.matches("^\\033\\[\\d+mha:.*")) return;  // Jenkins console annotation
 
         int seqNum = seq.incrementAndGet();
 
@@ -181,7 +181,7 @@ public class DevlogsLogStorage implements LogStorage {
             JsonObject doc = new JsonObject();
             doc.addProperty("timestamp", timestamp);
             doc.addProperty("message", line);
-            doc.addProperty("level", "info");
+            doc.addProperty("level", detectLevel(line));
             doc.addProperty("application", application);
             doc.addProperty("component", component);
             doc.addProperty("area", jobName);
@@ -264,6 +264,17 @@ public class DevlogsLogStorage implements LogStorage {
         if (cleanupCallback != null) {
             cleanupCallback.run();
         }
+    }
+
+    /**
+     * Detect log level from line content.
+     */
+    static String detectLevel(String line) {
+        String upper = line.toUpperCase();
+        if (upper.contains("ERROR") || upper.contains("FATAL") || upper.contains("FAILED")) return "error";
+        if (upper.contains("WARN")) return "warn";
+        if (upper.contains("DEBUG")) return "debug";
+        return "info";
     }
 
     /**
