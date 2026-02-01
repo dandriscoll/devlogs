@@ -28,23 +28,18 @@ echo -n "Test 3: Jenkins subcommand... "
 "$BINARY" jenkins --help > /dev/null 2>&1
 echo "PASS"
 
-# Test 4: Jenkins attach help
-echo -n "Test 4: Jenkins attach help... "
-"$BINARY" jenkins attach --help | grep -q "background"
+# Test 4: Jenkins snapshot help
+echo -n "Test 4: Jenkins snapshot help... "
+"$BINARY" jenkins snapshot --help | grep -q "build"
 echo "PASS"
 
-# Test 5: Jenkins stop help
-echo -n "Test 5: Jenkins stop help... "
-"$BINARY" jenkins stop --help > /dev/null 2>&1
-echo "PASS"
-
-# Test 6: Init subcommand exists
-echo -n "Test 6: Init subcommand... "
+# Test 5: Init subcommand exists
+echo -n "Test 5: Init subcommand... "
 "$BINARY" init --help > /dev/null 2>&1
 echo "PASS"
 
-# Test 7: Diagnose subcommand exists
-echo -n "Test 7: Diagnose subcommand... "
+# Test 6: Diagnose subcommand exists
+echo -n "Test 6: Diagnose subcommand... "
 "$BINARY" diagnose --help > /dev/null 2>&1
 echo "PASS"
 
