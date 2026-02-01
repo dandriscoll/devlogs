@@ -10,7 +10,7 @@ import click
 import typer
 from pathlib import Path
 
-from .config import load_config, set_dotenv_path, set_url, URLParseError, _parse_opensearch_url
+from .config import load_config, set_dotenv_path, set_url, URLParseError, _parse_opensearch_url, parse_url, CollectorURLConfig
 from .formatting import format_timestamp
 from .opensearch.client import (
 	get_opensearch_client,
@@ -39,7 +39,7 @@ OLD_TEMPLATE_NAMES = ("devlogs-template", "devlogs-logs-template")
 
 # Common options for commands - these can be placed anywhere in the command line
 ENV_OPTION = typer.Option(None, "--env", help="Path to .env file to load")
-URL_OPTION = typer.Option(None, "--url", help="OpenSearch URL (e.g., https://user:pass@host:port/index)")
+URL_OPTION = typer.Option(None, "--url", help="URL (e.g., opensearchs://user:pass@host:port/index or https://TOKEN@host:port/path)")
 
 
 def _apply_common_options(env: str = None, url: str = None):
@@ -1172,7 +1172,13 @@ def demo(
 	"""Generate demo logs to illustrate devlogs capabilities."""
 	_apply_common_options(env, url)
 	from .demo import run_demo
-	run_demo(duration, count, require_opensearch)
+
+	cfg = load_config()
+	if cfg.url_mode == "collector":
+		from .devlogs_client import DevlogsClient
+		run_demo(duration, count, require_opensearch=None, collector_url=cfg.collector_url)
+	else:
+		run_demo(duration, count, require_opensearch=require_opensearch)
 
 
 @app.command()
@@ -1187,8 +1193,20 @@ def serve(
 
 
 def _build_opensearch_url(scheme: str, host: str, port: int, user: str, password: str, index: str) -> str:
-	"""Build an OpenSearch URL from components, URL-encoding credentials."""
+	"""Build an OpenSearch URL from components, URL-encoding credentials.
+
+	Uses the opensearchs:// scheme (TLS) or opensearch:// (non-TLS).
+	The scheme parameter accepts 'https'/'http' (mapped to opensearch schemes)
+	or 'opensearchs'/'opensearch' directly.
+	"""
 	from urllib.parse import quote
+	# Map legacy schemes to opensearch:// variants
+	if scheme == "https":
+		url_scheme = "opensearchs"
+	elif scheme == "http":
+		url_scheme = "opensearch"
+	else:
+		url_scheme = scheme
 	# URL-encode username and password to handle special characters
 	encoded_user = quote(user, safe="") if user else ""
 	encoded_pass = quote(password, safe="") if password else ""
@@ -1199,7 +1217,7 @@ def _build_opensearch_url(scheme: str, host: str, port: int, user: str, password
 	else:
 		auth = ""
 	path = f"/{index}" if index else ""
-	return f"{scheme}://{auth}{host}:{port}{path}"
+	return f"{url_scheme}://{auth}{host}:{port}{path}"
 
 
 def _format_env_output(scheme: str, host: str, port: int, user: str, password: str, index: str) -> str:
@@ -1215,155 +1233,6 @@ def _format_env_output(scheme: str, host: str, port: int, user: str, password: s
 	if index:
 		lines.append(f"DEVLOGS_INDEX={index}")
 	return "\n".join(lines)
-
-
-@app.command()
-def initjenkins(
-	jenkinsfile: str = typer.Argument("Jenkinsfile", help="Path to Jenkinsfile to modify"),
-	credential_id: str = typer.Option("devlogs-opensearch-url", "--credential-id", "-c", help="Jenkins credential ID to use"),
-	env: str = ENV_OPTION,
-	url: str = URL_OPTION,
-):
-	"""Add devlogs configuration to an existing Jenkinsfile.
-
-	This command modifies an existing Jenkinsfile to add an options block
-	with the devlogs pipeline step configured to use a Jenkins credential.
-
-	After running this command, you need to create a Jenkins credential
-	of type "Secret text" with the OpenSearch URL.
-
-	Examples:
-	  devlogs initjenkins                        # Modify ./Jenkinsfile
-	  devlogs initjenkins path/to/Jenkinsfile    # Modify specific file
-	  devlogs initjenkins --credential-id my-cred  # Use custom credential ID
-	"""
-	import re
-
-	_apply_common_options(env, url)
-
-	jenkinsfile_path = Path(jenkinsfile)
-	if not jenkinsfile_path.is_file():
-		typer.echo(typer.style(f"Error: Jenkinsfile not found: {jenkinsfile_path}", fg=typer.colors.RED), err=True)
-		raise typer.Exit(1)
-
-	content = jenkinsfile_path.read_text(encoding="utf-8")
-
-	# Check if this looks like a declarative pipeline
-	if "pipeline" not in content:
-		typer.echo(typer.style("Error: File does not appear to be a declarative Jenkins pipeline.", fg=typer.colors.RED), err=True)
-		typer.echo("This command only supports declarative pipelines with a 'pipeline { }' block.", err=True)
-		raise typer.Exit(1)
-
-	# Check if devlogs is already configured
-	if "devlogs(" in content:
-		typer.echo(typer.style("Warning: Jenkinsfile already appears to have devlogs configuration.", fg=typer.colors.YELLOW))
-		typer.echo("Review the file manually to ensure correct configuration.")
-		raise typer.Exit(0)
-
-	options_line = f"        devlogs(credentialsId: '{credential_id}')"
-
-	modified = False
-	lines = content.split("\n")
-	result_lines = []
-	i = 0
-
-	# Track brace depth and whether we're inside pipeline block
-	in_pipeline = False
-	pipeline_brace_depth = 0
-	added_options = False
-
-	while i < len(lines):
-		line = lines[i]
-		result_lines.append(line)
-
-		# Detect entering pipeline block
-		if not in_pipeline and re.match(r'^\s*pipeline\s*\{', line):
-			in_pipeline = True
-			pipeline_brace_depth = 1
-			i += 1
-			continue
-
-		if in_pipeline:
-			# Count braces to track depth
-			pipeline_brace_depth += line.count('{') - line.count('}')
-
-			# Check for existing options block and add our line
-			if not added_options and re.match(r'^\s*options\s*\{', line):
-				result_lines.append(options_line)
-				added_options = True
-				modified = True
-
-			# If we hit stages and haven't added options, add it before stages
-			if re.match(r'^\s*stages\s*\{', line) and not added_options:
-				# Insert before the stages line
-				result_lines.pop()  # Remove the stages line we just added
-
-				result_lines.append("")
-				result_lines.append("    options {")
-				result_lines.append(options_line)
-				result_lines.append("    }")
-				added_options = True
-				modified = True
-
-				result_lines.append("")
-				result_lines.append(line)  # Re-add the stages line
-
-			# Exit pipeline tracking when we close the pipeline block
-			if pipeline_brace_depth == 0:
-				in_pipeline = False
-
-		i += 1
-
-	if not modified:
-		typer.echo(typer.style("Error: Could not find a suitable location to add devlogs configuration.", fg=typer.colors.RED), err=True)
-		typer.echo("Ensure the Jenkinsfile has a 'pipeline { stages { } }' structure.", err=True)
-		raise typer.Exit(1)
-
-	# Write the modified file
-	new_content = "\n".join(result_lines)
-	jenkinsfile_path.write_text(new_content, encoding="utf-8")
-
-	typer.echo(typer.style(f"Modified {jenkinsfile_path}", fg=typer.colors.GREEN))
-	typer.echo()
-	typer.echo("Added:")
-	typer.echo(f"  - Options: devlogs(credentialsId: '{credential_id}')")
-
-	# Print setup instructions
-	typer.echo()
-	typer.echo(typer.style("Next steps - Create Jenkins credential:", fg=typer.colors.CYAN, bold=True))
-	typer.echo("=" * 60)
-	typer.echo()
-	typer.echo("1. Go to Jenkins > Manage Jenkins > Credentials")
-	typer.echo("2. Select the appropriate domain (e.g., Global)")
-	typer.echo("3. Click 'Add Credentials'")
-	typer.echo("4. Configure:")
-	typer.echo(f"   - Kind: Secret text")
-	typer.echo(f"   - ID: {credential_id}")
-	typer.echo("   - Secret: <your OpenSearch URL>")
-	typer.echo()
-
-	# Try to load config and show the URL value
-	try:
-		cfg = load_config()
-		if cfg.enabled:
-			# Build the URL from config
-			credential_url = _build_opensearch_url(
-				cfg.opensearch_scheme,
-				cfg.opensearch_host,
-				cfg.opensearch_port,
-				cfg.opensearch_user,
-				cfg.opensearch_pass,
-				cfg.index,
-			)
-			typer.echo(typer.style("Credential value (from your .env/environment):", fg=typer.colors.GREEN, bold=True))
-			typer.echo("-" * 60)
-			typer.echo(credential_url)
-			typer.echo("-" * 60)
-		else:
-			typer.echo("Tip: Set up a .env file with DEVLOGS_OPENSEARCH_URL to see the exact value here.")
-			typer.echo("     Run 'devlogs mkurl' to interactively build the URL.")
-	except Exception:
-		typer.echo("Tip: Run 'devlogs mkurl' to interactively build the OpenSearch URL.")
 
 
 @app.command()
@@ -1416,10 +1285,8 @@ def mkurl():
 	else:
 		# Prompt for each component
 		typer.echo()
-		scheme = typer.prompt("Scheme (http/https)", default="https")
-		if scheme not in ("http", "https"):
-			typer.echo(typer.style("Error: Scheme must be 'http' or 'https'.", fg=typer.colors.RED), err=True)
-			raise typer.Exit(1)
+		use_tls = typer.prompt("Use TLS? (yes/no)", default="yes")
+		scheme = "https" if use_tls.lower() in ("yes", "y") else "http"
 		host = typer.prompt("Host", default="localhost")
 		default_port = 443 if scheme == "https" else 9200
 		port = int(typer.prompt("Port", default=str(default_port)))

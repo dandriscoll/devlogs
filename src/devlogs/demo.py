@@ -13,29 +13,42 @@ from .handler import OpenSearchHandler
 def run_demo(
 	duration: int,
 	count: int,
-	require_opensearch,
+	require_opensearch=None,
+	collector_url: str = None,
 ):
 	"""Generate demo logs to illustrate devlogs capabilities."""
 	cfg = load_config()
 
-	# Show loaded configuration
-	typer.echo("=== DevLogs Demo ===\n")
-	typer.echo("Configuration loaded from .env:")
-	typer.echo(f"  DEVLOGS_OPENSEARCH_HOST: {cfg.opensearch_host}")
-	typer.echo(f"  DEVLOGS_OPENSEARCH_PORT: {cfg.opensearch_port}")
-	typer.echo(f"  DEVLOGS_OPENSEARCH_USER: {cfg.opensearch_user}")
-	typer.echo(f"  DEVLOGS_OPENSEARCH_PASS: {'*' * len(cfg.opensearch_pass)}")
-	typer.echo(f"  DEVLOGS_INDEX: {cfg.index}")
-	typer.echo(f"  DEVLOGS_RETENTION_DEBUG: {cfg.retention_debug_hours}h")
-	typer.echo("")
+	if collector_url:
+		# Collector mode
+		typer.echo("=== DevLogs Demo (Collector Mode) ===\n")
+		typer.echo(f"  Collector URL: {collector_url}")
+		typer.echo("")
 
-	# Check OpenSearch connection and index
-	client, cfg = require_opensearch()
-	handler = OpenSearchHandler(
-		level=logging.DEBUG,
-		opensearch_client=client,
-		index_name=cfg.index,
-	)
+		handler = OpenSearchHandler(
+			level=logging.DEBUG,
+			collector_url=collector_url,
+		)
+	else:
+		# OpenSearch mode
+		typer.echo("=== DevLogs Demo ===\n")
+		typer.echo("Configuration loaded from .env:")
+		typer.echo(f"  DEVLOGS_OPENSEARCH_HOST: {cfg.opensearch_host}")
+		typer.echo(f"  DEVLOGS_OPENSEARCH_PORT: {cfg.opensearch_port}")
+		typer.echo(f"  DEVLOGS_OPENSEARCH_USER: {cfg.opensearch_user}")
+		typer.echo(f"  DEVLOGS_OPENSEARCH_PASS: {'*' * len(cfg.opensearch_pass)}")
+		typer.echo(f"  DEVLOGS_INDEX: {cfg.index}")
+		typer.echo(f"  DEVLOGS_RETENTION_DEBUG: {cfg.retention_debug_hours}h")
+		typer.echo("")
+
+		# Check OpenSearch connection and index
+		client, cfg = require_opensearch()
+		handler = OpenSearchHandler(
+			level=logging.DEBUG,
+			opensearch_client=client,
+			index_name=cfg.index,
+		)
+
 	handler.setFormatter(logging.Formatter("%(message)s"))
 
 	logger = logging.getLogger("devlogs.demo")

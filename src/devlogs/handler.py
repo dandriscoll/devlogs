@@ -3,9 +3,12 @@
 # A Python logging handler that writes log records to OpenSearch using
 # the devlogs record schema (v2.0).
 
+import json
 import logging
 import time
 import uuid
+import urllib.request
+import urllib.error
 from datetime import datetime, timezone
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 from .context import get_area, get_operation_id
@@ -83,6 +86,7 @@ class DevlogsHandler(logging.Handler):
 		index_name: Optional[str] = None,
 		environment: Optional[str] = None,
 		version: Optional[str] = None,
+		collector_url: Optional[str] = None,
 	):
 		"""Initialize the DevlogsHandler.
 
@@ -94,6 +98,8 @@ class DevlogsHandler(logging.Handler):
 			index_name: Target OpenSearch index (from config if None)
 			environment: Deployment environment (optional)
 			version: Application version (optional)
+			collector_url: Collector URL for POST mode (alternative to opensearch_client).
+				Supports token in userinfo (https://TOKEN@host) or ?token= query param.
 		"""
 		super().__init__(level)
 		self.application = application
@@ -103,20 +109,54 @@ class DevlogsHandler(logging.Handler):
 		self.client = opensearch_client
 		self.index_name = index_name
 
+		# Collector mode setup
+		self._collector_endpoint = None
+		self._collector_headers = None
+		if collector_url:
+			from .config import parse_url, CollectorURLConfig
+			try:
+				parsed = parse_url(collector_url)
+			except Exception:
+				parsed = None
+			if isinstance(parsed, CollectorURLConfig):
+				base = parsed.url.rstrip("/")
+				self._collector_endpoint = f"{base}/v1/logs"
+				self._collector_headers = {"Content-Type": "application/json"}
+				if parsed.token:
+					self._collector_headers["Authorization"] = f"Bearer {parsed.token}"
+			else:
+				# Treat as plain collector URL without token extraction
+				base = collector_url.rstrip("/")
+				self._collector_endpoint = f"{base}/v1/logs"
+				self._collector_headers = {"Content-Type": "application/json"}
+
 	def emit(self, record: logging.LogRecord) -> None:
-		"""Emit a log record to OpenSearch."""
+		"""Emit a log record to OpenSearch or a collector endpoint."""
 		# Build log document
 		doc = self.format_record(record)
 
-		# Circuit breaker: skip indexing if we know the index is unavailable
+		# Circuit breaker: skip indexing if we know the target is unavailable
 		current_time = time.time()
 		if DevlogsHandler._circuit_open and current_time < DevlogsHandler._circuit_open_until:
 			# Silently fail - circuit is open
 			return
 
-		# Index document
 		try:
-			if self.client:
+			if self._collector_endpoint:
+				# Collector mode: POST to /v1/logs
+				data = json.dumps(doc).encode("utf-8")
+				req = urllib.request.Request(
+					self._collector_endpoint,
+					data=data,
+					headers=self._collector_headers,
+					method="POST",
+				)
+				with urllib.request.urlopen(req, timeout=10) as resp:
+					pass  # 2xx = success
+				if DevlogsHandler._circuit_open:
+					DevlogsHandler._circuit_open = False
+					print(f"[devlogs] Connection restored, resuming logging")
+			elif self.client:
 				doc["doc_type"] = "log_entry"
 				self.client.index(index=self.index_name, body=doc)
 				# Success - close circuit breaker if it was open

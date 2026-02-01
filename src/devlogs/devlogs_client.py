@@ -9,7 +9,7 @@ import urllib.error
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import urlparse, unquote, urlunparse
+from urllib.parse import urlparse, unquote, urlunparse, parse_qs, urlencode
 
 
 def _parse_collector_url(url: str) -> Tuple[str, Optional[str]]:
@@ -18,17 +18,22 @@ def _parse_collector_url(url: str) -> Tuple[str, Optional[str]]:
     Distinguishes between OpenSearch URLs and collector URLs:
     - OpenSearch URL: has BOTH username AND password - keep credentials in URL
     - Collector URL: has only token in username position - extract for Bearer auth
+    - Collector URL with ?token= query param - extract token from query string
 
-    Collector URL format: http://token@host:port
-    OpenSearch URL format: http://user:password@host:port
+    Collector URL formats:
+        http://token@host:port
+        http://host:port?token=TOKEN
+    OpenSearch URL format:
+        http://user:password@host:port
 
     Args:
-        url: The URL, optionally with credentials in userinfo
+        url: The URL, optionally with credentials in userinfo or ?token= param
 
     Returns:
         Tuple of (url, token):
         - For OpenSearch URLs (user:pass): returns original URL, None
         - For collector URLs (token only): returns clean URL without userinfo, token
+        - For URLs with ?token= param: returns clean URL without token param, token
         - For plain URLs: returns original URL, None
     """
     if not url:
@@ -36,8 +41,19 @@ def _parse_collector_url(url: str) -> Tuple[str, Optional[str]]:
 
     parsed = urlparse(url)
 
-    # If no userinfo, return as-is
+    # If no userinfo, check for ?token= query param
     if not parsed.username and not parsed.password:
+        query_params = parse_qs(parsed.query)
+        token_values = query_params.get("token")
+        if token_values:
+            token = token_values[0]
+            remaining = {k: v[0] for k, v in query_params.items() if k != "token"}
+            new_query = urlencode(remaining) if remaining else ""
+            clean_url = urlunparse((
+                parsed.scheme, parsed.netloc, parsed.path,
+                parsed.params, new_query, parsed.fragment,
+            ))
+            return clean_url, token
         return url, None
 
     # OpenSearch URL: has BOTH username AND password

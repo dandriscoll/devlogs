@@ -5,11 +5,7 @@ import typer
 
 from .core import (
 	detect_jenkins_environment,
-	run_attach,
 	run_snapshot,
-	stop_attach_process,
-	read_state,
-	is_process_running,
 	JenkinsError,
 	JenkinsAuthError,
 	JenkinsEnvironmentError,
@@ -22,11 +18,11 @@ from ..opensearch.client import (
 	OpenSearchError,
 )
 
-jenkins_app = typer.Typer(help="Jenkins log streaming commands")
+jenkins_app = typer.Typer(help="Jenkins log commands")
 
 # Common options for jenkins commands
 JENKINS_ENV_OPTION = typer.Option(None, "--env", help="Path to .env file to load")
-JENKINS_URL_OPTION = typer.Option(None, "--url", "--opensearch-url", help="OpenSearch URL (e.g., https://user:pass@host:port/index)")
+JENKINS_URL_OPTION = typer.Option(None, "--url", "--opensearch-url", help="OpenSearch URL (e.g., opensearchs://user:pass@host:port/index)")
 
 
 def _apply_common_options(env: str = None, url: str = None):
@@ -51,136 +47,6 @@ def _require_opensearch():
 
 
 @jenkins_app.command()
-def attach(
-	build_url: str = typer.Option(
-		None,
-		"--build-url",
-		help="Jenkins build URL (auto-detected from BUILD_URL env var if not specified)",
-	),
-	background: bool = typer.Option(
-		False,
-		"--background",
-		"-b",
-		help="Run in background mode",
-	),
-	no_resume: bool = typer.Option(
-		False,
-		"--no-resume",
-		help="Don't resume from last indexed offset",
-	),
-	verbose: bool = typer.Option(
-		False,
-		"--verbose",
-		"-v",
-		help="Enable verbose output",
-	),
-	env: str = JENKINS_ENV_OPTION,
-	url: str = JENKINS_URL_OPTION,
-):
-	"""Attach to a Jenkins build and stream logs to OpenSearch.
-
-	This command streams logs from a Jenkins build to OpenSearch in near real-time.
-	It automatically detects the current build from Jenkins environment variables
-	when run from within a Jenkins Pipeline.
-
-	Required environment variables (when run inside Jenkins):
-	  BUILD_URL: Canonical URL of the build (auto-set by Jenkins)
-
-	Optional environment variables:
-	  JENKINS_USER: Username for Jenkins authentication
-	  JENKINS_TOKEN: API token for Jenkins authentication
-	  JOB_NAME, BUILD_NUMBER, BUILD_TAG, BRANCH_NAME, GIT_COMMIT: Build metadata
-
-	Example Jenkinsfile usage:
-	  stage('Attach logs') {
-	    steps {
-	      sh 'devlogs jenkins attach --background'
-	    }
-	  }
-	  post {
-	    always {
-	      sh 'devlogs jenkins stop || true'
-	    }
-	  }
-	"""
-	# Apply common options and verify OpenSearch connection
-	_apply_common_options(env, url)
-	_require_opensearch()
-
-	try:
-		build_info = detect_jenkins_environment(build_url)
-	except JenkinsEnvironmentError as e:
-		typer.echo(typer.style(f"Error: {e}", fg=typer.colors.RED), err=True)
-		raise typer.Exit(1)
-
-	if verbose:
-		typer.echo(f"Attaching to build: {build_info.build_url}")
-		if build_info.job_name:
-			typer.echo(f"  Job: {build_info.job_name}")
-		if build_info.build_number:
-			typer.echo(f"  Build: #{build_info.build_number}")
-		if build_info.branch_name:
-			typer.echo(f"  Branch: {build_info.branch_name}")
-		typer.echo(f"  Run ID: {build_info.run_id}")
-
-	try:
-		run_attach(
-			build_info,
-			background=background,
-			resume=not no_resume,
-			verbose=verbose,
-		)
-	except JenkinsAuthError as e:
-		typer.echo(typer.style(f"Error: {e}", fg=typer.colors.RED), err=True)
-		raise typer.Exit(1)
-	except JenkinsError as e:
-		typer.echo(typer.style(f"Error: {e}", fg=typer.colors.RED), err=True)
-		raise typer.Exit(1)
-
-
-@jenkins_app.command()
-def stop():
-	"""Stop a running background attach process.
-
-	This command finds and stops a devlogs jenkins attach process that was
-	started with --background in the current workspace.
-
-	Example Jenkinsfile usage:
-	  post {
-	    always {
-	      sh 'devlogs jenkins stop || true'
-	    }
-	  }
-	"""
-	state = read_state()
-
-	if not state:
-		typer.echo(typer.style("No attach process found.", dim=True))
-		raise typer.Exit(0)
-
-	if not is_process_running(state.pid):
-		typer.echo(typer.style(
-			f"Attach process (PID {state.pid}) is no longer running.",
-			dim=True,
-		))
-		from .core import clear_state
-		clear_state()
-		raise typer.Exit(0)
-
-	if stop_attach_process():
-		typer.echo(typer.style(
-			f"Stopped attach process (PID {state.pid})",
-			fg=typer.colors.GREEN,
-		))
-	else:
-		typer.echo(typer.style(
-			"Failed to stop attach process.",
-			fg=typer.colors.RED,
-		), err=True)
-		raise typer.Exit(1)
-
-
-@jenkins_app.command()
 def snapshot(
 	build_url: str = typer.Option(
 		None,
@@ -198,13 +64,16 @@ def snapshot(
 ):
 	"""Take a one-time snapshot of Jenkins build logs.
 
-	Unlike 'attach', this command fetches all currently available logs
-	and exits immediately. It does not stream logs in real-time.
+	Fetches all currently available logs from a Jenkins build and indexes
+	them into OpenSearch. Does not stream logs in real-time.
 
 	This is useful for:
 	  - Capturing logs from completed builds
 	  - One-time log imports
 	  - Debugging without continuous streaming
+
+	For real-time log streaming during builds, use the Devlogs Jenkins Plugin instead.
+	See jenkins-plugin/README.md for details.
 
 	Example:
 	  devlogs jenkins snapshot --build-url https://jenkins.example.com/job/my-job/123/
@@ -231,27 +100,3 @@ def snapshot(
 	except JenkinsError as e:
 		typer.echo(typer.style(f"Error: {e}", fg=typer.colors.RED), err=True)
 		raise typer.Exit(1)
-
-
-@jenkins_app.command()
-def status():
-	"""Show the status of the current attach process."""
-	state = read_state()
-
-	if not state:
-		typer.echo(typer.style("No attach process found.", dim=True))
-		raise typer.Exit(0)
-
-	running = is_process_running(state.pid)
-
-	typer.echo(f"Attach process status:")
-	typer.echo(f"  PID: {state.pid}")
-	typer.echo(f"  Status: {typer.style('running', fg=typer.colors.GREEN) if running else typer.style('stopped', fg=typer.colors.RED)}")
-	typer.echo(f"  Run ID: {state.run_id}")
-	typer.echo(f"  Build URL: {state.build_url}")
-	typer.echo(f"  Offset: {state.offset}")
-	typer.echo(f"  Started: {state.started_at}")
-
-	if not running:
-		from .core import clear_state
-		clear_state()

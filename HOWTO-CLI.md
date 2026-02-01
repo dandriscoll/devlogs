@@ -23,21 +23,35 @@ These options can be used with any command:
 | Option | Description |
 |--------|-------------|
 | `--env PATH` | Path to .env file to load |
-| `--url URL` | OpenSearch URL (e.g., `https://user:pass@host:port/index`) |
+| `--url URL` | URL (collector or OpenSearch) |
 | `--help` | Show help and exit |
 
 ### Using `--url`
 
-The `--url` option provides a convenient way to specify all OpenSearch connection details in a single URL:
+The `--url` option accepts both collector URLs and OpenSearch URLs. The URL type is auto-detected.
 
+**Collector URL** (sends logs via HTTP to a collector):
 ```bash
-# URL format: scheme://user:password@host:port/index
-devlogs --url 'https://admin:mypass@opensearch.example.com:9200/devlogs-prod' tail
+# Token in userinfo
+devlogs demo --url 'https://TOKEN@collector.example.com:8080/path'
 
-# Special characters in passwords must be URL-encoded
-# Use the mkurl command to help construct properly encoded URLs
-devlogs --url 'https://admin:pass%21word@host:9200/index' diagnose
+# Token in query parameter
+devlogs demo --url 'https://collector.example.com:8080/path?token=TOKEN'
 ```
+
+**OpenSearch URL** (direct OpenSearch connection):
+```bash
+# TLS (recommended)
+devlogs --url 'opensearchs://admin:mypass@opensearch.example.com:9200/devlogs-prod' tail
+
+# Non-TLS (local dev)
+devlogs --url 'opensearch://admin:mypass@localhost:9200/devlogs-prod' tail
+
+# Legacy format (deprecated, still works with a warning)
+devlogs --url 'https://admin:mypass@opensearch.example.com:9200/devlogs-prod' tail
+```
+
+Special characters in passwords must be URL-encoded. Use `devlogs mkurl` to construct properly encoded URLs.
 
 ### Using `--env`
 
@@ -342,7 +356,7 @@ devlogs delete devlogs-test --force
 
 ### `demo`
 
-Generate demo logs to test your setup.
+Generate demo logs to test your setup. Works with both collector and OpenSearch backends.
 
 ```bash
 devlogs demo [OPTIONS]
@@ -353,8 +367,14 @@ devlogs demo [OPTIONS]
 | `-t, --duration INTEGER` | Duration in seconds (default: 10) |
 | `-n, --count INTEGER` | Number of log entries (default: 50) |
 
-**Example:**
+**Examples:**
 ```bash
+# Demo with OpenSearch
+devlogs demo --url 'opensearchs://admin:pass@localhost:9200/myindex'
+
+# Demo with collector
+devlogs demo --url 'https://TOKEN@collector.example.com:8080'
+
 # Generate demo logs while tailing
 devlogs demo --duration 30 --count 100 &
 devlogs tail --follow
@@ -421,55 +441,9 @@ devlogs initmcp all
 
 ## Jenkins Commands
 
-Stream Jenkins build logs to OpenSearch. See [HOWTO-JENKINS.md](HOWTO-JENKINS.md) for full setup guide.
-
-### `jenkins attach`
-
-Attach to a Jenkins build and stream logs to OpenSearch.
-
-```bash
-devlogs jenkins attach [OPTIONS]
-```
-
-| Option | Description |
-|--------|-------------|
-| `--build-url TEXT` | Jenkins build URL (auto-detected from `BUILD_URL`) |
-| `--url TEXT` | OpenSearch URL (e.g., `https://user:pass@host:port/index`) |
-| `-b, --background` | Run in background mode |
-| `--no-resume` | Don't resume from last indexed offset |
-| `-v, --verbose` | Enable verbose output |
-
-**Examples:**
-```bash
-# Attach in foreground (for testing)
-devlogs jenkins attach
-
-# Attach in background (for Jenkinsfile)
-devlogs jenkins attach --background
-
-# Explicit build URL
-devlogs jenkins attach --build-url https://jenkins.example.com/job/my-job/123/
-```
-
-### `jenkins stop`
-
-Stop a running background attach process.
-
-```bash
-devlogs jenkins stop
-```
-
-### `jenkins status`
-
-Show the status of the current attach process.
-
-```bash
-devlogs jenkins status
-```
-
 ### `jenkins snapshot`
 
-Take a one-time snapshot of Jenkins build logs (no streaming).
+Take a one-time snapshot of Jenkins build logs and index them into OpenSearch.
 
 ```bash
 devlogs jenkins snapshot [OPTIONS]
@@ -478,7 +452,7 @@ devlogs jenkins snapshot [OPTIONS]
 | Option | Description |
 |--------|-------------|
 | `--build-url TEXT` | Jenkins build URL |
-| `--url TEXT` | OpenSearch URL (e.g., `https://user:pass@host:port/index`) |
+| `--url TEXT` | OpenSearch URL |
 | `-v, --verbose` | Enable verbose output |
 
 **Example:**
@@ -486,9 +460,55 @@ devlogs jenkins snapshot [OPTIONS]
 devlogs jenkins snapshot --build-url https://jenkins.example.com/job/my-job/123/
 ```
 
+For real-time log streaming during builds, use the **Devlogs Jenkins Plugin** instead. See [HOWTO-JENKINS.md](HOWTO-JENKINS.md).
+
+---
+
+## URL Formats
+
+Devlogs auto-detects URL type from the scheme and credentials:
+
+### Collector URLs
+
+Standard HTTP endpoints where applications send logs. The token is extracted and sent as a Bearer auth header.
+
+```
+https://TOKEN@host:port/path
+https://host:port/path?token=TOKEN
+```
+
+### OpenSearch URLs
+
+Direct connections to OpenSearch for querying and indexing.
+
+```
+opensearchs://user:pass@host:port/INDEX
+opensearchs://user:pass@host:port/INDEX/APPLICATION
+opensearch://user:pass@host:port/INDEX
+```
+
+- `opensearchs://` maps to HTTPS (TLS)
+- `opensearch://` maps to HTTP (non-TLS)
+- First path segment is the index name
+- Optional second path segment is an application filter
+
+### Legacy OpenSearch Format (deprecated)
+
+```
+https://user:pass@host:port/index
+```
+
+URLs with both username and password under `https://` are treated as OpenSearch and emit a deprecation warning. Migrate to `opensearchs://` instead.
+
 ---
 
 ## Environment Variables
+
+### Collector
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `DEVLOGS_URL` | Collector URL (where apps send logs) | - |
 
 ### OpenSearch Connection
 
@@ -519,36 +539,6 @@ devlogs jenkins snapshot --build-url https://jenkins.example.com/job/my-job/123/
 | `BUILD_URL` | Jenkins build URL (auto-set by Jenkins) |
 | `JENKINS_USER` | Jenkins API username |
 | `JENKINS_TOKEN` | Jenkins API token |
-| `JOB_NAME`, `BUILD_NUMBER`, `BUILD_TAG` | Build metadata (auto-set) |
-| `BRANCH_NAME`, `GIT_COMMIT` | Git metadata (auto-set) |
-
-#### Obtaining a Jenkins API Token
-
-If your Jenkins instance requires authentication, you'll need to create an API token:
-
-1. Log into the Jenkins web UI
-2. Click your username in the top right corner
-3. Click **Configure** (or go to `/user/<username>/configure`)
-4. Under **API Token**, click **Add new Token**
-5. Give it a name (e.g., "devlogs") and click **Generate**
-6. Copy the token immediately (it won't be shown again)
-
-Then set the environment variables:
-
-```bash
-export JENKINS_USER=your-username
-export JENKINS_TOKEN=your-api-token
-```
-
-Or in Docker Compose:
-
-```yaml
-services:
-  your-service:
-    environment:
-      - JENKINS_USER=your-username
-      - JENKINS_TOKEN=your-api-token
-```
 
 ---
 
@@ -556,7 +546,6 @@ services:
 
 The standalone binary (`devlogs-linux`) includes all dependencies and doesn't require Python. It's useful for:
 
-- Jenkins pipelines (no Python installation needed)
 - CI/CD environments
 - Quick debugging on servers
 
@@ -572,17 +561,7 @@ The standalone binary (`devlogs-linux`) includes all dependencies and doesn't re
 ```bash
 # All commands work the same as the Python version
 ./dist/devlogs-linux --help
-./dist/devlogs-linux --url 'https://admin:pass@host:9200/index' tail
-./dist/devlogs-linux jenkins attach --background
-```
-
-### Distributing the Binary
-
-Host the binary somewhere accessible (GitHub releases, S3, internal server) and download it in your CI/CD pipelines:
-
-```bash
-curl -sL $DEVLOGS_BINARY_URL -o /tmp/devlogs && chmod +x /tmp/devlogs
-/tmp/devlogs jenkins attach --background
+./dist/devlogs-linux --url 'opensearchs://admin:pass@host:9200/index' tail
 ```
 
 ---
@@ -629,27 +608,27 @@ devlogs mkurl
 devlogs diagnose
 
 # Test with explicit URL
-devlogs --url 'https://user:pass@host:9200/index' diagnose
+devlogs --url 'opensearchs://user:pass@host:9200/index' diagnose
 ```
 
-### CI/CD Integration
+### CI/CD Integration (Jenkins Plugin)
 
 ```groovy
-// Jenkinsfile
+// Jenkinsfile - using the Devlogs Jenkins Plugin
 pipeline {
-    environment {
-        DEVLOGS_OPENSEARCH_URL = credentials('devlogs-url')
+    agent any
+    options {
+        devlogs(credentialsId: 'devlogs-opensearch-url')
     }
     stages {
         stage('Build') {
             steps {
-                sh 'devlogs jenkins attach --background'
                 sh 'make build'
+                sh 'make test'
             }
         }
     }
-    post {
-        always { sh 'devlogs jenkins stop || true' }
-    }
 }
 ```
+
+See [HOWTO-JENKINS.md](HOWTO-JENKINS.md) for details.

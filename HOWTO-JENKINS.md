@@ -1,160 +1,81 @@
 # Using Devlogs with Jenkins
 
-Stream Jenkins build logs to OpenSearch in near real-time.
+Stream Jenkins build logs to OpenSearch in near real-time using the Devlogs Jenkins Plugin.
 
-## Two Integration Options
-
-### Option 1: Jenkins Plugin (Recommended)
-
-The **Devlogs Jenkins Plugin** provides native Jenkins integration with a simple wrapper syntax.
-
-**Advantages:**
-- Native Jenkins integration
-- Simple syntax: `devlogs(url: '...') { }`
-- Per-pipeline configuration
-- No binary downloads needed
-- Automatic updates via Jenkins Update Center
-
-See [jenkins-plugin/README.md](jenkins-plugin/README.md) for installation and usage.
-
-### Option 2: Standalone Binary (CLI Approach)
-
-Use the `devlogs jenkins` CLI command for environments where plugin installation is not possible.
-
-**Advantages:**
-- No Jenkins plugin installation required
-- Works with any Jenkins setup
-- More control over when logging starts/stops
-
-See below for setup instructions.
-
----
-
-## Jenkins Plugin Setup (Option 1)
-
-### Prerequisites
+## Prerequisites
 
 1. **Jenkins 2.440.3 or higher**
 2. **Java 11 or higher**
 3. **OpenSearch URL stored in Jenkins credentials** (Manage Jenkins > Credentials)
    - Add a "Secret text" credential with ID `devlogs-opensearch-url`
-   - Value: `https://user:pass@host:9200/index`
+   - Value: `opensearchs://user:pass@host:9200/index`
    - **Important:** Special characters in passwords must be URL-encoded (e.g., `!` becomes `%21`)
    - Use `devlogs mkurl` to generate a properly encoded URL
-
-### Quick Start
-
-```groovy
-pipeline {
-    agent any
-    
-    environment {
-        DEVLOGS_URL = credentials('devlogs-opensearch-url')
-    }
-    
-    stages {
-        stage('Build') {
-            steps {
-                devlogs(url: env.DEVLOGS_URL) {
-                    sh 'make build'
-                    sh 'make test'
-                }
-            }
-        }
-    }
-}
-```
-
-For complete documentation, see [jenkins-plugin/README.md](jenkins-plugin/README.md).
-
----
-
-## Standalone Binary Setup (Option 2)
-
-### Prerequisites
-
-1. **Build the standalone binary** (one-time):
-   ```sh
-   ./build-standalone.sh
-   ```
-   Then host `dist/devlogs-linux` somewhere accessible (GitHub releases, S3, internal server).
-
-2. **OpenSearch URL stored in Jenkins credentials** (Manage Jenkins > Credentials)
-   - Add a "Secret text" credential with ID `devlogs-opensearch-url`
-   - Value: `https://user:pass@host:9200/index`
-   - **Important:** Special characters in passwords must be URL-encoded (e.g., `!` becomes `%21`)
-   - Use `devlogs mkurl` to generate a properly encoded URL
-
-3. **Devlogs binary URL in Jenkins credentials**
-   - Add a "Secret text" credential with ID `devlogs-binary-url`
-   - Value: URL to your hosted `devlogs-linux` binary
 
 ## Quick Start
 
 ```groovy
 pipeline {
     agent any
-    environment {
-        DEVLOGS_OPENSEARCH_URL = credentials('devlogs-opensearch-url')
-        DEVLOGS_BINARY_URL = credentials('devlogs-binary-url')
+
+    options {
+        devlogs(credentialsId: 'devlogs-opensearch-url')
     }
+
     stages {
         stage('Build') {
             steps {
-                sh 'curl -sL $DEVLOGS_BINARY_URL -o /tmp/devlogs && chmod +x /tmp/devlogs'
-                sh '/tmp/devlogs jenkins attach --background'
-                sh 'make build'  // Your build steps
+                sh 'make build'
+                sh 'make test'
             }
-        }
-    }
-    post {
-        always {
-            sh '/tmp/devlogs jenkins stop || true'
         }
     }
 }
 ```
 
+For complete plugin documentation, see [jenkins-plugin/README.md](jenkins-plugin/README.md).
+
 ## Development Branches Only
 
-To only stream logs for non-production branches:
+To only stream logs for non-production branches, use the `devlogs` step inside a conditional block instead of `options`:
 
 ```groovy
 pipeline {
     agent any
+
     environment {
-        DEVLOGS_OPENSEARCH_URL = credentials('devlogs-opensearch-url')
-        DEVLOGS_BINARY_URL = credentials('devlogs-binary-url')
+        DEVLOGS_URL = credentials('devlogs-opensearch-url')
     }
+
     stages {
         stage('Build') {
             steps {
                 script {
                     if (env.BRANCH_NAME != 'main' && env.BRANCH_NAME != 'production') {
-                        sh 'curl -sL $DEVLOGS_BINARY_URL -o /tmp/devlogs && chmod +x /tmp/devlogs'
-                        sh '/tmp/devlogs jenkins attach --background'
+                        devlogs(url: env.DEVLOGS_URL) {
+                            sh 'make build'
+                            sh 'make test'
+                        }
+                    } else {
+                        sh 'make build'
+                        sh 'make test'
                     }
                 }
-                sh 'make build'
             }
-        }
-    }
-    post {
-        always {
-            sh '/tmp/devlogs jenkins stop || true'
         }
     }
 }
 ```
 
-## Commands
+## One-Time Log Snapshot (CLI)
 
-| Command | Description |
-|---------|-------------|
-| `devlogs jenkins attach --background` | Stream logs to OpenSearch in background |
-| `devlogs jenkins stop` | Stop background streaming |
-| `devlogs jenkins snapshot` | One-time log capture (no streaming) |
-| `devlogs jenkins status` | Show streaming status |
+To capture logs from a completed build without real-time streaming, use the CLI `jenkins snapshot` command:
+
+```bash
+devlogs jenkins snapshot --build-url https://jenkins.example.com/job/my-job/123/
+```
+
+This fetches all available console output and indexes it into OpenSearch in a single pass.
 
 ## Environment Variables
 
@@ -163,19 +84,9 @@ pipeline {
 - `JOB_NAME`, `BUILD_NUMBER`, `BUILD_TAG` - Build metadata
 - `BRANCH_NAME`, `GIT_COMMIT` - Git metadata
 
-**Optional authentication (if Jenkins requires it):**
+**Optional authentication (if Jenkins requires it for API access):**
 - `JENKINS_USER` - Username for Jenkins API
 - `JENKINS_TOKEN` - API token for Jenkins API
-
-```groovy
-withCredentials([usernamePassword(
-    credentialsId: 'devlogs-jenkins',
-    usernameVariable: 'JENKINS_USER',
-    passwordVariable: 'JENKINS_TOKEN'
-)]) {
-    sh '/tmp/devlogs jenkins attach --background'
-}
-```
 
 ## Troubleshooting
 
@@ -206,7 +117,7 @@ devlogs mkurl
 Test your URL locally before adding to Jenkins:
 
 ```bash
-devlogs --url 'https://admin:pass%21word@host:9200/index' diagnose
+devlogs --url 'opensearchs://admin:pass%21word@host:9200/index' diagnose
 ```
 
 ### Viewing Streamed Logs

@@ -2,7 +2,11 @@
 
 import os
 import re
-from urllib.parse import urlparse, unquote
+import sys
+import warnings
+from dataclasses import dataclass
+from typing import Optional
+from urllib.parse import urlparse, unquote, parse_qs
 
 # Lazy load dotenv - only when config is first accessed
 _dotenv_loaded = False
@@ -118,16 +122,180 @@ class URLParseError(ValueError):
 	pass
 
 
+@dataclass
+class CollectorURLConfig:
+	"""Parsed collector URL configuration."""
+	url: str  # Base URL (scheme://host:port/path, no credentials)
+	token: Optional[str] = None  # Bearer token
+
+
+@dataclass
+class OpenSearchURLConfig:
+	"""Parsed OpenSearch URL configuration."""
+	scheme: str
+	host: str
+	port: int
+	user: Optional[str] = None
+	password: Optional[str] = None
+	index: Optional[str] = None
+	application: Optional[str] = None  # Optional application filter from second path segment
+
+
+def parse_url(url: str):
+	"""Parse a URL and return a CollectorURLConfig or OpenSearchURLConfig.
+
+	Detection logic:
+	- opensearchs:// (TLS) or opensearch:// (non-TLS) → OpenSearch
+	- https:// or http:// with both user+pass → legacy OpenSearch (deprecation warning)
+	- https:// or http:// with token-only or ?token= → Collector
+
+	Returns: CollectorURLConfig or OpenSearchURLConfig
+	Raises: URLParseError if URL is malformed
+	"""
+	if not url:
+		raise URLParseError("Empty URL")
+
+	# Check for opensearch:// or opensearchs:// schemes
+	if url.startswith("opensearchs://") or url.startswith("opensearch://"):
+		return _parse_opensearch_scheme_url(url)
+
+	parsed = urlparse(url)
+
+	if parsed.scheme not in ("http", "https"):
+		raise URLParseError(f"Invalid URL scheme '{parsed.scheme}': expected 'http', 'https', 'opensearch', or 'opensearchs'")
+
+	if not parsed.hostname:
+		raise URLParseError(f"Invalid URL '{url}': missing hostname")
+
+	# If both user AND password → legacy OpenSearch format, emit deprecation warning
+	if parsed.username and parsed.password:
+		warnings.warn(
+			f"Using https://user:pass@host URL format for OpenSearch is deprecated. "
+			f"Use opensearchs://user:pass@host instead.",
+			DeprecationWarning,
+			stacklevel=2,
+		)
+		return _parse_opensearch_url_to_config(url)
+
+	# Otherwise it's a collector URL
+	return _parse_collector_url_config(url)
+
+
+def _parse_opensearch_scheme_url(url: str) -> OpenSearchURLConfig:
+	"""Parse opensearchs:// (TLS) or opensearch:// (non-TLS) URL into OpenSearchURLConfig."""
+	# Determine the transport scheme
+	if url.startswith("opensearchs://"):
+		transport_scheme = "https"
+		parse_url_str = "https://" + url[len("opensearchs://"):]
+	else:
+		transport_scheme = "http"
+		parse_url_str = "http://" + url[len("opensearch://"):]
+
+	parsed = urlparse(parse_url_str)
+
+	if not parsed.hostname:
+		raise URLParseError(f"Invalid URL '{url}': missing hostname")
+
+	host = parsed.hostname
+	port = parsed.port or (443 if transport_scheme == "https" else 9200)
+	user = unquote(parsed.username) if parsed.username else None
+	password = unquote(parsed.password) if parsed.password else None
+
+	# Path segments: first = index, second = application
+	path = parsed.path.strip("/")
+	parts = path.split("/", 1) if path else []
+	index = parts[0] if parts else None
+	application = parts[1] if len(parts) > 1 else None
+
+	return OpenSearchURLConfig(
+		scheme=transport_scheme,
+		host=host,
+		port=port,
+		user=user,
+		password=password,
+		index=index or None,
+		application=application or None,
+	)
+
+
+def _parse_collector_url_config(url: str) -> CollectorURLConfig:
+	"""Parse an http(s) URL as a collector URL, extracting token."""
+	parsed = urlparse(url)
+
+	token = None
+
+	# Check for token in userinfo (token-only, no password)
+	if parsed.username and not parsed.password:
+		token = unquote(parsed.username)
+		# Rebuild URL without userinfo
+		if parsed.port:
+			netloc = f"{parsed.hostname}:{parsed.port}"
+		else:
+			netloc = parsed.hostname or ""
+		from urllib.parse import urlunparse
+		clean_url = urlunparse((
+			parsed.scheme, netloc, parsed.path,
+			parsed.params, parsed.query, parsed.fragment,
+		))
+	else:
+		clean_url = url
+
+	# Check for ?token= query param
+	if not token:
+		query_params = parse_qs(parsed.query)
+		token_values = query_params.get("token")
+		if token_values:
+			token = token_values[0]
+			# Strip token param from the URL
+			from urllib.parse import urlencode
+			remaining = {k: v[0] for k, v in query_params.items() if k != "token"}
+			new_query = urlencode(remaining) if remaining else ""
+			reparsed = urlparse(clean_url)
+			from urllib.parse import urlunparse
+			clean_url = urlunparse((
+				reparsed.scheme, reparsed.netloc, reparsed.path,
+				reparsed.params, new_query, reparsed.fragment,
+			))
+
+	return CollectorURLConfig(url=clean_url, token=token)
+
+
+def _parse_opensearch_url_to_config(url: str) -> OpenSearchURLConfig:
+	"""Parse a standard http(s) URL into OpenSearchURLConfig."""
+	result = _parse_opensearch_url(url)
+	if result is None:
+		raise URLParseError(f"Invalid URL '{url}'")
+	scheme, host, port, user, password, index = result
+	return OpenSearchURLConfig(
+		scheme=scheme, host=host, port=port,
+		user=user, password=password, index=index,
+	)
+
+
 def _parse_opensearch_url(url: str):
 	"""Parse DEVLOGS_OPENSEARCH_URL into components.
 
 	Supports format: https://user:pass@host:port/index
+	Also supports: opensearchs://user:pass@host:port/index (TLS)
+	              opensearch://user:pass@host:port/index (non-TLS)
 	Returns: (scheme, host, port, user, pass, index) or None if no URL
 	Raises: URLParseError if URL is malformed
 	"""
 	if not url:
 		return None
-	parsed = urlparse(url)
+
+	# Handle opensearchs:// (TLS) and opensearch:// (non-TLS) schemes
+	if url.startswith("opensearchs://"):
+		actual_url = "https://" + url[len("opensearchs://"):]
+		force_scheme = "https"
+	elif url.startswith("opensearch://"):
+		actual_url = "http://" + url[len("opensearch://"):]
+		force_scheme = "http"
+	else:
+		actual_url = url
+		force_scheme = None
+
+	parsed = urlparse(actual_url)
 
 	# Validate scheme
 	if parsed.scheme and parsed.scheme not in ("http", "https"):
@@ -137,7 +305,7 @@ def _parse_opensearch_url(url: str):
 	if not parsed.hostname:
 		raise URLParseError(f"Invalid URL '{url}': missing hostname")
 
-	scheme = parsed.scheme or "http"
+	scheme = force_scheme or parsed.scheme or "http"
 	host = parsed.hostname
 	port = parsed.port or (443 if scheme == "https" else 9200)
 	# URL-decode username and password since urlparse doesn't do this automatically
@@ -227,6 +395,15 @@ class DevlogsConfig:
 		self.collector_workers = int(_getenv("DEVLOGS_COLLECTOR_WORKERS", "1"))
 		self.collector_log_level = _getenv("DEVLOGS_COLLECTOR_LOG_LEVEL", "info")
 
+	@property
+	def url_mode(self) -> str:
+		"""Return 'collector' if DEVLOGS_URL is set, 'opensearch' if OpenSearch is configured, else 'none'."""
+		if self.collector_url:
+			return "collector"
+		if self.has_opensearch_config():
+			return "opensearch"
+		return "none"
+
 	def has_opensearch_config(self) -> bool:
 		"""Check if OpenSearch admin connection is configured."""
 		return bool(
@@ -257,8 +434,27 @@ def set_dotenv_path(path: str):
 
 
 def set_url(url: str):
-	"""Set the OpenSearch URL. Must be called before load_config()."""
-	os.environ["DEVLOGS_OPENSEARCH_URL"] = url
+	"""Set the URL, auto-detecting whether it's a collector or OpenSearch URL.
+
+	Uses parse_url() to detect the URL type:
+	- Collector URLs → sets DEVLOGS_URL
+	- OpenSearch URLs → sets DEVLOGS_OPENSEARCH_URL
+	"""
+	if not url:
+		return
+	try:
+		parsed = parse_url(url)
+	except URLParseError:
+		# Fall back to legacy behavior
+		os.environ["DEVLOGS_OPENSEARCH_URL"] = url
+		return
+
+	if isinstance(parsed, CollectorURLConfig):
+		# Reconstruct the full collector URL for DEVLOGS_URL
+		os.environ["DEVLOGS_URL"] = url
+	else:
+		# OpenSearch URL - reconstruct with the correct scheme for _parse_opensearch_url
+		os.environ["DEVLOGS_OPENSEARCH_URL"] = url
 
 def load_config() -> DevlogsConfig:
 	"""Return a config object with all settings loaded."""
