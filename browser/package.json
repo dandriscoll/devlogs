@@ -1,6 +1,6 @@
 {
   "name": "devlogs-browser",
-  "version": "2.0.3",
+  "version": "2.1.0",
   "type": "module",
   "description": "Browser logging library for DevLogs - forwards console logs to OpenSearch",
   "main": "dist/devlogs.cjs.js",
