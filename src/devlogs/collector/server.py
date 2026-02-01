@@ -5,6 +5,8 @@
 # - Ingest mode: write directly to OpenSearch
 
 import json
+import platform
+from contextlib import asynccontextmanager
 from typing import Optional
 
 from fastapi import FastAPI, Request, Response, HTTPException
@@ -17,6 +19,7 @@ from .schema import (
     validate_record,
     normalize_records,
     enrich_record,
+    get_current_timestamp,
 )
 from .errors import (
     CollectorError,
@@ -33,12 +36,49 @@ from .auth import (
 )
 from .forwarder import forward_request
 from .ingestor import ingest_records
+from ..version import __version__
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Emit a startup trace to the index so operators can see when the collector started."""
+    cfg = load_config()
+    mode = cfg.get_collector_mode()
+
+    if mode == "ingest":
+        try:
+            client = get_opensearch_client()
+            doc = DevlogsRecord(
+                application="devlogs-collector",
+                component="lifecycle",
+                timestamp=get_current_timestamp(),
+                message="Collector started",
+                level="info",
+                area="startup",
+                version=__version__,
+                fields={
+                    "mode": mode,
+                    "host": platform.node(),
+                    "opensearch_host": cfg.opensearch_host,
+                    "index": cfg.index,
+                },
+            )
+            doc.collected_ts = get_current_timestamp()
+            doc.client_ip = "127.0.0.1"
+            doc._identity = {"mode": "internal"}
+            client.index(index=cfg.index, body=doc.to_dict())
+        except Exception:
+            # Startup trace is best-effort; don't block the server
+            pass
+
+    yield
+
 
 # Create FastAPI app for collector
 app = FastAPI(
     title="Devlogs Collector",
     description="HTTP log collector for the devlogs format",
-    version="1.0.0",
+    version=__version__,
+    lifespan=lifespan,
 )
 
 
@@ -83,6 +123,7 @@ async def health():
     return {
         "status": "healthy",
         "mode": mode,
+        "version": __version__,
     }
 
 
