@@ -12,6 +12,7 @@ SRC_DIR = os.path.join(PROJECT_ROOT, "src")
 if SRC_DIR not in sys.path:
 	sys.path.insert(0, SRC_DIR)
 
+from devlogs.handler import DevlogsHandler
 from devlogs.opensearch.client import get_opensearch_client
 from devlogs.opensearch.mappings import (
 	build_log_index_template,
@@ -24,6 +25,16 @@ def _strip_url_path(url: str) -> str:
 	"""Strip the path (index) from an opensearch(s):// URL, preserving credentials."""
 	# Match: scheme://userinfo@host:port/path -> scheme://userinfo@host:port
 	return re.sub(r'(opensearchs?://[^/]+)/.*', r'\1', url)
+
+
+@pytest.fixture(autouse=True)
+def _reset_circuit_breaker():
+	"""Reset the handler circuit breaker between tests so a tripped breaker
+	in one test doesn't silently suppress indexing in subsequent tests."""
+	yield
+	DevlogsHandler._circuit_open = False
+	DevlogsHandler._circuit_open_until = 0.0
+	DevlogsHandler._last_error_printed = 0.0
 
 
 @pytest.fixture(autouse=True)
