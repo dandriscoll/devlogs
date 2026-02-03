@@ -11,6 +11,7 @@ import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.log.FileLogStorage;
 import org.jenkinsci.plugins.workflow.log.LogStorage;
+import org.jenkinsci.plugins.workflow.log.OutputStreamTaskListener;
 
 import javax.annotation.Nonnull;
 import java.io.*;
@@ -287,7 +288,7 @@ public class DevlogsLogStorage implements LogStorage {
     /**
      * BuildListener that tees output to OpenSearch.
      */
-    private static class DevlogsBuildListener implements BuildListener, Closeable {
+    private static class DevlogsBuildListener implements BuildListener, OutputStreamTaskListener, Closeable {
         private static final long serialVersionUID = 1L;
 
         private final BuildListener delegate;
@@ -300,6 +301,12 @@ public class DevlogsLogStorage implements LogStorage {
             this.storage = storage;
             this.outputStream = new DevlogsOutputStream(delegate.getLogger(), storage, nodeId);
             this.printStream = new PrintStream(outputStream, true, StandardCharsets.UTF_8);
+        }
+
+        @Nonnull
+        @Override
+        public OutputStream getOutputStream() {
+            return outputStream;
         }
 
         @Nonnull
@@ -321,7 +328,7 @@ public class DevlogsLogStorage implements LogStorage {
     /**
      * TaskListener that tees output to OpenSearch.
      */
-    private static class DevlogsTaskListener implements TaskListener, Closeable {
+    private static class DevlogsTaskListener implements TaskListener, OutputStreamTaskListener, Closeable {
         private static final long serialVersionUID = 1L;
 
         private final TaskListener delegate;
@@ -332,6 +339,12 @@ public class DevlogsLogStorage implements LogStorage {
             this.delegate = delegate;
             this.outputStream = new DevlogsOutputStream(delegate.getLogger(), storage, nodeId);
             this.printStream = new PrintStream(outputStream, true, StandardCharsets.UTF_8);
+        }
+
+        @Nonnull
+        @Override
+        public OutputStream getOutputStream() {
+            return outputStream;
         }
 
         @Nonnull

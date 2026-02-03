@@ -193,7 +193,14 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
         String resolvedUrl = initialEnvironment.expand(url);
 
         if (resolvedUrl == null || resolvedUrl.trim().isEmpty()) {
-            listener.getLogger().println("[devlogs] No URL configured, skipping log streaming");
+            if (url != null && !url.trim().isEmpty()) {
+                // URL was configured but expanded to empty — likely a bad credential ID
+                listener.getLogger().println("[devlogs] WARNING: URL is configured but resolved to empty.");
+                listener.getLogger().println("[devlogs] WARNING: Check that the credential ID is correct and the binding variable is set.");
+                listener.getLogger().println("[devlogs] Skipping log streaming.");
+            } else {
+                listener.getLogger().println("[devlogs] No URL configured, skipping log streaming.");
+            }
             return;
         }
 
