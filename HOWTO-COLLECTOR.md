@@ -122,18 +122,6 @@ Submit log records for ingestion.
 }
 ```
 
-### GET /health
-
-Health check endpoint.
-
-**Response:**
-```json
-{
-  "status": "healthy",
-  "mode": "ingest"
-}
-```
-
 ## Configuration
 
 ### Environment Variables
@@ -320,12 +308,6 @@ services:
       - DEVLOGS_OPENSEARCH_URL=https://admin:pass@opensearch:9200/devlogs
     depends_on:
       - opensearch
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-
   opensearch:
     image: opensearchproject/opensearch:latest
     # ... opensearch config
@@ -393,12 +375,6 @@ spec:
             secretKeyRef:
               name: devlogs-secrets
               key: opensearch-url
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 8080
-          initialDelaySeconds: 5
-          periodSeconds: 10
         resources:
           requests:
             memory: "128Mi"

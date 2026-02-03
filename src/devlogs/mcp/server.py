@@ -33,11 +33,11 @@ from ..opensearch.queries import (
 
 
 def _create_client_and_index():
-    """Create OpenSearch client and get index name from config."""
+    """Create OpenSearch client and get index name and application filter from config."""
     try:
         client = get_opensearch_client()
         cfg = load_config()
-        return client, cfg.index
+        return client, cfg.index, cfg.application
     except DevlogsDisabledError as e:
         raise RuntimeError(str(e))
     except ConnectionFailedError as e:
@@ -467,7 +467,7 @@ async def main():
             arguments = {}
 
         try:
-            client, index = _create_client_and_index()
+            client, index, application = _create_client_and_index()
         except RuntimeError as e:
             return _error_response(str(e), "InitializationError")
 
@@ -494,6 +494,7 @@ async def main():
                     limit=limit,
                     cursor=cursor,
                     sort_order="desc",
+                    application=application,
                 )
                 entries = _normalize_entries(docs, limit=limit)
 
@@ -531,6 +532,7 @@ async def main():
                     until=until,
                     limit=limit,
                     search_after=cursor,
+                    application=application,
                 )
                 entries = _normalize_entries(docs, limit=limit)
 
@@ -552,7 +554,7 @@ async def main():
                 return _error_response("operation_id is required", "ValidationError")
 
             try:
-                summary = get_operation_summary(client, index, operation_id)
+                summary = get_operation_summary(client, index, operation_id, application=application)
 
                 if not summary:
                     return _json_response(
@@ -591,6 +593,7 @@ async def main():
                     until=until,
                     limit=limit,
                     cursor=cursor,
+                    application=application,
                 )
                 entries = _normalize_entries(docs, limit=limit)
 
@@ -619,6 +622,7 @@ async def main():
                     since=since,
                     limit=limit,
                     with_errors_only=with_errors_only,
+                    application=application,
                 )
 
                 return _json_response(
@@ -649,6 +653,7 @@ async def main():
                     limit=limit,
                     order_by=order_by,
                     with_errors_only=with_errors_only,
+                    application=application,
                 )
 
                 return _json_response(
@@ -670,6 +675,7 @@ async def main():
                     index=index,
                     since=since,
                     min_operations=min_operations,
+                    application=application,
                 )
 
                 return _json_response(
@@ -702,6 +708,7 @@ async def main():
                     limit=limit,
                     min_count=min_count,
                     include_missing=include_missing,
+                    application=application,
                 )
                 return _json_response(
                     data={"signatures": signatures},
@@ -730,6 +737,7 @@ async def main():
                     since=since,
                     until=until,
                     limit=limit,
+                    application=application,
                 )
                 entries = _normalize_entries(docs, limit=limit)
                 return _json_response(
@@ -766,6 +774,7 @@ async def main():
                     level=level,
                     before=before,
                     after=after,
+                    application=application,
                 )
                 entries = _normalize_entries(docs)
                 return _json_response(

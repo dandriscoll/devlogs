@@ -311,7 +311,9 @@ def _parse_opensearch_url(url: str):
 	# URL-decode username and password since urlparse doesn't do this automatically
 	user = unquote(parsed.username) if parsed.username else None
 	password = unquote(parsed.password) if parsed.password else None
-	index = parsed.path.strip("/") or None
+	path = parsed.path.strip("/")
+	parts = path.split("/", 1) if path else []
+	index = parts[0] if parts else None
 	return (scheme, host, port, user, password, index)
 
 
@@ -336,6 +338,13 @@ class DevlogsConfig:
 		# Check for URL shortcut first - it overrides individual settings
 		# This is the admin OpenSearch connection used for search/tail/UI/CLI and ingest mode
 		url_config = _parse_opensearch_url(os.getenv("DEVLOGS_OPENSEARCH_URL", ""))
+
+		# Parse application filter from opensearch:// URL (second path segment)
+		opensearch_url = os.getenv("DEVLOGS_OPENSEARCH_URL", "")
+		self.application = None
+		if opensearch_url and (opensearch_url.startswith("opensearchs://") or opensearch_url.startswith("opensearch://")):
+			parsed_os = _parse_opensearch_scheme_url(opensearch_url)
+			self.application = parsed_os.application
 
 		if url_config:
 			scheme, host, port, url_user, url_pass, url_index = url_config

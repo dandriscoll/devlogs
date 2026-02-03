@@ -139,17 +139,6 @@ async def collector_error_handler(request: Request, exc: CollectorError):
     )
 
 
-@app.get("/health")
-async def health():
-    """Health check endpoint."""
-    cfg = load_config()
-    mode = cfg.get_collector_mode()
-    return {
-        "status": "healthy",
-        "mode": mode,
-        "version": __version__,
-    }
-
 
 @app.post("/")
 async def ingest_logs(request: Request):

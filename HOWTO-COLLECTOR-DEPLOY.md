@@ -75,11 +75,6 @@ services:
 
       # Optional: Performance tuning
       DEVLOGS_COLLECTOR_WORKERS: 4
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
     restart: unless-stopped
 
   opensearch:
@@ -292,26 +287,6 @@ Ingest log records.
 }
 ```
 
-### GET /health
-
-Health check endpoint.
-
-**Response:** `200 OK`
-```json
-{
-  "status": "healthy",
-  "mode": "ingest"
-}
-```
-
-## Health Checks and Monitoring
-
-### HTTP Health Check
-
-```bash
-curl -f http://localhost:8080/health
-```
-
 ### Configuration Check
 
 ```bash
@@ -322,24 +297,6 @@ This verifies:
 - Environment configuration is valid
 - OpenSearch/upstream connectivity works
 - Target index exists (ingest mode)
-
-### Kubernetes Probes
-
-```yaml
-livenessProbe:
-  httpGet:
-    path: /health
-    port: 8080
-  initialDelaySeconds: 5
-  periodSeconds: 30
-
-readinessProbe:
-  httpGet:
-    path: /health
-    port: 8080
-  initialDelaySeconds: 5
-  periodSeconds: 10
-```
 
 ## Sending Logs to the Collector
 

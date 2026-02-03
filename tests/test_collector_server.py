@@ -32,24 +32,6 @@ def reset_config(monkeypatch):
         monkeypatch.delenv(key, raising=False)
 
 
-class TestHealthEndpoint:
-    """Tests for the /health endpoint."""
-
-    def test_health_returns_mode(self, client, reset_config, monkeypatch):
-        monkeypatch.setenv("DEVLOGS_OPENSEARCH_HOST", "localhost")
-        response = client.get("/health")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["status"] == "healthy"
-        assert data["mode"] == "ingest"
-
-    def test_health_forward_mode(self, client, reset_config, monkeypatch):
-        monkeypatch.setenv("DEVLOGS_FORWARD_URL", "http://upstream:8080")
-        response = client.get("/health")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["mode"] == "forward"
-
 
 class TestIngestEndpoint:
     """Tests for the POST / endpoint."""

@@ -3,12 +3,18 @@
 from unittest.mock import patch
 
 from devlogs.opensearch.queries import (
+    _build_log_query,
     get_error_context,
     get_last_errors,
     get_operation_logs,
+    get_operation_summary,
+    list_areas,
     list_error_signatures,
+    list_operations,
     list_recent_operations,
+    search_logs,
     search_logs_page,
+    tail_logs,
 )
 
 
@@ -221,3 +227,108 @@ def test_get_operation_logs_uses_chronological_sort():
     assert cursor == ["cursor"]
     _, kwargs = mock_search.call_args
     assert kwargs["sort_order"] == "asc"
+
+
+# --- Application filter tests ---
+
+class TestApplicationFilter:
+    """Tests that application filter is added to queries when specified."""
+
+    def test_build_log_query_without_application(self):
+        query = _build_log_query()
+        filters = query["bool"]["filter"]
+        assert not any(f.get("term", {}).get("application") for f in filters)
+
+    def test_build_log_query_with_application(self):
+        query = _build_log_query(application="myapp")
+        filters = query["bool"]["filter"]
+        assert {"term": {"application": "myapp"}} in filters
+
+    def test_search_logs_passes_application(self):
+        response = {"hits": {"hits": []}}
+        client = DummyClient(response)
+        search_logs(client, "idx", application="myapp")
+        filters = client.last_call["body"]["query"]["bool"]["filter"]
+        assert {"term": {"application": "myapp"}} in filters
+
+    def test_search_logs_page_passes_application(self):
+        response = {"hits": {"hits": []}}
+        client = DummyClient(response)
+        search_logs_page(client, "idx", application="myapp")
+        filters = client.last_call["body"]["query"]["bool"]["filter"]
+        assert {"term": {"application": "myapp"}} in filters
+
+    def test_tail_logs_passes_application(self):
+        response = {"hits": {"hits": []}}
+        client = DummyClient(response)
+        tail_logs(client, "idx", application="myapp")
+        filters = client.last_call["body"]["query"]["bool"]["filter"]
+        assert {"term": {"application": "myapp"}} in filters
+
+    def test_get_last_errors_passes_application(self):
+        response = {"hits": {"hits": []}}
+        client = DummyClient(response)
+        get_last_errors(client, "idx", application="myapp")
+        filters = client.last_call["body"]["query"]["bool"]["filter"]
+        assert {"term": {"application": "myapp"}} in filters
+
+    def test_get_operation_summary_passes_application(self):
+        response = {"aggregations": {"by_level": {"buckets": []}, "time_range": {}, "sample_logs": {"hits": {"hits": []}}, "total_count": {"value": 0}}}
+        client = DummyClient(response)
+        get_operation_summary(client, "idx", "op-1", application="myapp")
+        query_filters = client.last_call["body"]["query"]["bool"]["filter"]
+        assert {"term": {"application": "myapp"}} in query_filters
+
+    def test_list_operations_passes_application(self):
+        response = {"aggregations": {"by_operation": {"buckets": []}}}
+        client = DummyClient(response)
+        list_operations(client, "idx", application="myapp")
+        filters = client.last_call["body"]["query"]["bool"]["filter"]
+        assert {"term": {"application": "myapp"}} in filters
+
+    def test_list_recent_operations_passes_application(self):
+        response = {"aggregations": {"by_operation": {"buckets": []}}}
+        client = DummyClient(response)
+        list_recent_operations(client, "idx", application="myapp")
+        filters = client.last_call["body"]["query"]["bool"]["filter"]
+        assert {"term": {"application": "myapp"}} in filters
+
+    def test_list_error_signatures_passes_application(self):
+        response = {"aggregations": {"by_signature": {"buckets": []}}}
+        client = DummyClient(response)
+        list_error_signatures(client, "idx", application="myapp")
+        filters = client.last_call["body"]["query"]["bool"]["filter"]
+        assert {"term": {"application": "myapp"}} in filters
+
+    def test_list_areas_passes_application(self):
+        response = {"aggregations": {"by_area": {"buckets": []}}}
+        client = DummyClient(response)
+        list_areas(client, "idx", application="myapp")
+        filters = client.last_call["body"]["query"]["bool"]["filter"]
+        assert {"term": {"application": "myapp"}} in filters
+
+    def test_get_error_context_passes_application(self):
+        with patch("devlogs.opensearch.queries.search_logs_page") as mock_search:
+            mock_search.return_value = ([], None)
+            get_error_context(
+                client="client", index="idx",
+                anchor_timestamp="2025-01-01T00:00:00Z",
+                application="myapp",
+            )
+        # Both calls should have application
+        for call in mock_search.call_args_list:
+            assert call[1]["application"] == "myapp"
+
+    def test_get_operation_logs_passes_application(self):
+        with patch("devlogs.opensearch.queries.search_logs_page") as mock_search:
+            mock_search.return_value = ([], None)
+            get_operation_logs(client="client", index="idx", operation_id="op-1", application="myapp")
+        assert mock_search.call_args[1]["application"] == "myapp"
+
+    def test_no_application_filter_when_none(self):
+        """Ensure no application filter when application is None."""
+        response = {"hits": {"hits": []}}
+        client = DummyClient(response)
+        search_logs(client, "idx", application=None)
+        filters = client.last_call["body"]["query"]["bool"]["filter"]
+        assert not any(f.get("term", {}).get("application") for f in filters)

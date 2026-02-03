@@ -728,6 +728,7 @@ def tail(
 				since=since,
 				limit=limit,
 				search_after=search_after,
+				application=cfg.application,
 			)
 			_verbose_echo(f"Received {len(docs)} docs, next cursor={search_after}")
 			if verbose and docs:
@@ -851,6 +852,7 @@ def search(
 					since=since,
 					limit=limit,
 					search_after=search_after,
+					application=cfg.application,
 				)
 			else:
 				docs = search_logs(
@@ -862,6 +864,7 @@ def search(
 					level=level,
 					since=since,
 					limit=limit,
+					application=cfg.application,
 				)
 			entries = normalize_log_entries(docs, limit=limit)
 			consecutive_errors = 0
@@ -947,6 +950,7 @@ def last_error(
 			since=since,
 			until=until,
 			limit=limit,
+			application=cfg.application,
 		)
 		entries = normalize_log_entries(docs, limit=limit)
 	except (ConnectionFailedError, urllib.error.URLError) as e:

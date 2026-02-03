@@ -452,3 +452,82 @@ class TestDiagnosticsHandler:
         """Test DiagnosticsHandler accepts DEBUG level by default."""
         handler = DiagnosticsHandler()
         assert handler.level == logging.DEBUG
+
+
+class TestEmitCounters:
+    """Tests for handler emit counters."""
+
+    def setup_method(self):
+        DevlogsHandler.reset_counters()
+        DevlogsHandler._circuit_open = False
+        DevlogsHandler._circuit_open_until = 0.0
+
+    def test_reset_counters(self):
+        DevlogsHandler._emit_count = 5
+        DevlogsHandler._emit_errors = 3
+        DevlogsHandler._emit_skipped = 2
+        DevlogsHandler.reset_counters()
+        assert DevlogsHandler._emit_count == 0
+        assert DevlogsHandler._emit_errors == 0
+        assert DevlogsHandler._emit_skipped == 0
+
+    def test_emit_count_increments_on_success(self):
+        handler = DevlogsHandler(collector_url="http://localhost:9999")
+        logger = logging.getLogger("test.counters.success")
+        logger.handlers = [handler]
+        logger.setLevel(logging.DEBUG)
+        logger.propagate = False
+        with patch("urllib.request.urlopen"):
+            logger.info("test message")
+            logger.info("test message 2")
+        assert DevlogsHandler._emit_count == 2
+        assert DevlogsHandler._emit_errors == 0
+        assert DevlogsHandler._emit_skipped == 0
+
+    def test_emit_errors_increments_on_failure(self):
+        handler = DevlogsHandler(collector_url="http://localhost:9999")
+        logger = logging.getLogger("test.counters.error")
+        logger.handlers = [handler]
+        logger.setLevel(logging.DEBUG)
+        logger.propagate = False
+        with patch("urllib.request.urlopen", side_effect=Exception("connection refused")):
+            logger.info("test message")
+        assert DevlogsHandler._emit_count == 1
+        assert DevlogsHandler._emit_errors == 1
+
+    def test_emit_skipped_increments_when_circuit_open(self):
+        DevlogsHandler._circuit_open = True
+        DevlogsHandler._circuit_open_until = time.time() + 60
+        handler = DevlogsHandler(collector_url="http://localhost:9999")
+        logger = logging.getLogger("test.counters.skipped")
+        logger.handlers = [handler]
+        logger.setLevel(logging.DEBUG)
+        logger.propagate = False
+        logger.info("test message")
+        assert DevlogsHandler._emit_count == 1
+        assert DevlogsHandler._emit_skipped == 1
+        assert DevlogsHandler._emit_errors == 0
+
+    def test_counters_track_mixed_results(self):
+        handler = DevlogsHandler(collector_url="http://localhost:9999")
+        logger = logging.getLogger("test.counters.mixed")
+        logger.handlers = [handler]
+        logger.setLevel(logging.DEBUG)
+        logger.propagate = False
+
+        # One success, then a failure (which opens circuit), then a skipped
+        mock_urlopen = MagicMock()
+        with patch("urllib.request.urlopen", mock_urlopen):
+            logger.info("success")
+        assert DevlogsHandler._emit_count == 1
+        assert DevlogsHandler._emit_errors == 0
+
+        with patch("urllib.request.urlopen", side_effect=Exception("fail")):
+            logger.info("failure")
+        assert DevlogsHandler._emit_count == 2
+        assert DevlogsHandler._emit_errors == 1
+
+        # Circuit is now open, next emit should be skipped
+        logger.info("skipped")
+        assert DevlogsHandler._emit_count == 3
+        assert DevlogsHandler._emit_skipped == 1

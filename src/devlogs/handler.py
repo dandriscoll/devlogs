@@ -76,6 +76,9 @@ class DevlogsHandler(logging.Handler):
 	_circuit_breaker_duration = 60.0  # seconds to wait before retrying
 	_last_error_printed = 0.0
 	_error_print_interval = 10.0  # only print errors every 10 seconds
+	_emit_count = 0
+	_emit_errors = 0
+	_emit_skipped = 0
 
 	def __init__(
 		self,
@@ -128,6 +131,13 @@ class DevlogsHandler(logging.Handler):
 				self._collector_endpoint = collector_url.rstrip("/")
 				self._collector_headers = {"Content-Type": "application/json"}
 
+	@classmethod
+	def reset_counters(cls):
+		"""Reset emit counters."""
+		cls._emit_count = 0
+		cls._emit_errors = 0
+		cls._emit_skipped = 0
+
 	def emit(self, record: logging.LogRecord) -> None:
 		"""Emit a log record to OpenSearch or a collector endpoint."""
 		# Build log document
@@ -135,8 +145,9 @@ class DevlogsHandler(logging.Handler):
 
 		# Circuit breaker: skip indexing if we know the target is unavailable
 		current_time = time.time()
+		DevlogsHandler._emit_count += 1
 		if DevlogsHandler._circuit_open and current_time < DevlogsHandler._circuit_open_until:
-			# Silently fail - circuit is open
+			DevlogsHandler._emit_skipped += 1
 			return
 
 		try:
@@ -162,6 +173,7 @@ class DevlogsHandler(logging.Handler):
 					DevlogsHandler._circuit_open = False
 					print(f"[devlogs] Connection restored, resuming indexing")
 		except Exception as e:
+			DevlogsHandler._emit_errors += 1
 			# Open circuit breaker to prevent further attempts
 			DevlogsHandler._circuit_open = True
 			DevlogsHandler._circuit_open_until = current_time + DevlogsHandler._circuit_breaker_duration
@@ -257,8 +269,9 @@ class DiagnosticsHandler(DevlogsHandler):
 	def emit(self, record: logging.LogRecord) -> None:
 		# Circuit breaker: skip indexing if we know the index is unavailable
 		current_time = time.time()
+		DevlogsHandler._emit_count += 1
 		if DevlogsHandler._circuit_open and current_time < DevlogsHandler._circuit_open_until:
-			# Silently fail - circuit is open
+			DevlogsHandler._emit_skipped += 1
 			return
 
 		doc = self.format_record(record)
@@ -277,6 +290,7 @@ class DiagnosticsHandler(DevlogsHandler):
 					DevlogsHandler._circuit_open = False
 					print(f"[devlogs] Connection restored, resuming indexing")
 		except Exception as e:
+			DevlogsHandler._emit_errors += 1
 			# Open circuit breaker to prevent further attempts
 			DevlogsHandler._circuit_open = True
 			DevlogsHandler._circuit_open_until = current_time + DevlogsHandler._circuit_breaker_duration

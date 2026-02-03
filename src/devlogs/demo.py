@@ -7,7 +7,7 @@ import typer
 
 from .config import load_config
 from .context import operation
-from .handler import OpenSearchHandler
+from .handler import OpenSearchHandler, DevlogsHandler
 
 
 def run_demo(
@@ -23,6 +23,23 @@ def run_demo(
 		# Collector mode
 		typer.echo("=== DevLogs Demo (Collector Mode) ===\n")
 		typer.echo(f"  Collector URL: {collector_url}")
+		typer.echo("")
+
+		# Validate first write before starting
+		from .devlogs_client import DevlogsClient
+		test_client = DevlogsClient(
+			collector_url=collector_url,
+			application="devlogs-demo",
+			component="connectivity-check",
+			timeout=5,
+		)
+		if not test_client.emit(message="Demo starting", level="info"):
+			typer.echo(typer.style(
+				f"  Error: failed to write to collector at {test_client._get_endpoint()}",
+				fg=typer.colors.RED,
+			))
+			raise typer.Exit(1)
+		typer.echo(typer.style("  First write succeeded.", fg=typer.colors.GREEN))
 		typer.echo("")
 
 		handler = OpenSearchHandler(
@@ -229,6 +246,9 @@ def run_demo(
 
 		generated += 1
 
+	# Reset counters before starting
+	DevlogsHandler.reset_counters()
+
 	# Main loop: emit logs and show countdown
 	while generated < count:
 		check_countdown()
@@ -238,4 +258,18 @@ def run_demo(
 	elapsed = time.time() - start_time
 	typer.echo(typer.style(f"\n--- Demo complete! ---", fg=typer.colors.GREEN))
 	typer.echo(f"Generated {generated} log entries in {elapsed:.1f} seconds.")
+
+	# Report send results
+	sent = DevlogsHandler._emit_count
+	errors = DevlogsHandler._emit_errors
+	skipped = DevlogsHandler._emit_skipped
+	succeeded = sent - errors - skipped
+	if errors or skipped:
+		typer.echo(typer.style(
+			f"  Delivered: {succeeded}/{sent} (errors: {errors}, skipped: {skipped})",
+			fg=typer.colors.RED,
+		))
+	else:
+		typer.echo(typer.style(f"  Delivered: {succeeded}/{sent}", fg=typer.colors.GREEN))
+
 	typer.echo(f"View logs with: devlogs tail --follow")

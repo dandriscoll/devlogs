@@ -216,6 +216,43 @@ class TestParseOpensearchUrlWithNewSchemes:
 		assert result == ("http", "host", 9200, "admin", "pass", "idx")
 
 
+class TestDevlogsConfigApplication:
+	"""Tests for DevlogsConfig.application from opensearch URL."""
+
+	def test_application_from_opensearch_url(self, monkeypatch):
+		monkeypatch.setattr(config, "_dotenv_loaded", True)
+		for key in config._DEVLOGS_CONFIG_KEYS:
+			monkeypatch.delenv(key, raising=False)
+		monkeypatch.setenv("DEVLOGS_OPENSEARCH_URL", "opensearch://admin:pass@host:9200/myindex/myapp")
+		cfg = config.load_config()
+		assert cfg.application == "myapp"
+		assert cfg.index == "myindex"
+
+	def test_no_application_without_second_segment(self, monkeypatch):
+		monkeypatch.setattr(config, "_dotenv_loaded", True)
+		for key in config._DEVLOGS_CONFIG_KEYS:
+			monkeypatch.delenv(key, raising=False)
+		monkeypatch.setenv("DEVLOGS_OPENSEARCH_URL", "opensearch://admin:pass@host:9200/myindex")
+		cfg = config.load_config()
+		assert cfg.application is None
+
+	def test_no_application_with_legacy_url(self, monkeypatch):
+		monkeypatch.setattr(config, "_dotenv_loaded", True)
+		for key in config._DEVLOGS_CONFIG_KEYS:
+			monkeypatch.delenv(key, raising=False)
+		monkeypatch.setenv("DEVLOGS_OPENSEARCH_URL", "https://admin:pass@host:9200/myindex")
+		cfg = config.load_config()
+		assert cfg.application is None
+
+	def test_no_application_with_env_vars(self, monkeypatch):
+		monkeypatch.setattr(config, "_dotenv_loaded", True)
+		for key in config._DEVLOGS_CONFIG_KEYS:
+			monkeypatch.delenv(key, raising=False)
+		monkeypatch.setenv("DEVLOGS_OPENSEARCH_HOST", "localhost")
+		cfg = config.load_config()
+		assert cfg.application is None
+
+
 class TestDevlogsClientTokenQuery:
 	"""Tests for _parse_collector_url with ?token= param in devlogs_client."""
 

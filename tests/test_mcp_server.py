@@ -83,9 +83,26 @@ class TestCreateClientAndIndex:
         # Reset config state to force reload, and prevent dotenv from loading
         monkeypatch.setattr(config, "_dotenv_loaded", True)
 
-        client, index = _create_client_and_index()
+        client, index, application = _create_client_and_index()
         assert client is not None
         assert index == "test-index"
+        assert application is None
+
+    def test_create_client_with_application(self, monkeypatch):
+        """Test client creation with application from opensearch URL."""
+        from devlogs import config
+
+        for key in config._DEVLOGS_CONFIG_KEYS:
+            monkeypatch.delenv(key, raising=False)
+        monkeypatch.delenv("DOTENV_PATH", raising=False)
+
+        monkeypatch.setenv("DEVLOGS_OPENSEARCH_URL", "opensearch://admin:pass@localhost:9200/myindex/myapp")
+        monkeypatch.setattr(config, "_dotenv_loaded", True)
+
+        client, index, application = _create_client_and_index()
+        assert client is not None
+        assert index == "myindex"
+        assert application == "myapp"
 
     def test_create_client_missing_config(self, monkeypatch):
         """Test client creation with missing config."""
@@ -224,7 +241,7 @@ class TestMCPServerIntegration:
         from devlogs.mcp.server import _create_client_and_index
 
         # This should work with the test fixtures
-        client, index = _create_client_and_index()
+        client, index, application = _create_client_and_index()
         assert client is not None
 
         # Verify we can connect
@@ -340,7 +357,7 @@ class TestMCPServerConfiguration:
             monkeypatch.setattr(config, "_dotenv_loaded", False)
             monkeypatch.setattr(config, "_custom_dotenv_path", None)
 
-            client, index = _create_client_and_index()
+            client, index, application = _create_client_and_index()
             assert index == "env-test-index"
         finally:
             os.unlink(temp_path)
@@ -368,7 +385,7 @@ class TestMCPServerConfiguration:
             monkeypatch.setattr(config, "_dotenv_loaded", False)
             monkeypatch.setattr(config, "_custom_dotenv_path", None)
 
-            client, index = _create_client_and_index()
+            client, index, application = _create_client_and_index()
             assert client.base_url == "http://localhost:9999"
             assert index == "custom-index"
         finally:
