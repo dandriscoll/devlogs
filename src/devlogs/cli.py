@@ -1248,7 +1248,7 @@ def mkurl():
 	the components (host, port, credentials, index) one by one.
 
 	The output shows three equivalent formats:
-	- A bare URL (for --url flag or DEVLOGS_OPENSEARCH_URL)
+	- A bare URL (for --url flag or DEVLOGS_URL)
 	- The URL as a single .env variable
 	- Individual .env variables for each component
 	"""
@@ -1318,7 +1318,7 @@ def mkurl():
 	typer.echo()
 	typer.echo(typer.style("2. Single .env variable:", fg=typer.colors.CYAN, bold=True))
 	typer.echo("-" * 50)
-	typer.echo(f"DEVLOGS_OPENSEARCH_URL={url}")
+	typer.echo(f"DEVLOGS_URL={url}")
 
 	# Format 3: Individual .env variables
 	typer.echo()

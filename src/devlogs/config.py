@@ -329,25 +329,41 @@ class DevlogsConfig:
 	def __init__(self, enabled: bool = True):
 		self.enabled = enabled
 
-		# Collector URL (where apps send logs)
-		self.collector_url = _getenv("DEVLOGS_URL", "")
-
 		# Forward URL (if set, collector operates in forward mode)
 		self.forward_url = _getenv("DEVLOGS_FORWARD_URL", "")
 
-		# Check for URL shortcut first - it overrides individual settings
-		# This is the admin OpenSearch connection used for search/tail/UI/CLI and ingest mode
-		url_config = _parse_opensearch_url(os.getenv("DEVLOGS_OPENSEARCH_URL", ""))
-
-		# Parse application filter from opensearch:// URL (second path segment)
-		opensearch_url = os.getenv("DEVLOGS_OPENSEARCH_URL", "")
+		# DEVLOGS_URL is the standard env var. It auto-detects collector vs OpenSearch
+		# via parse_url(). DEVLOGS_OPENSEARCH_URL is a legacy alias for OpenSearch URLs.
+		self.collector_url = ""
 		self.application = None
-		if opensearch_url and (opensearch_url.startswith("opensearchs://") or opensearch_url.startswith("opensearch://")):
-			parsed_os = _parse_opensearch_scheme_url(opensearch_url)
-			self.application = parsed_os.application
+		opensearch_url_config = None  # result from _parse_opensearch_url if found
 
-		if url_config:
-			scheme, host, port, url_user, url_pass, url_index = url_config
+		devlogs_url = os.getenv("DEVLOGS_URL", "")
+		legacy_opensearch_url = os.getenv("DEVLOGS_OPENSEARCH_URL", "")
+
+		if devlogs_url:
+			try:
+				parsed = parse_url(devlogs_url)
+				if isinstance(parsed, CollectorURLConfig):
+					self.collector_url = devlogs_url
+				else:
+					# OpenSearch URL via DEVLOGS_URL
+					opensearch_url_config = _parse_opensearch_url(devlogs_url)
+					self.application = parsed.application
+			except URLParseError:
+				# Treat unparseable DEVLOGS_URL as legacy OpenSearch
+				opensearch_url_config = _parse_opensearch_url(devlogs_url)
+
+		# Legacy: DEVLOGS_OPENSEARCH_URL overrides OpenSearch settings from DEVLOGS_URL
+		if legacy_opensearch_url:
+			opensearch_url_config = _parse_opensearch_url(legacy_opensearch_url)
+			# Parse application filter from opensearch:// URL (second path segment)
+			if legacy_opensearch_url.startswith("opensearchs://") or legacy_opensearch_url.startswith("opensearch://"):
+				parsed_os = _parse_opensearch_scheme_url(legacy_opensearch_url)
+				self.application = parsed_os.application
+
+		if opensearch_url_config:
+			scheme, host, port, url_user, url_pass, url_index = opensearch_url_config
 			self.opensearch_scheme = scheme
 			self.opensearch_host = host
 			self.opensearch_port = port
@@ -415,6 +431,15 @@ class DevlogsConfig:
 
 	def has_opensearch_config(self) -> bool:
 		"""Check if OpenSearch admin connection is configured."""
+		# DEVLOGS_URL with an OpenSearch URL also counts
+		devlogs_url = os.getenv("DEVLOGS_URL", "")
+		if devlogs_url:
+			try:
+				parsed = parse_url(devlogs_url)
+				if isinstance(parsed, OpenSearchURLConfig):
+					return True
+			except URLParseError:
+				pass
 		return bool(
 			os.getenv("DEVLOGS_OPENSEARCH_URL") or
 			os.getenv("DEVLOGS_OPENSEARCH_HOST")
@@ -458,12 +483,8 @@ def set_url(url: str):
 		os.environ["DEVLOGS_OPENSEARCH_URL"] = url
 		return
 
-	if isinstance(parsed, CollectorURLConfig):
-		# Reconstruct the full collector URL for DEVLOGS_URL
-		os.environ["DEVLOGS_URL"] = url
-	else:
-		# OpenSearch URL - reconstruct with the correct scheme for _parse_opensearch_url
-		os.environ["DEVLOGS_OPENSEARCH_URL"] = url
+	# Always set DEVLOGS_URL as the standard env var
+	os.environ["DEVLOGS_URL"] = url
 
 def load_config() -> DevlogsConfig:
 	"""Return a config object with all settings loaded."""

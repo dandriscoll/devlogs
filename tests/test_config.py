@@ -263,14 +263,15 @@ def test_parse_opensearch_url_handles_slash_in_password():
 
 
 def test_set_url(monkeypatch):
-    """Test that set_url() sets the URL environment variable."""
+    """Test that set_url() sets the DEVLOGS_URL environment variable."""
     monkeypatch.setattr(config, "_dotenv_loaded", True)
     # Clear any existing URL
+    monkeypatch.delenv("DEVLOGS_URL", raising=False)
     monkeypatch.delenv("DEVLOGS_OPENSEARCH_URL", raising=False)
     monkeypatch.delenv("DEVLOGS_INDEX", raising=False)
 
     # Save original value to restore later
-    original_url = os.environ.get("DEVLOGS_OPENSEARCH_URL")
+    original_url = os.environ.get("DEVLOGS_URL")
 
     try:
         # Set URL via set_url()
@@ -287,20 +288,21 @@ def test_set_url(monkeypatch):
     finally:
         # Clean up the environment variable set by set_url()
         if original_url is None:
-            os.environ.pop("DEVLOGS_OPENSEARCH_URL", None)
+            os.environ.pop("DEVLOGS_URL", None)
         else:
-            os.environ["DEVLOGS_OPENSEARCH_URL"] = original_url
+            os.environ["DEVLOGS_URL"] = original_url
 
 
 def test_set_url_works_after_dotenv_loaded(monkeypatch):
     """Test that set_url() works even after dotenv has been loaded."""
     # Set up initial state as loaded (simulating dotenv already loaded)
     monkeypatch.setattr(config, "_dotenv_loaded", True)
+    monkeypatch.delenv("DEVLOGS_URL", raising=False)
     monkeypatch.delenv("DEVLOGS_OPENSEARCH_URL", raising=False)
     monkeypatch.delenv("DEVLOGS_INDEX", raising=False)
 
     # Save original value to restore later
-    original_url = os.environ.get("DEVLOGS_OPENSEARCH_URL")
+    original_url = os.environ.get("DEVLOGS_URL")
 
     try:
         # Call set_url - this should still work because it sets the env var directly
@@ -314,6 +316,6 @@ def test_set_url_works_after_dotenv_loaded(monkeypatch):
     finally:
         # Clean up the environment variable set by set_url()
         if original_url is None:
-            os.environ.pop("DEVLOGS_OPENSEARCH_URL", None)
+            os.environ.pop("DEVLOGS_URL", None)
         else:
-            os.environ["DEVLOGS_OPENSEARCH_URL"] = original_url
+            os.environ["DEVLOGS_URL"] = original_url

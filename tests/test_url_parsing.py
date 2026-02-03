@@ -154,17 +154,17 @@ class TestSetUrlBranching:
 		# Clean up
 		monkeypatch.delenv("DEVLOGS_URL", raising=False)
 
-	def test_opensearch_url_sets_opensearch_url(self, monkeypatch):
+	def test_opensearch_url_sets_devlogs_url(self, monkeypatch):
 		monkeypatch.setattr(config, "_dotenv_loaded", True)
 		for key in config._DEVLOGS_CONFIG_KEYS:
 			monkeypatch.delenv(key, raising=False)
 
 		config.set_url("opensearchs://user:pass@host:9200/myindex")
-		assert os.environ.get("DEVLOGS_OPENSEARCH_URL") == "opensearchs://user:pass@host:9200/myindex"
+		assert os.environ.get("DEVLOGS_URL") == "opensearchs://user:pass@host:9200/myindex"
 		# Clean up
-		monkeypatch.delenv("DEVLOGS_OPENSEARCH_URL", raising=False)
+		monkeypatch.delenv("DEVLOGS_URL", raising=False)
 
-	def test_legacy_https_opensearch_sets_opensearch_url(self, monkeypatch):
+	def test_legacy_https_opensearch_sets_devlogs_url(self, monkeypatch):
 		monkeypatch.setattr(config, "_dotenv_loaded", True)
 		for key in config._DEVLOGS_CONFIG_KEYS:
 			monkeypatch.delenv(key, raising=False)
@@ -172,9 +172,9 @@ class TestSetUrlBranching:
 		with warnings.catch_warnings():
 			warnings.simplefilter("ignore", DeprecationWarning)
 			config.set_url("https://user:pass@host:9200/myindex")
-		assert os.environ.get("DEVLOGS_OPENSEARCH_URL") == "https://user:pass@host:9200/myindex"
+		assert os.environ.get("DEVLOGS_URL") == "https://user:pass@host:9200/myindex"
 		# Clean up
-		monkeypatch.delenv("DEVLOGS_OPENSEARCH_URL", raising=False)
+		monkeypatch.delenv("DEVLOGS_URL", raising=False)
 
 
 class TestUrlModeProperty:

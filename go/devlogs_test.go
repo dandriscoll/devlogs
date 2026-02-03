@@ -91,8 +91,8 @@ func TestLoadConfigFromEnvironment(t *testing.T) {
 }
 
 func TestLoadConfigFromURL(t *testing.T) {
-	os.Setenv("DEVLOGS_OPENSEARCH_URL", "http://urluser:urlpass@urlhost:8888/urlindex")
-	defer os.Unsetenv("DEVLOGS_OPENSEARCH_URL")
+	os.Setenv("DEVLOGS_URL", "http://urluser:urlpass@urlhost:8888/urlindex")
+	defer os.Unsetenv("DEVLOGS_URL")
 
 	cfg, err := LoadConfig()
 	if err != nil {

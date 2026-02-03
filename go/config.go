@@ -82,8 +82,12 @@ func loadFromEnv() (*Config, error) {
 		cfg.Version = ver
 	}
 
-	// Check for URL shortcut first
-	if osURL := os.Getenv("DEVLOGS_OPENSEARCH_URL"); osURL != "" {
+	// Check for URL shortcut: DEVLOGS_URL (standard) or DEVLOGS_OPENSEARCH_URL (legacy)
+	osURL := os.Getenv("DEVLOGS_URL")
+	if osURL == "" {
+		osURL = os.Getenv("DEVLOGS_OPENSEARCH_URL")
+	}
+	if osURL != "" {
 		if err := parseOpenSearchURL(osURL, cfg); err != nil {
 			return nil, err
 		}
