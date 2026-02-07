@@ -4,6 +4,9 @@ set -e
 
 cd "$(dirname "$0")"
 
+# Stamp version from pyproject.toml into the package
+python scripts/stamp_version.py
+
 # Create entry point wrapper (imports will be resolved by PyInstaller)
 cat > /tmp/devlogs_entry.py << 'EOF'
 from devlogs.cli import app

@@ -210,6 +210,9 @@ __marimo__/
 .mcp.json
 node_modules/
 
+# Build-time generated version (see VERSIONING.md Rule 1)
+src/devlogs/_version_static.py
+
 # Jenkins Plugin (Maven)
 jenkins-plugin/target/
 jenkins-plugin/work/
