@@ -31,6 +31,7 @@ from .opensearch.mappings import (
 from .opensearch.queries import normalize_log_entries, search_logs, tail_logs, get_last_errors
 from .retention import cleanup_old_logs, get_retention_stats
 from .jenkins.cli import jenkins_app
+from .version import __version__
 
 app = typer.Typer()
 app.add_typer(jenkins_app, name="jenkins")
@@ -50,10 +51,17 @@ def _apply_common_options(env: str = None, url: str = None):
 		set_url(url)
 
 
+def _version_callback(value: bool):
+	if value:
+		typer.echo(f"devlogs {__version__}")
+		raise typer.Exit()
+
+
 # Global callback to handle --env flag before any command runs (for backwards compatibility)
 @app.callback(invoke_without_command=True)
 def main_callback(
 	ctx: typer.Context,
+	version: bool = typer.Option(False, "--version", callback=_version_callback, is_eager=True, help="Show version and exit"),
 	env: str = ENV_OPTION,
 	url: str = URL_OPTION,
 ):
