@@ -38,6 +38,7 @@ public final class DevlogsGlobalDecorator extends TaskListenerDecorator implemen
     private final String buildUrl;
     private final String application;
     private final String component;
+    private final String area;
     private final String environment;
     private final String version;
     private final boolean pipeline;
@@ -54,6 +55,7 @@ public final class DevlogsGlobalDecorator extends TaskListenerDecorator implemen
         this.buildUrl = action.getBuildUrl();
         this.application = action.getApplication();
         this.component = action.getComponent();
+        this.area = action.getArea();
         this.environment = action.getEnvironment();
         this.version = action.getVersion();
         this.pipeline = action.isPipeline();
@@ -64,7 +66,7 @@ public final class DevlogsGlobalDecorator extends TaskListenerDecorator implemen
     @Override
     public OutputStream decorate(@Nonnull OutputStream logger) throws IOException, InterruptedException {
         return new DevlogsOutputStream(logger, url, index, runId, jobName, buildNumber, buildUrl, seq,
-            application, component, environment, version, pipeline, started, completed);
+            application, component, area, environment, version, pipeline, started, completed);
     }
 
     /**
@@ -76,7 +78,7 @@ public final class DevlogsGlobalDecorator extends TaskListenerDecorator implemen
             try {
                 DevlogsOutputStream tempStream = new DevlogsOutputStream(
                     OutputStream.nullOutputStream(), url, index, runId, jobName, buildNumber, buildUrl, seq,
-                    application, component, environment, version, pipeline, started, completed);
+                    application, component, area, environment, version, pipeline, started, completed);
                 tempStream.sendEvent(message, level);
                 tempStream.flushBatch();
             } catch (Exception e) {
@@ -104,6 +106,7 @@ public final class DevlogsGlobalDecorator extends TaskListenerDecorator implemen
         private final AtomicInteger seq;
         private final String application;
         private final String component;
+        private final String area;
         private final String environment;
         private final String version;
         private final boolean pipeline;
@@ -129,7 +132,7 @@ public final class DevlogsGlobalDecorator extends TaskListenerDecorator implemen
 
         public DevlogsOutputStream(OutputStream delegate, String url, String index, String runId,
                                    String jobName, int buildNumber, String buildUrl, AtomicInteger seq,
-                                   String application, String component, String environment,
+                                   String application, String component, String area, String environment,
                                    String version, boolean pipeline,
                                    AtomicBoolean started, AtomicBoolean completed) {
             this.delegate = delegate;
@@ -141,6 +144,7 @@ public final class DevlogsGlobalDecorator extends TaskListenerDecorator implemen
             this.seq = seq;
             this.application = application;
             this.component = component;
+            this.area = area;
             this.environment = environment;
             this.version = version;
             this.pipeline = pipeline;
@@ -298,6 +302,9 @@ public final class DevlogsGlobalDecorator extends TaskListenerDecorator implemen
                     doc.addProperty("level", DevlogsLogStorage.detectLevel(line));
                     doc.addProperty("operation_id", runId);
 
+                    if (area != null && !area.isEmpty()) {
+                        doc.addProperty("area", area);
+                    }
                     if (environment != null && !environment.isEmpty()) {
                         doc.addProperty("environment", environment);
                     }
@@ -324,6 +331,9 @@ public final class DevlogsGlobalDecorator extends TaskListenerDecorator implemen
                     doc.addProperty("level", DevlogsLogStorage.detectLevel(line));
                     doc.addProperty("operation_id", runId);
 
+                    if (area != null && !area.isEmpty()) {
+                        doc.addProperty("area", area);
+                    }
                     if (environment != null && !environment.isEmpty()) {
                         doc.addProperty("environment", environment);
                     }

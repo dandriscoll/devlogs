@@ -91,7 +91,7 @@ public class DevlogsOutputTest {
         job.setDefinition(new CpsFlowDefinition(
             "devlogs(url: '" + mockUrl + "', pipeline: true, " +
             "application: 'myapp', component: 'builder', " +
-            "environment: 'staging', version: '1.2.3') {\n" +
+            "area: 'ci', environment: 'staging', version: '1.2.3') {\n" +
             "  echo 'param test line'\n" +
             "}\n",
             true
@@ -102,11 +102,27 @@ public class DevlogsOutputTest {
         List<JsonObject> records = collectRecords();
         assertFalse("Should have received records", records.isEmpty());
 
+        // Find non-lifecycle records (those without area=jenkins-plugin)
+        List<JsonObject> logRecords = new ArrayList<>();
+        for (JsonObject rec : records) {
+            if (!rec.has("area") || !"jenkins-plugin".equals(rec.get("area").getAsString())) {
+                logRecords.add(rec);
+            }
+        }
+        assertFalse("Should have non-lifecycle records", logRecords.isEmpty());
+
+        for (JsonObject rec : logRecords) {
+            assertEquals("myapp", rec.get("application").getAsString());
+            assertEquals("builder", rec.get("component").getAsString());
+            assertEquals("ci", rec.get("area").getAsString());
+            assertEquals("staging", rec.get("environment").getAsString());
+            assertEquals("1.2.3", rec.get("version").getAsString());
+        }
+
+        // Also check that all records have the right application/component
         for (JsonObject rec : records) {
             assertEquals("myapp", rec.get("application").getAsString());
             assertEquals("builder", rec.get("component").getAsString());
-            assertEquals("staging", rec.get("environment").getAsString());
-            assertEquals("1.2.3", rec.get("version").getAsString());
         }
     }
 

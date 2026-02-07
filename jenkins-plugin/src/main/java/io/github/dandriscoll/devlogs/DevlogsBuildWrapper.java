@@ -72,6 +72,7 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
     // v2.0 schema fields
     private String application;
     private String component = "jenkins";
+    private String area;
     private String environment;
     private String version;
 
@@ -118,6 +119,15 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
     @DataBoundSetter
     public void setComponent(String component) {
         this.component = component;
+    }
+
+    public String getArea() {
+        return area;
+    }
+
+    @DataBoundSetter
+    public void setArea(String area) {
+        this.area = area;
     }
 
     public String getEnvironment() {
@@ -227,7 +237,7 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
 
         boolean effectivePipeline = getEffectivePipeline(url);
         return new DevlogsConsoleLogFilter(url, index, build,
-            resolvedApplication, component, environment, version, effectivePipeline);
+            resolvedApplication, component, area, environment, version, effectivePipeline);
     }
 
     /**
@@ -267,6 +277,7 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
         private final String buildUrl;
         private final String application;
         private final String component;
+        private final String area;
         private final String environment;
         private final String version;
         private final boolean pipeline;
@@ -275,11 +286,12 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
         private final AtomicBoolean completed = new AtomicBoolean(false);
 
         public DevlogsConsoleLogFilter(String url, String index, Run<?, ?> run,
-                                       String application, String component,
+                                       String application, String component, String area,
                                        String environment, String version, boolean pipeline) {
             this.url = url;
             this.application = application;
             this.component = component;
+            this.area = area;
             this.environment = environment;
             this.version = version;
             this.pipeline = pipeline;
@@ -318,7 +330,7 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
         public OutputStream decorateLogger(Run build, OutputStream logger)
                 throws IOException, InterruptedException {
             return new DevlogsOutputStream(logger, url, index, runId, jobName, buildNumber, buildUrl, seq,
-                application, component, environment, version, pipeline, started, completed);
+                application, component, area, environment, version, pipeline, started, completed);
         }
     }
 
@@ -341,6 +353,7 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
         private final AtomicInteger seq;
         private final String application;
         private final String component;
+        private final String area;
         private final String environment;
         private final String version;
         private final boolean pipeline;
@@ -366,7 +379,7 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
 
         public DevlogsOutputStream(OutputStream delegate, String url, String index, String runId,
                                    String jobName, int buildNumber, String buildUrl, AtomicInteger seq,
-                                   String application, String component, String environment,
+                                   String application, String component, String area, String environment,
                                    String version, boolean pipeline,
                                    AtomicBoolean started, AtomicBoolean completed) {
             this.delegate = delegate;
@@ -378,6 +391,7 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
             this.seq = seq;
             this.application = application;
             this.component = component;
+            this.area = area;
             this.environment = environment;
             this.version = version;
             this.pipeline = pipeline;
@@ -555,6 +569,9 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
                     doc.addProperty("level", DevlogsLogStorage.detectLevel(line));
                     doc.addProperty("operation_id", runId);
 
+                    if (area != null && !area.isEmpty()) {
+                        doc.addProperty("area", area);
+                    }
                     if (environment != null && !environment.isEmpty()) {
                         doc.addProperty("environment", environment);
                     }
@@ -583,6 +600,9 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
                     doc.addProperty("level", DevlogsLogStorage.detectLevel(line));
                     doc.addProperty("operation_id", runId);
 
+                    if (area != null && !area.isEmpty()) {
+                        doc.addProperty("area", area);
+                    }
                     if (environment != null && !environment.isEmpty()) {
                         doc.addProperty("environment", environment);
                     }

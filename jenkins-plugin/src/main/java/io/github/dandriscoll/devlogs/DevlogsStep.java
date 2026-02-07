@@ -53,6 +53,7 @@ public class DevlogsStep extends Step implements Serializable {
     // v2.0 schema fields
     private String application;
     private String component = "jenkins";
+    private String area;
     private String environment;
     private String version;
 
@@ -108,6 +109,15 @@ public class DevlogsStep extends Step implements Serializable {
     @DataBoundSetter
     public void setComponent(String component) {
         this.component = component;
+    }
+
+    public String getArea() {
+        return area;
+    }
+
+    @DataBoundSetter
+    public void setArea(String area) {
+        this.area = area;
     }
 
     public String getEnvironment() {
@@ -222,7 +232,7 @@ public class DevlogsStep extends Step implements Serializable {
 
         boolean effectivePipeline = getEffectivePipeline(resolvedUrl);
         return new DevlogsStepExecution(context, resolvedUrl, index, credentialsId,
-            resolvedApplication, component, environment, version, effectivePipeline);
+            resolvedApplication, component, area, environment, version, effectivePipeline);
     }
 
     @Extension
@@ -303,12 +313,13 @@ public class DevlogsStep extends Step implements Serializable {
         private final String credentialsId;
         private final String application;
         private final String component;
+        private final String area;
         private final String environment;
         private final String version;
         private final boolean pipeline;
 
         public DevlogsStepExecution(StepContext context, String url, String index, String credentialsId,
-                                    String application, String component, String environment,
+                                    String application, String component, String area, String environment,
                                     String version, boolean pipeline) {
             super(context);
             this.url = url;
@@ -316,6 +327,7 @@ public class DevlogsStep extends Step implements Serializable {
             this.credentialsId = credentialsId;
             this.application = application;
             this.component = component;
+            this.area = area;
             this.environment = environment;
             this.version = version;
             this.pipeline = pipeline;
@@ -404,7 +416,7 @@ public class DevlogsStep extends Step implements Serializable {
 
             // Create action with config and decorator
             DevlogsAction action = new DevlogsAction(url, index, run,
-                application, component, environment, version, pipeline);
+                application, component, area, environment, version, pipeline);
             run.addAction(action);
 
             DevlogsGlobalDecorator decorator = new DevlogsGlobalDecorator(action);

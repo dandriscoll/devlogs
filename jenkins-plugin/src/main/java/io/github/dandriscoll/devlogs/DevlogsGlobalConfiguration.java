@@ -23,6 +23,7 @@ public class DevlogsGlobalConfiguration extends GlobalConfiguration {
     private String credentialsId;
     private String application;
     private String component = "jenkins";
+    private String area;
     private String environment;
     private boolean enabled = false;
 
@@ -61,6 +62,16 @@ public class DevlogsGlobalConfiguration extends GlobalConfiguration {
     @DataBoundSetter
     public void setComponent(String component) {
         this.component = component;
+        save();
+    }
+
+    public String getArea() {
+        return area;
+    }
+
+    @DataBoundSetter
+    public void setArea(String area) {
+        this.area = area;
         save();
     }
 

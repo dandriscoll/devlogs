@@ -43,6 +43,7 @@ public class DevlogsLogStorage implements LogStorage {
     private final String authHeader;
     private final String application;
     private final String component;
+    private final String area;
     private final String environment;
     private final String jobName;
     private final int buildNumber;
@@ -59,7 +60,7 @@ public class DevlogsLogStorage implements LogStorage {
     private transient Gson gson;
 
     public DevlogsLogStorage(FlowExecutionOwner owner, String url, String application,
-                             String component, String environment, String jobName,
+                             String component, String area, String environment, String jobName,
                              int buildNumber, String buildUrl, String buildId,
                              Runnable cleanupCallback) {
         // Get the log file from the build directory
@@ -74,6 +75,7 @@ public class DevlogsLogStorage implements LogStorage {
         this.delegate = FileLogStorage.forFile(logFile);
         this.application = application;
         this.component = component != null ? component : "jenkins";
+        this.area = area;
         this.environment = environment;
         this.jobName = jobName;
         this.buildNumber = buildNumber;
@@ -187,6 +189,9 @@ public class DevlogsLogStorage implements LogStorage {
             doc.addProperty("component", component);
             doc.addProperty("operation_id", buildId);
 
+            if (area != null && !area.isEmpty()) {
+                doc.addProperty("area", area);
+            }
             if (environment != null && !environment.isEmpty()) {
                 doc.addProperty("environment", environment);
             }

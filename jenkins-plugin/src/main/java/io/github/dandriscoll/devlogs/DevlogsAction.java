@@ -20,16 +20,18 @@ public class DevlogsAction extends InvisibleAction implements Serializable {
     private final String buildUrl;
     private final String application;
     private final String component;
+    private final String area;
     private final String environment;
     private final String version;
     private final boolean pipeline;
 
     public DevlogsAction(String url, String index, Run<?, ?> run,
-                         String application, String component,
+                         String application, String component, String area,
                          String environment, String version, boolean pipeline) {
         this.url = url;
         this.application = application;
         this.component = component;
+        this.area = area;
         this.environment = environment;
         this.version = version;
         this.pipeline = pipeline;
@@ -71,6 +73,7 @@ public class DevlogsAction extends InvisibleAction implements Serializable {
     public String getBuildUrl() { return buildUrl; }
     public String getApplication() { return application; }
     public String getComponent() { return component; }
+    public String getArea() { return area; }
     public String getEnvironment() { return environment; }
     public String getVersion() { return version; }
     public boolean isPipeline() { return pipeline; }

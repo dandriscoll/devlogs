@@ -31,6 +31,7 @@ public class DevlogsJobProperty extends OptionalJobProperty<Job<?, ?>> {
     private String credentialsId;
     private String application;
     private String component = "jenkins";
+    private String area;
     private String environment;
 
     @DataBoundConstructor
@@ -58,6 +59,15 @@ public class DevlogsJobProperty extends OptionalJobProperty<Job<?, ?>> {
     @DataBoundSetter
     public void setComponent(String component) {
         this.component = component;
+    }
+
+    public String getArea() {
+        return area;
+    }
+
+    @DataBoundSetter
+    public void setArea(String area) {
+        this.area = area;
     }
 
     public String getEnvironment() {

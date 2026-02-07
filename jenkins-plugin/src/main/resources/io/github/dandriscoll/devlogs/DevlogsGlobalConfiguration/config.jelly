@@ -19,6 +19,10 @@
                      description="Component name for log entries (default: jenkins)">
                 <f:textbox default="jenkins"/>
             </f:entry>
+            <f:entry title="Area" field="area"
+                     description="Application area for log entries (optional)">
+                <f:textbox/>
+            </f:entry>
             <f:entry title="Environment" field="environment"
                      description="Environment name for log entries (optional)">
                 <f:textbox/>

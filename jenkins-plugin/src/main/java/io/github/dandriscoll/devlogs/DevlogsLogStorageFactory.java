@@ -60,6 +60,7 @@ public class DevlogsLogStorageFactory implements LogStorageFactory {
                     url,
                     property.getEffectiveApplication(run),
                     property.getComponent(),
+                    property.getArea(),
                     property.getEnvironment(),
                     job.getFullName(),
                     run.getNumber(),

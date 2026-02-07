@@ -15,6 +15,10 @@
                  description="Component name (default: jenkins)">
             <f:textbox default="jenkins"/>
         </f:entry>
+        <f:entry title="Area" field="area"
+                 description="Application area (optional)">
+            <f:textbox/>
+        </f:entry>
         <f:entry title="Environment" field="environment"
                  description="Environment name (optional)">
             <f:textbox/>

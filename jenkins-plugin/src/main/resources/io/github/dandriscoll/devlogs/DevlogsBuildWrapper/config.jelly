@@ -18,6 +18,9 @@
     <f:entry title="Component" field="component" description="Component name (defaults to 'jenkins')">
       <f:textbox default="jenkins" />
     </f:entry>
+    <f:entry title="Area (optional)" field="area" description="Application area (e.g., api, web, jobs)">
+      <f:textbox />
+    </f:entry>
     <f:entry title="Environment (optional)" field="environment" description="Deployment environment (e.g., production, staging)">
       <f:textbox />
     </f:entry>
