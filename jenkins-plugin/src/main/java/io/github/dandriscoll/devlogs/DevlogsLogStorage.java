@@ -416,6 +416,7 @@ public class DevlogsLogStorage implements LogStorage {
         @Override
         public void close() throws IOException {
             outputStream.close();
+            storage.sendEvent("Build completed", "info");
             if (delegate instanceof Closeable) {
                 ((Closeable) delegate).close();
             }
@@ -532,7 +533,6 @@ public class DevlogsLogStorage implements LogStorage {
         @Override
         public void close() throws IOException {
             flush();
-            storage.sendEvent("Build completed", "info");
             delegate.close();
         }
 
