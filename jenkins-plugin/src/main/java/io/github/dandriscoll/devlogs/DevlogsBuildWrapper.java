@@ -567,7 +567,7 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
                     doc.addProperty("timestamp", timestamp);
                     doc.addProperty("message", line);
                     doc.addProperty("level", DevlogsLogStorage.detectLevel(line));
-                    doc.addProperty("operation_id", runId);
+                    doc.addProperty("operation_id", DevlogsLogStorage.shortOperationId(jobName, buildNumber));
 
                     if (area != null && !area.isEmpty()) {
                         doc.addProperty("area", area);
@@ -598,7 +598,7 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
                     doc.addProperty("timestamp", timestamp);
                     doc.addProperty("message", line);
                     doc.addProperty("level", DevlogsLogStorage.detectLevel(line));
-                    doc.addProperty("operation_id", runId);
+                    doc.addProperty("operation_id", DevlogsLogStorage.shortOperationId(jobName, buildNumber));
 
                     if (area != null && !area.isEmpty()) {
                         doc.addProperty("area", area);
@@ -656,7 +656,7 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
                     doc.addProperty("timestamp", timestamp);
                     doc.addProperty("message", message);
                     doc.addProperty("level", level);
-                    doc.addProperty("operation_id", runId);
+                    doc.addProperty("operation_id", DevlogsLogStorage.shortOperationId(jobName, buildNumber));
                     doc.addProperty("area", "jenkins-plugin");
 
                     if (environment != null && !environment.isEmpty()) {
@@ -683,7 +683,7 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
                     doc.addProperty("timestamp", timestamp);
                     doc.addProperty("message", message);
                     doc.addProperty("level", level);
-                    doc.addProperty("operation_id", runId);
+                    doc.addProperty("operation_id", DevlogsLogStorage.shortOperationId(jobName, buildNumber));
                     doc.addProperty("area", "jenkins-plugin");
 
                     if (environment != null && !environment.isEmpty()) {

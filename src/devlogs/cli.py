@@ -11,7 +11,7 @@ import typer
 from pathlib import Path
 
 from .config import load_config, set_dotenv_path, set_url, URLParseError, _parse_opensearch_url, parse_url, CollectorURLConfig
-from .formatting import format_timestamp
+from .formatting import format_timestamp, all_entries_today
 from .opensearch.client import (
 	get_opensearch_client,
 	check_connection,
@@ -808,9 +808,10 @@ def tail(
 			typer.echo(typer.style("No logs found.", dim=True), err=True)
 		first_poll = False
 
+		omit_date = all_entries_today(entries, use_utc=utc)
 		for entry_index, doc in enumerate(entries):
 			try:
-				timestamp = format_timestamp(doc.get("timestamp") or "", use_utc=utc)
+				timestamp = format_timestamp(doc.get("timestamp") or "", use_utc=utc, omit_date=omit_date)
 				entry_level = doc.get("level") or ""
 				entry_area = doc.get("area") or ""
 				entry_operation = doc.get("operation_id") or ""
@@ -927,8 +928,9 @@ def search(
 			typer.echo(typer.style("No logs found.", dim=True), err=True)
 		first_poll = False
 
+		omit_date = all_entries_today(entries, use_utc=utc)
 		for doc in entries:
-			timestamp = format_timestamp(doc.get("timestamp") or "", use_utc=utc)
+			timestamp = format_timestamp(doc.get("timestamp") or "", use_utc=utc, omit_date=omit_date)
 			entry_level = doc.get("level") or ""
 			entry_area = doc.get("area") or ""
 			entry_operation = doc.get("operation_id") or ""
@@ -1008,8 +1010,9 @@ def last_error(
 		typer.echo(typer.style("No errors found.", dim=True), err=True)
 		return
 
+	omit_date = all_entries_today(entries, use_utc=utc)
 	for doc in entries:
-		timestamp = format_timestamp(doc.get("timestamp") or "", use_utc=utc)
+		timestamp = format_timestamp(doc.get("timestamp") or "", use_utc=utc, omit_date=omit_date)
 		entry_level = doc.get("level") or ""
 		entry_area = doc.get("area") or ""
 		entry_operation = doc.get("operation_id") or ""

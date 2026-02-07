@@ -73,6 +73,7 @@ class DevlogsRecord:
     message: Optional[str] = None
     level: Optional[str] = None
     area: Optional[str] = None
+    operation_id: Optional[str] = None
     environment: Optional[str] = None
     version: Optional[str] = None
 
@@ -122,6 +123,8 @@ class DevlogsRecord:
             doc["level"] = self.level
         if self.area is not None:
             doc["area"] = self.area
+        if self.operation_id is not None:
+            doc["operation_id"] = self.operation_id
         if self.environment is not None:
             doc["environment"] = self.environment
         if self.version is not None:
@@ -246,6 +249,7 @@ def validate_record(data: Dict[str, Any]) -> DevlogsRecord:
     message = validate_string(data.get("message"), "message", required=False)
     level = validate_string(data.get("level"), "level", required=False)
     area = validate_string(data.get("area"), "area", required=False)
+    operation_id = validate_string(data.get("operation_id"), "operation_id", required=False)
     environment = validate_string(data.get("environment"), "environment", required=False)
     version = validate_string(data.get("version"), "version", required=False)
 
@@ -259,6 +263,7 @@ def validate_record(data: Dict[str, Any]) -> DevlogsRecord:
         message=message,
         level=level,
         area=area,
+        operation_id=operation_id,
         environment=environment,
         version=version,
         fields=fields,

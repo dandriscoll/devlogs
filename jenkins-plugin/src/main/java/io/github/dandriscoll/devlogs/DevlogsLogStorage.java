@@ -187,7 +187,7 @@ public class DevlogsLogStorage implements LogStorage {
             doc.addProperty("level", detectLevel(line));
             doc.addProperty("application", application);
             doc.addProperty("component", component);
-            doc.addProperty("operation_id", buildId);
+            doc.addProperty("operation_id", shortOperationId(jobName, buildNumber));
 
             if (area != null && !area.isEmpty()) {
                 doc.addProperty("area", area);
@@ -271,7 +271,7 @@ public class DevlogsLogStorage implements LogStorage {
             doc.addProperty("level", level);
             doc.addProperty("application", application);
             doc.addProperty("component", component);
-            doc.addProperty("operation_id", buildId);
+            doc.addProperty("operation_id", shortOperationId(jobName, buildNumber));
             doc.addProperty("area", "jenkins-plugin");
 
             if (environment != null && !environment.isEmpty()) {
@@ -365,6 +365,22 @@ public class DevlogsLogStorage implements LogStorage {
      */
     static String formatTimestamp() {
         return ISO_FORMATTER.format(Instant.now());
+    }
+
+    /**
+     * Create a short operation ID from job name and build number.
+     * Uses just the leaf job name (stripping folder path) for conciseness.
+     * Example: "rememberwhen.ai/ppe/rememberwhen.ai-ppe" + 42 → "rememberwhen.ai-ppe#42"
+     */
+    static String shortOperationId(String fullJobName, int buildNumber) {
+        String name = fullJobName;
+        if (fullJobName != null) {
+            int lastSlash = fullJobName.lastIndexOf('/');
+            if (lastSlash >= 0 && lastSlash < fullJobName.length() - 1) {
+                name = fullJobName.substring(lastSlash + 1);
+            }
+        }
+        return name + "#" + buildNumber;
     }
 
     /**
