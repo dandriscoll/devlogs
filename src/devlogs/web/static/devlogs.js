@@ -2,6 +2,7 @@
 const elements = {
 	search: document.getElementById('search'),
 	area: document.getElementById('area'),
+	component: document.getElementById('component'),
 	operation: document.getElementById('operation'),
 	level: document.getElementById('level'),
 	limit: document.getElementById('limit'),
@@ -240,6 +241,7 @@ async function fetchLogs({ append = false } = {}) {
 	const query = elements.search.value.trim();
 	if (query) params.set('q', query);
 	if (elements.area.value.trim()) params.set('area', elements.area.value.trim());
+	if (elements.component.value.trim()) params.set('component', elements.component.value.trim());
 	if (elements.operation.value.trim()) params.set('operation_id', elements.operation.value.trim());
 	if (elements.level.value) params.set('level', elements.level.value);
 	if (elements.limit.value) params.set('limit', elements.limit.value);
@@ -322,6 +324,7 @@ function setFollow(enabled) {
 
 elements.search.addEventListener('input', () => fetchLogs());
 elements.area.addEventListener('input', () => fetchLogs());
+elements.component.addEventListener('input', () => fetchLogs());
 elements.operation.addEventListener('input', () => fetchLogs());
 elements.level.addEventListener('change', () => fetchLogs());
 elements.limit.addEventListener('change', () => fetchLogs());

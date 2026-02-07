@@ -9,7 +9,7 @@ from devlogs.web import server
 
 def _set_client_ready(monkeypatch, index_name="devlogs-test"):
 	monkeypatch.setattr(server, "_try_client", lambda: (object(), None))
-	monkeypatch.setattr(server, "load_config", lambda: SimpleNamespace(index=index_name))
+	monkeypatch.setattr(server, "load_config", lambda: SimpleNamespace(index=index_name, application=None))
 
 def test_search_endpoint(monkeypatch):
 	_set_client_ready(monkeypatch)

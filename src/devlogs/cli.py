@@ -650,8 +650,10 @@ def diagnose(
 def tail(
 	operation_id: str = typer.Option(None, "--operation", "-o"),
 	area: str = typer.Option(None, "--area"),
+	component: str = typer.Option(None, "--component", "-c", help="Filter by component name"),
 	level: str = typer.Option(None, "--level"),
 	since: str = typer.Option(None, "--since"),
+	application: str = typer.Option(None, "--application", "-a", help="Filter by application name"),
 	limit: int = typer.Option(20, "--limit"),
 	follow: bool = typer.Option(False, "--follow", "-f"),
 	verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose output"),
@@ -698,12 +700,18 @@ def tail(
 				color=typer.colors.YELLOW,
 			)
 
+	effective_application = application or cfg.application
+
 	if verbose:
 		parts = []
+		if effective_application:
+			parts.append(f"application={effective_application}")
 		if operation_id:
 			parts.append(f"operation={operation_id}")
 		if area:
 			parts.append(f"area={area}")
+		if component:
+			parts.append(f"component={component}")
 		if level:
 			parts.append(f"level={level}")
 		if since:
@@ -728,7 +736,8 @@ def tail(
 				since=since,
 				limit=limit,
 				search_after=search_after,
-				application=cfg.application,
+				application=effective_application,
+				component=component,
 			)
 			_verbose_echo(f"Received {len(docs)} docs, next cursor={search_after}")
 			if verbose and docs:
@@ -820,9 +829,11 @@ def tail(
 def search(
 	q: str = typer.Option("", "--q", help="Search query"),
 	area: str = typer.Option(None, "--area"),
+	component: str = typer.Option(None, "--component", "-c", help="Filter by component name"),
 	level: str = typer.Option(None, "--level"),
 	operation_id: str = typer.Option(None, "--operation", "-o"),
 	since: str = typer.Option(None, "--since"),
+	application: str = typer.Option(None, "--application", "-a", help="Filter by application name"),
 	limit: int = typer.Option(50, "--limit"),
 	follow: bool = typer.Option(False, "--follow", "-f"),
 	utc: bool = typer.Option(False, "--utc", help="Display timestamps in UTC instead of local time"),
@@ -834,6 +845,7 @@ def search(
 
 	_apply_common_options(env, url)
 	client, cfg = require_opensearch()
+	effective_application = application or cfg.application
 	search_after = None
 	consecutive_errors = 0
 	max_errors = 3
@@ -852,7 +864,8 @@ def search(
 					since=since,
 					limit=limit,
 					search_after=search_after,
-					application=cfg.application,
+					application=effective_application,
+					component=component,
 				)
 			else:
 				docs = search_logs(
@@ -864,7 +877,8 @@ def search(
 					level=level,
 					since=since,
 					limit=limit,
-					application=cfg.application,
+					application=effective_application,
+					component=component,
 				)
 			entries = normalize_log_entries(docs, limit=limit)
 			consecutive_errors = 0
@@ -926,9 +940,11 @@ def search(
 def last_error(
 	q: str = typer.Option("", "--q", help="Search query"),
 	area: str = typer.Option(None, "--area"),
+	component: str = typer.Option(None, "--component", "-c", help="Filter by component name"),
 	operation_id: str = typer.Option(None, "--operation", "-o"),
 	since: str = typer.Option(None, "--since"),
 	until: str = typer.Option(None, "--until"),
+	application: str = typer.Option(None, "--application", "-a", help="Filter by application name"),
 	limit: int = typer.Option(1, "--limit"),
 	utc: bool = typer.Option(False, "--utc", help="Display timestamps in UTC instead of local time"),
 	env: str = ENV_OPTION,
@@ -939,6 +955,7 @@ def last_error(
 
 	_apply_common_options(env, url)
 	client, cfg = require_opensearch()
+	effective_application = application or cfg.application
 
 	try:
 		docs = get_last_errors(
@@ -950,7 +967,8 @@ def last_error(
 			since=since,
 			until=until,
 			limit=limit,
-			application=cfg.application,
+			application=effective_application,
+			component=component,
 		)
 		entries = normalize_log_entries(docs, limit=limit)
 	except (ConnectionFailedError, urllib.error.URLError) as e:

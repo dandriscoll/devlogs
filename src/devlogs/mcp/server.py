@@ -135,6 +135,10 @@ async def main():
                             "type": "string",
                             "description": "Filter by application area (e.g., 'api', 'database', 'auth')",
                         },
+                        "component": {
+                            "type": "string",
+                            "description": "Filter by component name (e.g., 'web', 'worker', 'jenkins')",
+                        },
                         "operation_id": {
                             "type": "string",
                             "description": "Filter by specific operation ID to see all logs for that operation",
@@ -161,6 +165,10 @@ async def main():
                             "items": {"type": ["string", "number"]},
                             "description": "Cursor from a previous response for pagination",
                         },
+                        "application": {
+                            "type": "string",
+                            "description": "Filter by application name",
+                        },
                     },
                 },
             ),
@@ -181,6 +189,10 @@ async def main():
                         "area": {
                             "type": "string",
                             "description": "Filter by application area",
+                        },
+                        "component": {
+                            "type": "string",
+                            "description": "Filter by component name",
                         },
                         "level": {
                             "type": "string",
@@ -204,6 +216,10 @@ async def main():
                             "items": {"type": ["string", "number"]},
                             "description": "Cursor from a previous response for pagination",
                         },
+                        "application": {
+                            "type": "string",
+                            "description": "Filter by application name",
+                        },
                     },
                 },
             ),
@@ -216,6 +232,14 @@ async def main():
                         "operation_id": {
                             "type": "string",
                             "description": "The operation ID to summarize",
+                        },
+                        "component": {
+                            "type": "string",
+                            "description": "Filter by component name",
+                        },
+                        "application": {
+                            "type": "string",
+                            "description": "Filter by application name",
                         },
                     },
                     "required": ["operation_id"],
@@ -257,6 +281,14 @@ async def main():
                             "items": {"type": ["string", "number"]},
                             "description": "Cursor from a previous response for pagination",
                         },
+                        "component": {
+                            "type": "string",
+                            "description": "Filter by component name",
+                        },
+                        "application": {
+                            "type": "string",
+                            "description": "Filter by application name",
+                        },
                     },
                     "required": ["operation_id"],
                 },
@@ -270,6 +302,10 @@ async def main():
                         "area": {
                             "type": "string",
                             "description": "Filter by application area",
+                        },
+                        "component": {
+                            "type": "string",
+                            "description": "Filter by component name",
                         },
                         "since": {
                             "type": "string",
@@ -285,6 +321,10 @@ async def main():
                             "description": "Only show operations that had errors",
                             "default": False,
                         },
+                        "application": {
+                            "type": "string",
+                            "description": "Filter by application name",
+                        },
                     },
                 },
             ),
@@ -297,6 +337,10 @@ async def main():
                         "area": {
                             "type": "string",
                             "description": "Filter by application area",
+                        },
+                        "component": {
+                            "type": "string",
+                            "description": "Filter by component name",
                         },
                         "since": {
                             "type": "string",
@@ -321,6 +365,10 @@ async def main():
                             "description": "Only show operations that had errors",
                             "default": False,
                         },
+                        "application": {
+                            "type": "string",
+                            "description": "Filter by application name",
+                        },
                     },
                 },
             ),
@@ -339,6 +387,14 @@ async def main():
                             "description": "Minimum number of operations an area must have to be included",
                             "default": 1,
                         },
+                        "component": {
+                            "type": "string",
+                            "description": "Filter by component name",
+                        },
+                        "application": {
+                            "type": "string",
+                            "description": "Filter by application name",
+                        },
                     },
                 },
             ),
@@ -355,6 +411,10 @@ async def main():
                         "area": {
                             "type": "string",
                             "description": "Filter by application area",
+                        },
+                        "component": {
+                            "type": "string",
+                            "description": "Filter by component name",
                         },
                         "since": {
                             "type": "string",
@@ -379,6 +439,10 @@ async def main():
                             "description": "Include logs missing the signature field",
                             "default": False,
                         },
+                        "application": {
+                            "type": "string",
+                            "description": "Filter by application name",
+                        },
                     },
                 },
             ),
@@ -396,6 +460,10 @@ async def main():
                             "type": "string",
                             "description": "Filter by application area",
                         },
+                        "component": {
+                            "type": "string",
+                            "description": "Filter by component name",
+                        },
                         "operation_id": {
                             "type": "string",
                             "description": "Filter by specific operation ID",
@@ -412,6 +480,10 @@ async def main():
                             "type": "integer",
                             "description": "Maximum number of error entries to return (default: 1, max: 100)",
                             "default": 1,
+                        },
+                        "application": {
+                            "type": "string",
+                            "description": "Filter by application name",
                         },
                     },
                 },
@@ -434,6 +506,10 @@ async def main():
                             "type": "string",
                             "description": "Filter by application area",
                         },
+                        "component": {
+                            "type": "string",
+                            "description": "Filter by component name",
+                        },
                         "query": {
                             "type": "string",
                             "description": "Text search query to match against log messages, logger names, and features",
@@ -452,6 +528,10 @@ async def main():
                             "description": "Number of entries after the anchor (default: 20)",
                             "default": 20,
                         },
+                        "application": {
+                            "type": "string",
+                            "description": "Filter by application name",
+                        },
                     },
                     "required": ["anchor_timestamp"],
                 },
@@ -467,9 +547,13 @@ async def main():
             arguments = {}
 
         try:
-            client, index, application = _create_client_and_index()
+            client, index, config_application = _create_client_and_index()
         except RuntimeError as e:
             return _error_response(str(e), "InitializationError")
+
+        application = arguments.get("application") or config_application
+
+        component = arguments.get("component")
 
         if name == "search_logs":
             query = arguments.get("query")
@@ -495,6 +579,7 @@ async def main():
                     cursor=cursor,
                     sort_order="desc",
                     application=application,
+                    component=component,
                 )
                 entries = _normalize_entries(docs, limit=limit)
 
@@ -533,6 +618,7 @@ async def main():
                     limit=limit,
                     search_after=cursor,
                     application=application,
+                    component=component,
                 )
                 entries = _normalize_entries(docs, limit=limit)
 
@@ -554,7 +640,7 @@ async def main():
                 return _error_response("operation_id is required", "ValidationError")
 
             try:
-                summary = get_operation_summary(client, index, operation_id, application=application)
+                summary = get_operation_summary(client, index, operation_id, application=application, component=component)
 
                 if not summary:
                     return _json_response(
@@ -594,6 +680,7 @@ async def main():
                     limit=limit,
                     cursor=cursor,
                     application=application,
+                    component=component,
                 )
                 entries = _normalize_entries(docs, limit=limit)
 
@@ -623,6 +710,7 @@ async def main():
                     limit=limit,
                     with_errors_only=with_errors_only,
                     application=application,
+                    component=component,
                 )
 
                 return _json_response(
@@ -654,6 +742,7 @@ async def main():
                     order_by=order_by,
                     with_errors_only=with_errors_only,
                     application=application,
+                    component=component,
                 )
 
                 return _json_response(
@@ -676,6 +765,7 @@ async def main():
                     since=since,
                     min_operations=min_operations,
                     application=application,
+                    component=component,
                 )
 
                 return _json_response(
@@ -709,6 +799,7 @@ async def main():
                     min_count=min_count,
                     include_missing=include_missing,
                     application=application,
+                    component=component,
                 )
                 return _json_response(
                     data={"signatures": signatures},
@@ -738,6 +829,7 @@ async def main():
                     until=until,
                     limit=limit,
                     application=application,
+                    component=component,
                 )
                 entries = _normalize_entries(docs, limit=limit)
                 return _json_response(
@@ -775,6 +867,7 @@ async def main():
                     before=before,
                     after=after,
                     application=application,
+                    component=component,
                 )
                 entries = _normalize_entries(docs)
                 return _json_response(

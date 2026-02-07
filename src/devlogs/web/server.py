@@ -34,11 +34,12 @@ def _try_client() -> Tuple[Optional[object], Optional[str]]:
 
 
 @app.get("/api/search")
-def search(q: Optional[str] = None, area: Optional[str] = None, level: Optional[str] = None, operation_id: Optional[str] = None, since: Optional[str] = None, limit: int = 50):
+def search(q: Optional[str] = None, area: Optional[str] = None, component: Optional[str] = None, level: Optional[str] = None, operation_id: Optional[str] = None, since: Optional[str] = None, application: Optional[str] = None, limit: int = 50):
 	client, error = _try_client()
 	if not client:
 		return {"results": [], "error": error}
 	cfg = load_config()
+	effective_application = application or cfg.application
 	docs = search_logs(
 		client,
 		cfg.index,
@@ -48,16 +49,19 @@ def search(q: Optional[str] = None, area: Optional[str] = None, level: Optional[
 		level=level,
 		since=since,
 		limit=limit,
+		application=effective_application,
+		component=component,
 	)
 	results = normalize_log_entries(docs, limit=limit)
 	return {"results": results}
 
 @app.get("/api/tail")
-def tail(operation_id: Optional[str] = None, area: Optional[str] = None, level: Optional[str] = None, since: Optional[str] = None, limit: int = 20):
+def tail(operation_id: Optional[str] = None, area: Optional[str] = None, component: Optional[str] = None, level: Optional[str] = None, since: Optional[str] = None, application: Optional[str] = None, limit: int = 20):
 	client, error = _try_client()
 	if not client:
 		return {"results": [], "error": error}
 	cfg = load_config()
+	effective_application = application or cfg.application
 	docs, cursor = tail_logs(
 		client,
 		cfg.index,
@@ -66,6 +70,8 @@ def tail(operation_id: Optional[str] = None, area: Optional[str] = None, level: 
 		level=level,
 		since=since,
 		limit=limit,
+		application=effective_application,
+		component=component,
 	)
 	results = normalize_log_entries(docs, limit=limit)
 	return {"results": results, "cursor": cursor}

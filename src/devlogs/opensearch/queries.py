@@ -32,7 +32,7 @@ def _build_time_range(since: Optional[str], until: Optional[str], since_inclusiv
 	return {"range": {"timestamp": range_query}}
 
 
-def _build_log_query(query=None, area=None, operation_id=None, level=None, since=None, until=None, since_inclusive: bool = True, until_inclusive: bool = True, application=None):
+def _build_log_query(query=None, area=None, operation_id=None, level=None, since=None, until=None, since_inclusive: bool = True, until_inclusive: bool = True, application=None, component=None):
 	filters = [
 		{
 			"bool": {
@@ -48,6 +48,8 @@ def _build_log_query(query=None, area=None, operation_id=None, level=None, since
 		filters.append({"term": {"application": application}})
 	if area:
 		filters.append({"term": {"area": area}})
+	if component:
+		filters.append({"term": {"component": component}})
 	if operation_id:
 		filters.append({"term": {"operation_id": operation_id}})
 	level_terms = _normalize_level_terms(level)
@@ -109,6 +111,7 @@ def _normalize_entry(doc: Dict[str, Any]) -> Dict[str, Any]:
 		"level": normalize_level(doc.get("level")),
 		"message": doc.get("message"),
 		"logger": doc.get("logger"),
+		"component": doc.get("component"),
 		"area": doc.get("area"),
 		"operation_id": doc.get("operation_id"),
 		"pathname": doc.get("pathname"),
@@ -128,7 +131,7 @@ def normalize_log_entries(docs: Iterable[Dict[str, Any]], limit: Optional[int] =
 	return entries
 
 
-def search_logs(client, index, query=None, area=None, operation_id=None, level=None, since=None, until=None, limit=50, application=None):
+def search_logs(client, index, query=None, area=None, operation_id=None, level=None, since=None, until=None, limit=50, application=None, component=None):
 	"""Search log entries with filters."""
 	body = {
 		"query": _build_log_query(
@@ -139,6 +142,7 @@ def search_logs(client, index, query=None, area=None, operation_id=None, level=N
 			since=since,
 			until=until,
 			application=application,
+			component=component,
 		),
 		"sort": [{"timestamp": "desc"}, {"_id": "desc"}],
 		"size": limit,
@@ -148,7 +152,7 @@ def search_logs(client, index, query=None, area=None, operation_id=None, level=N
 	return _hits_to_docs(hits)
 
 
-def get_last_errors(client, index, query=None, area=None, operation_id=None, since=None, until=None, limit=1, application=None):
+def get_last_errors(client, index, query=None, area=None, operation_id=None, since=None, until=None, limit=1, application=None, component=None):
 	"""Get the most recent error/critical log entries."""
 	base_query = _build_log_query(
 		query=query,
@@ -157,6 +161,7 @@ def get_last_errors(client, index, query=None, area=None, operation_id=None, sin
 		since=since,
 		until=until,
 		application=application,
+		component=component,
 	)
 	base_query.get("bool", {}).get("filter", []).append(
 		{"terms": {"level": ["error", "critical"]}}
@@ -191,6 +196,7 @@ def search_logs_page(
 	since_inclusive: bool = True,
 	until_inclusive: bool = True,
 	application=None,
+	component=None,
 ):
 	"""Search log entries with pagination support."""
 	body = {
@@ -204,6 +210,7 @@ def search_logs_page(
 			since_inclusive=since_inclusive,
 			until_inclusive=until_inclusive,
 			application=application,
+			component=component,
 		),
 		"sort": _build_sort(sort_order),
 		"size": limit,
@@ -217,7 +224,7 @@ def search_logs_page(
 	return docs, next_cursor
 
 
-def get_operation_logs(client, index, operation_id, query=None, level=None, since=None, until=None, limit=100, cursor=None, application=None):
+def get_operation_logs(client, index, operation_id, query=None, level=None, since=None, until=None, limit=100, cursor=None, application=None, component=None):
 	"""Get logs for an operation in chronological order."""
 	return search_logs_page(
 		client=client,
@@ -231,10 +238,11 @@ def get_operation_logs(client, index, operation_id, query=None, level=None, sinc
 		cursor=cursor,
 		sort_order="asc",
 		application=application,
+		component=component,
 	)
 
 
-def tail_logs(client, index, query=None, operation_id=None, area=None, level=None, since=None, until=None, limit=20, search_after=None, application=None):
+def tail_logs(client, index, query=None, operation_id=None, area=None, level=None, since=None, until=None, limit=20, search_after=None, application=None, component=None):
 	"""Tail log entries for an operation.
 
 	First call returns the most recent entries (newest first) and reverses for chronological display.
@@ -249,6 +257,7 @@ def tail_logs(client, index, query=None, operation_id=None, area=None, level=Non
 			since=since,
 			until=until,
 			application=application,
+			component=component,
 		),
 		"size": limit,
 	}
@@ -281,9 +290,11 @@ def tail_logs(client, index, query=None, operation_id=None, area=None, level=Non
 	return docs, next_search_after
 
 
-def get_operation_summary(client, index, operation_id, application=None):
+def get_operation_summary(client, index, operation_id, application=None, component=None):
 	"""Get summary for an operation using aggregations."""
 	op_query_filters = [{"term": {"operation_id": operation_id}}]
+	if component:
+		op_query_filters.append({"term": {"component": component}})
 	if application:
 		op_query_filters.append({"term": {"application": application}})
 	body = {
@@ -358,11 +369,13 @@ def get_operation_summary(client, index, operation_id, application=None):
 	}
 
 
-def list_operations(client, index, area=None, since=None, limit=20, with_errors_only=False, application=None):
+def list_operations(client, index, area=None, since=None, limit=20, with_errors_only=False, application=None, component=None):
 	"""List recent operations with summary stats."""
 	query_filters = []
 	if application:
 		query_filters.append({"term": {"application": application}})
+	if component:
+		query_filters.append({"term": {"component": component}})
 	if area:
 		query_filters.append({"term": {"area": area}})
 	if since:
@@ -434,9 +447,9 @@ def list_operations(client, index, area=None, since=None, limit=20, with_errors_
 	return operations
 
 
-def list_recent_operations(client, index, area=None, since=None, until=None, limit=20, order_by: str = "last_activity", with_errors_only: bool = False, application=None):
+def list_recent_operations(client, index, area=None, since=None, until=None, limit=20, order_by: str = "last_activity", with_errors_only: bool = False, application=None, component=None):
 	"""List recent operations ordered by last activity or error count."""
-	base_query = _build_log_query(area=area, since=since, until=until, application=application)
+	base_query = _build_log_query(area=area, since=since, until=until, application=application, component=component)
 	if order_by not in ("last_activity", "error_count"):
 		order_by = "last_activity"
 
@@ -551,13 +564,14 @@ def list_error_signatures(
 	min_count: int = 1,
 	include_missing: bool = False,
 	application=None,
+	component=None,
 ):
 	"""Aggregate error signatures by exception/message."""
 	if not field:
 		field = "exception"
 	field_name = field if field.endswith(".keyword") else f"{field}.keyword"
 
-	base_query = _build_log_query(area=area, since=since, until=until, application=application)
+	base_query = _build_log_query(area=area, since=since, until=until, application=application, component=component)
 	base_filters = base_query.get("bool", {}).get("filter", [])
 	base_filters.append({"terms": {"level": ["error", "critical"]}})
 	if not include_missing:
@@ -623,6 +637,7 @@ def get_error_context(
 	before: int = 20,
 	after: int = 20,
 	application=None,
+	component=None,
 ):
 	"""Fetch logs around an anchor timestamp."""
 	before_count = max(int(before or 0), 0)
@@ -641,6 +656,7 @@ def get_error_context(
 		sort_order="desc",
 		until_inclusive=True,
 		application=application,
+		component=component,
 	)
 	after_docs, _ = search_logs_page(
 		client=client,
@@ -654,17 +670,20 @@ def get_error_context(
 		sort_order="asc",
 		since_inclusive=False,
 		application=application,
+		component=component,
 	)
 	before_docs = list(reversed(before_docs))
 
 	return before_docs + after_docs
 
 
-def list_areas(client, index, since=None, min_operations=1, application=None):
+def list_areas(client, index, since=None, min_operations=1, application=None, component=None):
 	"""List all application areas with activity counts."""
 	query_filters = []
 	if application:
 		query_filters.append({"term": {"application": application}})
+	if component:
+		query_filters.append({"term": {"component": component}})
 	if since:
 		normalized_since = resolve_relative_time(since)
 		query_filters.append({"range": {"timestamp": {"gte": normalized_since}}})
