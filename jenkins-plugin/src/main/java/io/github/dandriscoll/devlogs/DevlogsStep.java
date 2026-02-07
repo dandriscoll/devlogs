@@ -214,7 +214,7 @@ public class DevlogsStep extends Step implements Serializable {
         String resolvedApplication = application;
         if (resolvedApplication == null || resolvedApplication.trim().isEmpty()) {
             if (run != null) {
-                resolvedApplication = run.getParent().getFullName();
+                resolvedApplication = run.getParent().getName();
             } else {
                 resolvedApplication = "jenkins";
             }
@@ -416,7 +416,7 @@ public class DevlogsStep extends Step implements Serializable {
                 .withContext(org.jenkinsci.plugins.workflow.log.TaskListenerDecorator.merge(
                     existingDecorator,
                     decorator))
-                .withCallback(BodyExecutionCallback.wrap(getContext()))
+                .withCallback(new DevlogsBodyCallback(getContext(), decorator))
                 .start();
 
             return false;
@@ -425,6 +425,32 @@ public class DevlogsStep extends Step implements Serializable {
         @Override
         public void stop(@Nonnull Throwable cause) throws Exception {
             getContext().onFailure(cause);
+        }
+    }
+
+    /**
+     * Callback that sends "Build completed" event when the body finishes.
+     */
+    private static class DevlogsBodyCallback extends BodyExecutionCallback {
+        private static final long serialVersionUID = 1L;
+        private final StepContext parentContext;
+        private final DevlogsGlobalDecorator decorator;
+
+        DevlogsBodyCallback(StepContext parentContext, DevlogsGlobalDecorator decorator) {
+            this.parentContext = parentContext;
+            this.decorator = decorator;
+        }
+
+        @Override
+        public void onSuccess(StepContext context, Object result) {
+            decorator.sendLifecycleEvent("Build completed", "info");
+            parentContext.onSuccess(result);
+        }
+
+        @Override
+        public void onFailure(StepContext context, Throwable t) {
+            decorator.sendLifecycleEvent("Build completed", "info");
+            parentContext.onFailure(t);
         }
     }
 }

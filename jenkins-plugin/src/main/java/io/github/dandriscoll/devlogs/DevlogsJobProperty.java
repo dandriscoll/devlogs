@@ -98,7 +98,7 @@ public class DevlogsJobProperty extends OptionalJobProperty<Job<?, ?>> {
         if (application != null && !application.trim().isEmpty()) {
             return application;
         }
-        return run.getParent().getFullName();
+        return run.getParent().getName();
     }
 
     @Extension

@@ -185,7 +185,7 @@ public class DevlogsLogStorage implements LogStorage {
             doc.addProperty("level", detectLevel(line));
             doc.addProperty("application", application);
             doc.addProperty("component", component);
-            doc.addProperty("area", jobName);
+            doc.addProperty("operation_id", buildId);
 
             if (environment != null && !environment.isEmpty()) {
                 doc.addProperty("environment", environment);
@@ -251,6 +251,83 @@ public class DevlogsLogStorage implements LogStorage {
     }
 
     /**
+     * Send an event (e.g., build started/completed) to devlogs.
+     */
+    void sendEvent(String message, String level) {
+        int seqNum = seq.incrementAndGet();
+
+        try {
+            initTransients();
+            String timestamp = formatTimestamp();
+
+            JsonObject doc = new JsonObject();
+            doc.addProperty("timestamp", timestamp);
+            doc.addProperty("message", message);
+            doc.addProperty("level", level);
+            doc.addProperty("application", application);
+            doc.addProperty("component", component);
+            doc.addProperty("operation_id", buildId);
+            doc.addProperty("area", "jenkins-plugin");
+
+            if (environment != null && !environment.isEmpty()) {
+                doc.addProperty("environment", environment);
+            }
+
+            JsonObject fields = new JsonObject();
+            fields.addProperty("run_id", buildId);
+            fields.addProperty("job", jobName);
+            fields.addProperty("build_number", buildNumber);
+            fields.addProperty("build_url", buildUrl);
+            fields.addProperty("seq", seqNum);
+            doc.add("fields", fields);
+
+            if (!pipelineMode) {
+                doc.addProperty("doc_type", "log_entry");
+                doc.addProperty("logger", "jenkins");
+                doc.addProperty("process", buildNumber);
+                doc.addProperty("thread", seqNum);
+            }
+
+            String targetUrl;
+            RequestBody body;
+
+            if (pipelineMode) {
+                targetUrl = baseUrl.endsWith("/") ? baseUrl + "v1/logs" : baseUrl + "/v1/logs";
+                com.google.gson.JsonArray records = new com.google.gson.JsonArray();
+                records.add(doc);
+                JsonObject payload = new JsonObject();
+                payload.add("records", records);
+                body = RequestBody.create(gson.toJson(payload), MediaType.parse("application/json"));
+            } else {
+                targetUrl = baseUrl + "/_bulk";
+                String ndjson = "{\"index\":{\"_index\":\"" + index + "\"}}\n" + gson.toJson(doc) + "\n";
+                body = RequestBody.create(ndjson, MediaType.parse("application/x-ndjson"));
+            }
+
+            Request.Builder requestBuilder = new Request.Builder()
+                .url(targetUrl)
+                .post(body);
+
+            if (authHeader != null) {
+                requestBuilder.addHeader("Authorization", authHeader);
+            }
+
+            Request request = requestBuilder.build();
+
+            try (Response response = client.newCall(request).execute()) {
+                if (!response.isSuccessful()) {
+                    String responseBody = response.body() != null ? response.body().string() : "";
+                    String preview = responseBody.length() > 100 ? responseBody.substring(0, 100) : responseBody;
+                    LOGGER.log(Level.WARNING, "Failed to send event to devlogs, HTTP " + response.code() + ": " + preview);
+                }
+            }
+
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "Failed to send event to devlogs: " + e.getMessage());
+        }
+    }
+
+    /**
      * Check if LogStorage is active for a given build.
      */
     static boolean isActiveForBuild(String buildId) {
@@ -273,7 +350,7 @@ public class DevlogsLogStorage implements LogStorage {
     static String detectLevel(String line) {
         String upper = line.toUpperCase();
         if (upper.contains("ERROR") || upper.contains("FATAL") || upper.contains("FAILED")) return "error";
-        if (upper.contains("WARN")) return "warn";
+        if (upper.contains("WARN")) return "warning";
         if (upper.contains("DEBUG")) return "debug";
         return "info";
     }
@@ -371,6 +448,7 @@ public class DevlogsLogStorage implements LogStorage {
         private final String nodeId;
         private final StringBuilder lineBuffer = new StringBuilder();
         private String currentLineTimestamp = null;
+        private boolean started = false;
 
         DevlogsOutputStream(OutputStream delegate, DevlogsLogStorage storage, String nodeId) {
             this.delegate = delegate;
@@ -385,7 +463,7 @@ public class DevlogsLogStorage implements LogStorage {
             if (b == '\n') {
                 if (lineBuffer.length() > 0) {
                     String timestamp = currentLineTimestamp != null ? currentLineTimestamp : formatTimestamp();
-                    storage.sendLine(lineBuffer.toString(), timestamp, nodeId);
+                    dispatchLine(lineBuffer.toString(), timestamp);
                     lineBuffer.setLength(0);
                     currentLineTimestamp = null;
                 }
@@ -406,7 +484,7 @@ public class DevlogsLogStorage implements LogStorage {
                 if (c == '\n') {
                     if (lineBuffer.length() > 0) {
                         String timestamp = currentLineTimestamp != null ? currentLineTimestamp : formatTimestamp();
-                        storage.sendLine(lineBuffer.toString(), timestamp, nodeId);
+                        dispatchLine(lineBuffer.toString(), timestamp);
                         lineBuffer.setLength(0);
                         currentLineTimestamp = null;
                     }
@@ -433,7 +511,16 @@ public class DevlogsLogStorage implements LogStorage {
         @Override
         public void close() throws IOException {
             flush();
+            storage.sendEvent("Build completed", "info");
             delegate.close();
+        }
+
+        private void dispatchLine(String line, String timestamp) {
+            if (!started) {
+                started = true;
+                storage.sendEvent("Build started", "info");
+            }
+            storage.sendLine(line, timestamp, nodeId);
         }
     }
 }

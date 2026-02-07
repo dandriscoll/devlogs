@@ -29,6 +29,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.Base64;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -221,7 +222,7 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
         // Derive application from job name if not specified
         String resolvedApplication = application;
         if (resolvedApplication == null || resolvedApplication.trim().isEmpty()) {
-            resolvedApplication = build.getParent().getFullName();
+            resolvedApplication = build.getParent().getName();
         }
 
         boolean effectivePipeline = getEffectivePipeline(url);
@@ -270,6 +271,8 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
         private final String version;
         private final boolean pipeline;
         private final AtomicInteger seq = new AtomicInteger(0);
+        private final AtomicBoolean started = new AtomicBoolean(false);
+        private final AtomicBoolean completed = new AtomicBoolean(false);
 
         public DevlogsConsoleLogFilter(String url, String index, Run<?, ?> run,
                                        String application, String component,
@@ -315,7 +318,7 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
         public OutputStream decorateLogger(Run build, OutputStream logger)
                 throws IOException, InterruptedException {
             return new DevlogsOutputStream(logger, url, index, runId, jobName, buildNumber, buildUrl, seq,
-                application, component, environment, version, pipeline);
+                application, component, environment, version, pipeline, started, completed);
         }
     }
 
@@ -352,6 +355,8 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
         private String currentLineTimestamp = null;
         private final String authHeader;
         private boolean errorReported = false;
+        private final AtomicBoolean started;
+        private final AtomicBoolean completed;
 
         private transient OkHttpClient client;
         private transient Gson gson;
@@ -362,7 +367,8 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
         public DevlogsOutputStream(OutputStream delegate, String url, String index, String runId,
                                    String jobName, int buildNumber, String buildUrl, AtomicInteger seq,
                                    String application, String component, String environment,
-                                   String version, boolean pipeline) {
+                                   String version, boolean pipeline,
+                                   AtomicBoolean started, AtomicBoolean completed) {
             this.delegate = delegate;
             this.index = index;
             this.runId = runId;
@@ -375,6 +381,8 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
             this.environment = environment;
             this.version = version;
             this.pipeline = pipeline;
+            this.started = started;
+            this.completed = completed;
 
             // Parse URL to extract credentials and base URL
             // Collector URLs (token-only) use Bearer auth
@@ -488,6 +496,10 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
         @Override
         public void close() throws IOException {
             flush();
+            if (completed.compareAndSet(false, true)) {
+                sendEvent("Build completed", "info");
+                flushBatch();
+            }
             delegate.close();
         }
 
@@ -521,6 +533,10 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
         private void sendLine(String line, String timestamp) {
             if (line.trim().isEmpty()) return;
 
+            if (started.compareAndSet(false, true)) {
+                sendEvent("Build started", "info");
+            }
+
             try {
                 initTransients();
 
@@ -536,8 +552,8 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
                     doc.addProperty("component", component);
                     doc.addProperty("timestamp", timestamp);
                     doc.addProperty("message", line);
-                    doc.addProperty("level", "info");
-                    doc.addProperty("area", jobName);
+                    doc.addProperty("level", DevlogsLogStorage.detectLevel(line));
+                    doc.addProperty("operation_id", runId);
 
                     if (environment != null && !environment.isEmpty()) {
                         doc.addProperty("environment", environment);
@@ -564,8 +580,8 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
                     doc.addProperty("component", component);
                     doc.addProperty("timestamp", timestamp);
                     doc.addProperty("message", line);
-                    doc.addProperty("level", "info");
-                    doc.addProperty("area", jobName);
+                    doc.addProperty("level", DevlogsLogStorage.detectLevel(line));
+                    doc.addProperty("operation_id", runId);
 
                     if (environment != null && !environment.isEmpty()) {
                         doc.addProperty("environment", environment);
@@ -605,6 +621,80 @@ public class DevlogsBuildWrapper extends SimpleBuildWrapper implements Serializa
                 }
             } catch (Exception e) {
                 // Don't fail the build if logging fails
+            }
+        }
+
+        private void sendEvent(String message, String level) {
+            try {
+                initTransients();
+                String timestamp = formatTimestamp();
+
+                if (pipeline) {
+                    JsonObject doc = new JsonObject();
+                    doc.addProperty("application", application);
+                    doc.addProperty("component", component);
+                    doc.addProperty("timestamp", timestamp);
+                    doc.addProperty("message", message);
+                    doc.addProperty("level", level);
+                    doc.addProperty("operation_id", runId);
+                    doc.addProperty("area", "jenkins-plugin");
+
+                    if (environment != null && !environment.isEmpty()) {
+                        doc.addProperty("environment", environment);
+                    }
+                    if (version != null && !version.isEmpty()) {
+                        doc.addProperty("version", version);
+                    }
+
+                    JsonObject fields = new JsonObject();
+                    fields.addProperty("run_id", runId);
+                    fields.addProperty("job", jobName);
+                    fields.addProperty("build_number", buildNumber);
+                    fields.addProperty("build_url", buildUrl);
+                    fields.addProperty("seq", seq.incrementAndGet());
+                    doc.add("fields", fields);
+
+                    collectorBatch.add(doc);
+                } else {
+                    JsonObject doc = new JsonObject();
+                    doc.addProperty("doc_type", "log_entry");
+                    doc.addProperty("application", application);
+                    doc.addProperty("component", component);
+                    doc.addProperty("timestamp", timestamp);
+                    doc.addProperty("message", message);
+                    doc.addProperty("level", level);
+                    doc.addProperty("operation_id", runId);
+                    doc.addProperty("area", "jenkins-plugin");
+
+                    if (environment != null && !environment.isEmpty()) {
+                        doc.addProperty("environment", environment);
+                    }
+                    if (version != null && !version.isEmpty()) {
+                        doc.addProperty("version", version);
+                    }
+
+                    JsonObject fields = new JsonObject();
+                    fields.addProperty("run_id", runId);
+                    fields.addProperty("job", jobName);
+                    fields.addProperty("build_number", buildNumber);
+                    fields.addProperty("build_url", buildUrl);
+                    fields.addProperty("seq", seq.incrementAndGet());
+                    doc.add("fields", fields);
+
+                    doc.addProperty("logger", "jenkins");
+                    doc.addProperty("process", buildNumber);
+                    doc.addProperty("thread", seq.get());
+
+                    batchBuffer.append("{\"index\":{\"_index\":\"").append(index).append("\"}}\n");
+                    batchBuffer.append(gson.toJson(doc)).append("\n");
+                }
+
+                batchCount++;
+                if (batchCount >= BATCH_SIZE) {
+                    flushBatch();
+                }
+            } catch (Exception e) {
+                // Don't fail the build if event sending fails
             }
         }
 

@@ -120,6 +120,6 @@ public class DevlogsGlobalConfiguration extends GlobalConfiguration {
         if (application != null && !application.trim().isEmpty()) {
             return application;
         }
-        return run.getParent().getFullName();
+        return run.getParent().getName();
     }
 }

@@ -17,6 +17,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.Base64;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -41,6 +42,8 @@ public final class DevlogsGlobalDecorator extends TaskListenerDecorator implemen
     private final String version;
     private final boolean pipeline;
     private final AtomicInteger seq;
+    private final AtomicBoolean started = new AtomicBoolean(false);
+    private final AtomicBoolean completed = new AtomicBoolean(false);
 
     public DevlogsGlobalDecorator(DevlogsAction action) {
         this.url = action.getUrl();
@@ -61,7 +64,25 @@ public final class DevlogsGlobalDecorator extends TaskListenerDecorator implemen
     @Override
     public OutputStream decorate(@Nonnull OutputStream logger) throws IOException, InterruptedException {
         return new DevlogsOutputStream(logger, url, index, runId, jobName, buildNumber, buildUrl, seq,
-            application, component, environment, version, pipeline);
+            application, component, environment, version, pipeline, started, completed);
+    }
+
+    /**
+     * Send a lifecycle event (e.g., "Build completed") directly from the decorator.
+     * Called by DevlogsStepExecution when the body finishes.
+     */
+    void sendLifecycleEvent(String message, String level) {
+        if (completed.compareAndSet(false, true)) {
+            try {
+                DevlogsOutputStream tempStream = new DevlogsOutputStream(
+                    OutputStream.nullOutputStream(), url, index, runId, jobName, buildNumber, buildUrl, seq,
+                    application, component, environment, version, pipeline, started, completed);
+                tempStream.sendEvent(message, level);
+                tempStream.flushBatch();
+            } catch (Exception e) {
+                LOGGER.log(Level.WARNING, "Failed to send lifecycle event: " + e.getMessage());
+            }
+        }
     }
 
     /**
@@ -97,6 +118,8 @@ public final class DevlogsGlobalDecorator extends TaskListenerDecorator implemen
         private String currentLineTimestamp = null;
         private final String authHeader;
         private boolean errorReported = false;
+        private final AtomicBoolean started;
+        private final AtomicBoolean completed;
 
         private transient OkHttpClient client;
         private transient Gson gson;
@@ -107,7 +130,8 @@ public final class DevlogsGlobalDecorator extends TaskListenerDecorator implemen
         public DevlogsOutputStream(OutputStream delegate, String url, String index, String runId,
                                    String jobName, int buildNumber, String buildUrl, AtomicInteger seq,
                                    String application, String component, String environment,
-                                   String version, boolean pipeline) {
+                                   String version, boolean pipeline,
+                                   AtomicBoolean started, AtomicBoolean completed) {
             this.delegate = delegate;
             this.index = index;
             this.runId = runId;
@@ -120,6 +144,8 @@ public final class DevlogsGlobalDecorator extends TaskListenerDecorator implemen
             this.environment = environment;
             this.version = version;
             this.pipeline = pipeline;
+            this.started = started;
+            this.completed = completed;
 
             // Parse URL to extract credentials and base URL
             String parsedBaseUrl = url;
@@ -251,6 +277,10 @@ public final class DevlogsGlobalDecorator extends TaskListenerDecorator implemen
             if (line.trim().isEmpty()) return;
             if (line.startsWith("ha:")) return;  // Jenkins console annotation
 
+            if (started.compareAndSet(false, true)) {
+                sendEvent("Build started", "info");
+            }
+
             try {
                 initTransients();
 
@@ -265,8 +295,8 @@ public final class DevlogsGlobalDecorator extends TaskListenerDecorator implemen
                     doc.addProperty("component", component);
                     doc.addProperty("timestamp", timestamp);
                     doc.addProperty("message", line);
-                    doc.addProperty("level", "info");
-                    doc.addProperty("area", jobName);
+                    doc.addProperty("level", DevlogsLogStorage.detectLevel(line));
+                    doc.addProperty("operation_id", runId);
 
                     if (environment != null && !environment.isEmpty()) {
                         doc.addProperty("environment", environment);
@@ -291,8 +321,8 @@ public final class DevlogsGlobalDecorator extends TaskListenerDecorator implemen
                     doc.addProperty("component", component);
                     doc.addProperty("timestamp", timestamp);
                     doc.addProperty("message", line);
-                    doc.addProperty("level", "info");
-                    doc.addProperty("area", jobName);
+                    doc.addProperty("level", DevlogsLogStorage.detectLevel(line));
+                    doc.addProperty("operation_id", runId);
 
                     if (environment != null && !environment.isEmpty()) {
                         doc.addProperty("environment", environment);
@@ -326,6 +356,80 @@ public final class DevlogsGlobalDecorator extends TaskListenerDecorator implemen
                 }
             } catch (Exception e) {
                 LOGGER.log(Level.WARNING, "Failed to send log line to devlogs: " + e.getMessage());
+            }
+        }
+
+        private void sendEvent(String message, String level) {
+            try {
+                initTransients();
+                String timestamp = formatTimestamp();
+
+                if (pipeline) {
+                    JsonObject doc = new JsonObject();
+                    doc.addProperty("application", application);
+                    doc.addProperty("component", component);
+                    doc.addProperty("timestamp", timestamp);
+                    doc.addProperty("message", message);
+                    doc.addProperty("level", level);
+                    doc.addProperty("operation_id", runId);
+                    doc.addProperty("area", "jenkins-plugin");
+
+                    if (environment != null && !environment.isEmpty()) {
+                        doc.addProperty("environment", environment);
+                    }
+                    if (version != null && !version.isEmpty()) {
+                        doc.addProperty("version", version);
+                    }
+
+                    JsonObject fields = new JsonObject();
+                    fields.addProperty("run_id", runId);
+                    fields.addProperty("job", jobName);
+                    fields.addProperty("build_number", buildNumber);
+                    fields.addProperty("build_url", buildUrl);
+                    fields.addProperty("seq", seq.incrementAndGet());
+                    doc.add("fields", fields);
+
+                    collectorBatch.add(doc);
+                } else {
+                    JsonObject doc = new JsonObject();
+                    doc.addProperty("doc_type", "log_entry");
+                    doc.addProperty("application", application);
+                    doc.addProperty("component", component);
+                    doc.addProperty("timestamp", timestamp);
+                    doc.addProperty("message", message);
+                    doc.addProperty("level", level);
+                    doc.addProperty("operation_id", runId);
+                    doc.addProperty("area", "jenkins-plugin");
+
+                    if (environment != null && !environment.isEmpty()) {
+                        doc.addProperty("environment", environment);
+                    }
+                    if (version != null && !version.isEmpty()) {
+                        doc.addProperty("version", version);
+                    }
+
+                    JsonObject fields = new JsonObject();
+                    fields.addProperty("run_id", runId);
+                    fields.addProperty("job", jobName);
+                    fields.addProperty("build_number", buildNumber);
+                    fields.addProperty("build_url", buildUrl);
+                    fields.addProperty("seq", seq.incrementAndGet());
+                    doc.add("fields", fields);
+
+                    doc.addProperty("logger", "jenkins");
+                    doc.addProperty("process", buildNumber);
+                    doc.addProperty("thread", seq.get());
+
+                    batchBuffer.append("{\"index\":{\"_index\":\"").append(index).append("\"}}\n");
+                    batchBuffer.append(gson.toJson(doc)).append("\n");
+                }
+
+                batchCount++;
+                if (batchCount >= BATCH_SIZE) {
+                    flushBatch();
+                }
+            } catch (Exception e) {
+                LOGGER.log(Level.WARNING, "Failed to send event to devlogs: " + e.getMessage());
             }
         }
 
