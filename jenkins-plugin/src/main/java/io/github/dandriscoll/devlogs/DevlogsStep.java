@@ -41,10 +41,25 @@ import java.util.regex.Pattern;
  */
 public class DevlogsStep extends Step implements Serializable {
     private static final long serialVersionUID = 2L;
-    private static final String VERSION = "2.0.2";
+    private static final String VERSION = getPluginVersion();
     private static final Logger LOGGER = Logger.getLogger(DevlogsStep.class.getName());
     // Pattern to detect environment variable prefixes like "DEVLOGS_OPENSEARCH_URL="
     private static final Pattern ENV_PREFIX_PATTERN = Pattern.compile("^[A-Z][A-Z0-9_]*=");
+
+    private static String getPluginVersion() {
+        try {
+            jenkins.model.Jenkins jenkins = jenkins.model.Jenkins.getInstanceOrNull();
+            if (jenkins != null) {
+                hudson.PluginWrapper plugin = jenkins.getPluginManager().getPlugin("devlogs");
+                if (plugin != null) {
+                    return plugin.getVersion();
+                }
+            }
+        } catch (Exception e) {
+            // Fall through to default
+        }
+        return "unknown";
+    }
 
     private String url;
     private String credentialsId;
