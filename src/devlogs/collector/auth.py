@@ -11,10 +11,8 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Tuple
 from urllib.parse import unquote
 
-# Token format: dl1_<kid>_<secret>
-# - kid: 6-24 alphanumeric + underscore/hyphen characters
-# - secret: 32-64 alphanumeric + underscore/hyphen characters
-TOKEN_PATTERN = re.compile(r"^dl1_[A-Za-z0-9_-]{6,24}_[A-Za-z0-9_-]{32,64}$")
+# Token format: any non-empty string (minimum 8 characters for basic security)
+TOKEN_PATTERN = re.compile(r"^.{8,}$")
 
 # Auth header patterns
 DEVLOGS1_PATTERN = re.compile(r"^Devlogs1\s+(\S+)", re.IGNORECASE)

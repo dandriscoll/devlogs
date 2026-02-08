@@ -80,65 +80,30 @@ class TestTokenMapping:
 
 
 class TestIsTokenWellFormed:
-    """Tests for token format validation (dl1_<kid>_<secret> format)."""
+    """Tests for token format validation (any non-empty string, min 8 chars)."""
 
-    def test_valid_token_minimal_lengths(self):
-        # kid: 6 chars, secret: 32 chars
+    def test_valid_dl1_token(self):
         token = "dl1_abc123_12345678901234567890123456789012"
         assert is_token_well_formed(token) is True
 
-    def test_valid_token_max_lengths(self):
-        # kid: 24 chars, secret: 64 chars
-        kid = "a" * 24
-        secret = "b" * 64
-        token = f"dl1_{kid}_{secret}"
+    def test_valid_plain_hex_token(self):
+        token = "835c53b0fe234f8fa343002b7f5ef1e0"
         assert is_token_well_formed(token) is True
 
-    def test_valid_token_with_special_chars(self):
-        # Underscore and hyphen allowed in kid and secret
-        token = "dl1_my-key_1_1234567890123456789012345678901a-b"
+    def test_valid_uuid_token(self):
+        token = "15e8bfa4-4a62-4a2d-9ae0-8dfda775fa95"
         assert is_token_well_formed(token) is True
 
     def test_empty_returns_false(self):
         assert is_token_well_formed(None) is False
         assert is_token_well_formed("") is False
-        assert is_token_well_formed("   ") is False
 
-    def test_wrong_prefix_returns_false(self):
-        assert is_token_well_formed("dl2_abc123_12345678901234567890123456789012") is False
-        assert is_token_well_formed("abc_abc123_12345678901234567890123456789012") is False
+    def test_too_short_returns_false(self):
+        assert is_token_well_formed("abc1234") is False
+        assert is_token_well_formed("short") is False
 
-    def test_kid_too_short_returns_false(self):
-        # kid: 5 chars (min is 6)
-        token = "dl1_abc12_12345678901234567890123456789012"
-        assert is_token_well_formed(token) is False
-
-    def test_kid_too_long_returns_false(self):
-        # kid: 25 chars (max is 24)
-        kid = "a" * 25
-        token = f"dl1_{kid}_12345678901234567890123456789012"
-        assert is_token_well_formed(token) is False
-
-    def test_secret_too_short_returns_false(self):
-        # secret: 31 chars (min is 32)
-        token = "dl1_abc123_1234567890123456789012345678901"
-        assert is_token_well_formed(token) is False
-
-    def test_secret_too_long_returns_false(self):
-        # secret: 65 chars (max is 64)
-        secret = "a" * 65
-        token = f"dl1_abc123_{secret}"
-        assert is_token_well_formed(token) is False
-
-    def test_bearer_prefix_not_stripped(self):
-        # Token should NOT have Bearer prefix
-        token = "Bearer dl1_abc123_12345678901234567890123456789012"
-        assert is_token_well_formed(token) is False
-
-    def test_jwt_format_returns_false(self):
-        # JWT format is not valid for dl1 tokens
-        jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig"
-        assert is_token_well_formed(jwt) is False
+    def test_min_length_accepted(self):
+        assert is_token_well_formed("12345678") is True
 
 
 class TestExtractTokenFromHeaders:
@@ -238,11 +203,18 @@ class TestParseTokenMapKV:
         result = parse_token_map_kv(kv)
         assert len(result) == 1
 
-    def test_skips_malformed_tokens(self):
-        kv = "invalid-token=user-1;dl1_abc123_12345678901234567890123456789012=user-2"
+    def test_skips_short_tokens(self):
+        kv = "short=user-1;dl1_abc123_12345678901234567890123456789012=user-2"
         result = parse_token_map_kv(kv)
         assert len(result) == 1
         assert "dl1_abc123_12345678901234567890123456789012" in result
+
+    def test_accepts_plain_hex_tokens(self):
+        kv = "835c53b0fe234f8fa343002b7f5ef1e0=forward,Azure Forwarder"
+        result = parse_token_map_kv(kv)
+        assert len(result) == 1
+        assert result["835c53b0fe234f8fa343002b7f5ef1e0"].id == "forward"
+        assert result["835c53b0fe234f8fa343002b7f5ef1e0"].name == "Azure Forwarder"
 
     def test_percent_encoding(self):
         # Name contains comma, must be percent-encoded
@@ -357,14 +329,23 @@ class TestResolveIdentity:
             )
         assert exc.value.code == "AUTH_REQUIRED"
 
-    def test_verified_mode_invalid_token_raises(self, token_map):
+    def test_verified_mode_too_short_token_raises(self, token_map):
         with pytest.raises(AuthError) as exc:
             resolve_identity(
                 auth_mode=AUTH_MODE_REQUIRE_TOKEN_VERIFIED,
-                token="invalid-format",
+                token="short",
                 token_map=token_map,
             )
         assert exc.value.code == "INVALID_TOKEN"
+
+    def test_verified_mode_unknown_format_token_raises(self, token_map):
+        with pytest.raises(AuthError) as exc:
+            resolve_identity(
+                auth_mode=AUTH_MODE_REQUIRE_TOKEN_VERIFIED,
+                token="invalid-format-but-long-enough",
+                token_map=token_map,
+            )
+        assert exc.value.code == "TOKEN_NOT_FOUND"
 
     def test_verified_mode_unknown_token_raises(self, token_map):
         with pytest.raises(AuthError) as exc:
