@@ -48,9 +48,9 @@ public class DevlogsStep extends Step implements Serializable {
 
     private static String getPluginVersion() {
         try {
-            jenkins.model.Jenkins jenkins = jenkins.model.Jenkins.getInstanceOrNull();
-            if (jenkins != null) {
-                hudson.PluginWrapper plugin = jenkins.getPluginManager().getPlugin("devlogs");
+            jenkins.model.Jenkins instance = jenkins.model.Jenkins.getInstanceOrNull();
+            if (instance != null) {
+                hudson.PluginWrapper plugin = instance.getPluginManager().getPlugin("devlogs");
                 if (plugin != null) {
                     return plugin.getVersion();
                 }
