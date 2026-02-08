@@ -242,4 +242,25 @@ public class DevlogsOutputTest {
         assertTrue("Should have found warning-level record", hasWarning);
         assertTrue("Should have found info-level record", hasInfo);
     }
+
+    @Test
+    public void testArchiveVerboseDowngradedToDebug() {
+        // zip/tar verbose lines that contain "error" in paths should NOT be classified as error
+        assertEquals("debug", DevlogsLogStorage.detectLevel("  adding: node_modules/http-errors/index.js (deflated 72%)"));
+        assertEquals("debug", DevlogsLogStorage.detectLevel("adding: lib/error-handler.jar (deflated 55%)"));
+        assertEquals("debug", DevlogsLogStorage.detectLevel("extracting: src/main/resources/error-codes.xml"));
+        assertEquals("debug", DevlogsLogStorage.detectLevel("  inflating: build/fatal-warnings.txt"));
+        assertEquals("debug", DevlogsLogStorage.detectLevel("  creating: dist/errors/"));
+        assertEquals("debug", DevlogsLogStorage.detectLevel("replacing: vendor/failed-attempt/retry.go (deflated 40%)"));
+        assertEquals("debug", DevlogsLogStorage.detectLevel("updating: assets/error.svg (deflated 30%)"));
+        assertEquals("debug", DevlogsLogStorage.detectLevel("storing: resources/errors.properties (stored 0%)"));
+
+        // Plain archive lines without error keywords should also be debug
+        assertEquals("debug", DevlogsLogStorage.detectLevel("adding: src/main/App.java (deflated 60%)"));
+        assertEquals("debug", DevlogsLogStorage.detectLevel("extracting: README.md"));
+
+        // Real errors should still be detected as error
+        assertEquals("error", DevlogsLogStorage.detectLevel("ERROR: something broke"));
+        assertEquals("error", DevlogsLogStorage.detectLevel("Build FAILED with exit code 1"));
+    }
 }

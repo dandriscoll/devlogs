@@ -353,11 +353,28 @@ public class DevlogsLogStorage implements LogStorage {
      * Detect log level from line content.
      */
     static String detectLevel(String line) {
+        // Downgrade zip/tar verbose output to debug before keyword matching,
+        // since paths like "http-errors" would otherwise false-positive on "ERROR".
+        String trimmed = line.trim();
+        if (isArchiveVerbose(trimmed)) return "debug";
+
         String upper = line.toUpperCase();
         if (upper.contains("ERROR") || upper.contains("FATAL") || upper.contains("FAILED")) return "error";
         if (upper.contains("WARN")) return "warning";
         if (upper.contains("DEBUG")) return "debug";
         return "info";
+    }
+
+    private static final java.util.regex.Pattern ARCHIVE_VERBOSE_PATTERN =
+        java.util.regex.Pattern.compile(
+            "^(adding|extracting|inflating|creating|replacing|updating|storing): .+"
+        );
+
+    /**
+     * Return true if the line looks like zip/tar/jar verbose progress output.
+     */
+    static boolean isArchiveVerbose(String trimmedLine) {
+        return ARCHIVE_VERBOSE_PATTERN.matcher(trimmedLine).matches();
     }
 
     /**
