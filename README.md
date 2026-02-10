@@ -19,34 +19,60 @@ If you don't have OpenSearch running and you want to stand one up:
 
 ## Step 2: Copy/paste these instructions into your coding agent
 
+### Python
+
 > Please do the following in this project:
 > 1. Install `devlogs` as a dev dependency (`pip install devlogs` or add it to `requirements-dev.txt`/`pyproject.toml` optional dependencies).
-> 2. Add `DEVLOGS_OPENSEARCH_HOST`, `DEVLOGS_OPENSEARCH_PORT`, `DEVLOGS_OPENSEARCH_USER`, `DEVLOGS_OPENSEARCH_PASS`, and `DEVLOGS_INDEX` to the project `.env` file (or equivalent config). Defaults are `localhost`, `9200`, `admin`, and `devlogs-<projectname>`.
-> 3. Add devlogs hooks at the beginning of the application (main entrypoint/startup module), wrapped in an environment check so it only runs in development:
+> 2. Create a `.env.devlogs` file in the project root with a single `DEVLOGS_URL` variable (devlogs auto-discovers this file). Use the `opensearchs://` scheme for TLS or `opensearch://` for non-TLS:
+>    ```
+>    DEVLOGS_URL=opensearchs://admin:YourPasswordHere@localhost:9200/devlogs-<projectname>
+>    ```
+> 3. Run `devlogs init` (inside the virtualenv if one is set up) and verify the index is healthy.
+> 4. Add devlogs hooks at the beginning of the application (main entrypoint/startup module), wrapped in an environment check so it only runs in development:
 >    ```python
 >    import os
 >    import logging
 >    if os.getenv("ENVIRONMENT") != "production":
 >        from devlogs.handler import DevlogsHandler
+>        from devlogs.opensearch.client import get_opensearch_client
 >        from devlogs.build_info import resolve_build_info
 >
->        # Resolve build info (reads .build.json or generates)
 >        build_info = resolve_build_info(write_if_missing=True)
->
 >        handler = DevlogsHandler(
 >            application="my-app",  # Required: your app name
 >            component="api",       # Required: component name
 >            level=logging.INFO,
+>            opensearch_client=get_opensearch_client(),
 >            version=build_info.build_id,
 >        )
 >        logging.getLogger().addHandler(handler)
 >        logging.getLogger().setLevel(logging.INFO)
->
->        # Log startup
 >        logging.info("App started")
 >    ```
-> 4. Run `devlogs init` (inside the virtualenv if one is set up) and verify the index is healthy.
 > 5. Ask the user if they want MCP set up; if yes, state which agent you are (`copilot`, `claude`, or `codex`) and run `devlogs initmcp <agent>`.
+
+### JavaScript / TypeScript (browser)
+
+> Please do the following in this project:
+> 1. Install the browser package as a dev dependency: `npm install --save-dev devlogs-browser`.
+> 2. Initialize devlogs early in the application entrypoint, wrapped in an environment check so it only runs in development:
+>    ```javascript
+>    import * as devlogs from 'devlogs-browser';
+>
+>    if (process.env.NODE_ENV === 'development') {
+>      devlogs.init({
+>        url: 'https://admin:YourPasswordHere@localhost:9200',
+>        index: 'devlogs-<projectname>',
+>        application: 'my-app',   // Required: your app name
+>        component: 'frontend',   // Required: component name
+>      });
+>    }
+>    ```
+>    After `init()`, all `console.log`, `console.warn`, `console.error`, and `console.debug` calls are automatically forwarded to OpenSearch. The original console output is preserved.
+> 3. Use `devlogs.setArea('dashboard')` and `devlogs.setOperationId('op-123')` to add context to logs. Pass a plain object as the last argument to attach custom fields:
+>    ```javascript
+>    console.log('User action', { userId: 123, action: 'clicked' });
+>    ```
 
 ## Step 3: Use devlogs
 
@@ -65,14 +91,28 @@ If you don't have OpenSearch running and you want to stand one up:
 	```sh
 	docker-compose up -d opensearch
 	```
-	Or point `DEVLOGS_OPENSEARCH_*` at an existing cluster.
+	Or point `DEVLOGS_URL` at an existing cluster.
 
-3. **Initialize indices/templates:**
+3. **Configure connection** (choose one):
+
+	Option A — `.env.devlogs` file (auto-discovered):
+	```
+	DEVLOGS_URL=opensearchs://admin:YourPasswordHere@localhost:9200/devlogs-myproject
+	```
+
+	Option B — `--url` flag (no config file needed):
+	```sh
+	devlogs --url 'opensearchs://admin:pass@localhost:9200/devlogs-myproject' init
+	```
+
+	Use `devlogs mkurl` to interactively build a properly URL-encoded connection string (handy for passwords with special characters).
+
+4. **Initialize indices/templates:**
 	```sh
 	devlogs init
 	```
 
-4. **Use in Python code (development only):**
+5. **Use in Python code (development only):**
 	```python
 	import os
 	import logging
@@ -80,15 +120,15 @@ If you don't have OpenSearch running and you want to stand one up:
 	# Only enable devlogs in development
 	if os.getenv("ENVIRONMENT") != "production":
 	    from devlogs.handler import DevlogsHandler
+	    from devlogs.opensearch.client import get_opensearch_client
 	    from devlogs.build_info import resolve_build_info
 
-	    # Get build info (reads .build.json or generates)
 	    build_info = resolve_build_info(write_if_missing=True)
-
 	    handler = DevlogsHandler(
 	        application="my-app",
 	        component="default",
 	        level=logging.DEBUG,
+	        opensearch_client=get_opensearch_client(),
 	        version=build_info.build_id,
 	    )
 	    logging.getLogger().addHandler(handler)
@@ -97,17 +137,38 @@ If you don't have OpenSearch running and you want to stand one up:
 	    logging.info("Hello from devlogs!")
 	```
 
-5. **Tail logs from CLI:**
+6. **Use in JavaScript/TypeScript (browser, development only):**
+	```javascript
+	import * as devlogs from 'devlogs-browser';
+
+	if (process.env.NODE_ENV === 'development') {
+	  devlogs.init({
+	    url: 'https://admin:YourPasswordHere@localhost:9200',
+	    index: 'devlogs-myproject',
+	    application: 'my-app',
+	    component: 'frontend',
+	  });
+	}
+
+	// All console methods are now forwarded to OpenSearch
+	console.log('Hello from devlogs!');
+
+	// Add context
+	devlogs.setArea('dashboard');
+	console.log('User action', { userId: 123, action: 'clicked' });
+	```
+
+7. **Tail logs from CLI:**
 	```sh
 	devlogs tail --area web --follow
 	```
 
-6. **Search logs from CLI:**
+8. **Search logs from CLI:**
 	```sh
 	devlogs search --q "error" --area web
 	```
 
-7. **Run the web UI:**
+9. **Run the web UI:**
 	```sh
 	uvicorn devlogs.web.server:app --port 8088
 	# Then open http://localhost:8088/ui/
@@ -181,7 +242,7 @@ client.emit(
 
 ```bash
 docker build -f Dockerfile.collector -t devlogs-collector .
-docker run -p 8080:8080 -e DEVLOGS_OPENSEARCH_URL=https://admin:pass@opensearch:9200/devlogs devlogs-collector
+docker run -p 8080:8080 -e DEVLOGS_URL=opensearchs://admin:pass@opensearch:9200/devlogs devlogs-collector
 ```
 
 See [HOWTO-COLLECTOR.md](HOWTO-COLLECTOR.md) for complete collector documentation.
@@ -217,7 +278,7 @@ Stream Jenkins build logs to OpenSearch using a standalone binary:
 pipeline {
     agent any
     environment {
-        DEVLOGS_OPENSEARCH_URL = credentials('devlogs-opensearch-url')
+        DEVLOGS_URL = credentials('devlogs-url')
         DEVLOGS_BINARY_URL = credentials('devlogs-binary-url')
     }
     stages {
@@ -241,13 +302,12 @@ Build the binary with `./build-standalone.sh` and host it somewhere accessible. 
 
 ### Environment Variables
 
-**Collector Configuration:**
-- `DEVLOGS_URL` - Collector base URL (where apps send logs)
+**Connection (choose one):**
+- `DEVLOGS_URL` - Standard connection URL with auto-detection. OpenSearch URLs (`opensearchs://`, `opensearch://`) connect directly; collector URLs (`http://`, `https://`) use the collector endpoint.
 - `DEVLOGS_FORWARD_URL` - Forward mode: proxy to this upstream URL
 
-**OpenSearch Admin Connection:**
+**OpenSearch (individual variables, alternative to DEVLOGS_URL):**
 - `DEVLOGS_OPENSEARCH_HOST`, `DEVLOGS_OPENSEARCH_PORT`, `DEVLOGS_OPENSEARCH_USER`, `DEVLOGS_OPENSEARCH_PASS`
-- `DEVLOGS_OPENSEARCH_URL` - URL shortcut (e.g., `https://user:pass@host:9200/index`)
 - `DEVLOGS_OPENSEARCH_VERIFY_CERTS`, `DEVLOGS_OPENSEARCH_CA_CERT` - SSL/TLS settings
 
 **Index & Retention:**
@@ -265,7 +325,7 @@ See [.env.example](.env.example) for a complete configuration template.
 Use `--url` to specify connection details without a `.env` file:
 
 ```bash
-devlogs --url 'https://admin:pass@host:9200/myindex' tail
+devlogs --url 'opensearchs://admin:pass@host:9200/myindex' tail
 ```
 
 Use `--env` to load from a specific `.env` file:
@@ -282,7 +342,7 @@ Use `devlogs mkurl` to interactively create a properly URL-encoded connection st
 devlogs mkurl
 # Outputs the URL in three formats:
 # 1. Bare URL (for --url flag)
-# 2. Single DEVLOGS_OPENSEARCH_URL variable
+# 2. Single DEVLOGS_URL variable
 # 3. Individual .env variables
 ```
 
