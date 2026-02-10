@@ -499,14 +499,12 @@ def load_config() -> DevlogsConfig:
 				# to ensure custom env file values take precedence
 				load_dotenv(dotenv_path, override=True)
 			else:
-				# Search for .env file in current directory and parents
-				# Use usecwd=True to search from cwd, not from the source file location
-				dotenv_path = find_dotenv(usecwd=True)
+				# Prefer .env.devlogs over .env
+				dotenv_path = find_dotenv(".env.devlogs", usecwd=True)
+				if not dotenv_path:
+					dotenv_path = find_dotenv(usecwd=True)
 				if dotenv_path:
 					load_dotenv(dotenv_path)
-				# If no .env found, don't call load_dotenv() with no args
-				# because it uses find_dotenv() without usecwd=True, which
-				# would search from the source file location instead of cwd
 		except ModuleNotFoundError:
 			pass
 		_dotenv_loaded = True

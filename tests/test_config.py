@@ -92,6 +92,60 @@ def test_dotenv_path_environment_variable(monkeypatch):
         monkeypatch.setattr(config, "_dotenv_loaded", False)
         monkeypatch.setattr(config, "_custom_dotenv_path", None)
 
+def test_env_devlogs_preferred_over_env(monkeypatch):
+    """Test that .env.devlogs is loaded instead of .env when both exist."""
+    monkeypatch.setattr(config, "_dotenv_loaded", False)
+    monkeypatch.setattr(config, "_custom_dotenv_path", None)
+    for key in config._DEVLOGS_CONFIG_KEYS:
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.delenv("DOTENV_PATH", raising=False)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Write .env with one value
+        env_path = os.path.join(tmpdir, ".env")
+        with open(env_path, "w") as f:
+            f.write("DEVLOGS_INDEX=from-dotenv\n")
+
+        # Write .env.devlogs with a different value
+        env_devlogs_path = os.path.join(tmpdir, ".env.devlogs")
+        with open(env_devlogs_path, "w") as f:
+            f.write("DEVLOGS_INDEX=from-env-devlogs\n")
+
+        # Run load_config from tmpdir so find_dotenv picks up our files
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(tmpdir)
+            cfg = config.load_config()
+            assert cfg.index == "from-env-devlogs"
+        finally:
+            os.chdir(old_cwd)
+            monkeypatch.setattr(config, "_dotenv_loaded", False)
+
+
+def test_env_fallback_when_no_env_devlogs(monkeypatch):
+    """Test that .env is used when .env.devlogs does not exist."""
+    monkeypatch.setattr(config, "_dotenv_loaded", False)
+    monkeypatch.setattr(config, "_custom_dotenv_path", None)
+    for key in config._DEVLOGS_CONFIG_KEYS:
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.delenv("DOTENV_PATH", raising=False)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Write only .env
+        env_path = os.path.join(tmpdir, ".env")
+        with open(env_path, "w") as f:
+            f.write("DEVLOGS_INDEX=from-dotenv\n")
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(tmpdir)
+            cfg = config.load_config()
+            assert cfg.index == "from-dotenv"
+        finally:
+            os.chdir(old_cwd)
+            monkeypatch.setattr(config, "_dotenv_loaded", False)
+
+
 def test_set_dotenv_path_resets_loaded_flag(monkeypatch):
     """Test that set_dotenv_path() resets the loaded flag to allow reload."""
     # Set up initial state as loaded
