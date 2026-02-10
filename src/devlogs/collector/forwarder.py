@@ -6,6 +6,7 @@
 import json
 import urllib.request
 import urllib.error
+import urllib.parse
 from typing import Dict, Optional, Tuple, Any
 
 from .errors import ForwardError, map_upstream_error
@@ -38,6 +39,20 @@ def forward_request(
         ForwardError: If the forward request fails
     """
     forward_url = forward_url.rstrip("/")
+
+    # Extract credentials from URL userinfo (e.g. https://token@host:port/path)
+    # urllib.request doesn't handle userinfo in URLs, so we must strip it
+    parsed = urllib.parse.urlsplit(forward_url)
+    if parsed.username:
+        # Use URL credentials as Bearer token for upstream auth
+        auth_header = f"Bearer {parsed.username}"
+        # Reconstruct URL without credentials
+        netloc = parsed.hostname
+        if parsed.port:
+            netloc = f"{netloc}:{parsed.port}"
+        forward_url = urllib.parse.urlunsplit((
+            parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment
+        ))
 
     headers = {
         "Content-Type": content_type,

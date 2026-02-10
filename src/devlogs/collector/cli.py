@@ -67,11 +67,17 @@ def serve(
             fg=typer.colors.YELLOW
         ))
     else:
-        mode_str = "FORWARD" if mode == "forward" else "INGEST"
-        typer.echo(typer.style(f"Starting collector in {mode_str} mode", fg=typer.colors.GREEN))
         if mode == "forward":
-            typer.echo(f"  Forwarding to: {cfg.forward_url}")
+            from .plugins import get_plugin_for_url
+            plugin = get_plugin_for_url(cfg.forward_url, cfg)
+            if plugin:
+                typer.echo(typer.style(f"Starting collector in PLUGIN mode ({plugin.name})", fg=typer.colors.GREEN))
+                typer.echo(f"  {plugin.display_info()}")
+            else:
+                typer.echo(typer.style("Starting collector in FORWARD mode", fg=typer.colors.GREEN))
+                typer.echo(f"  Forwarding to: {cfg.forward_url}")
         else:
+            typer.echo(typer.style("Starting collector in INGEST mode", fg=typer.colors.GREEN))
             typer.echo(f"  OpenSearch: {cfg.opensearch_host}:{cfg.opensearch_port}")
             typer.echo(f"  Index: {cfg.index}")
 
@@ -107,13 +113,20 @@ def check():
     typer.echo()
 
     # Show mode
+    plugin = None
     if mode == "error":
         typer.echo(typer.style("Mode: NOT CONFIGURED", fg=typer.colors.RED))
         typer.echo("  Set DEVLOGS_FORWARD_URL or DEVLOGS_OPENSEARCH_* variables")
         raise typer.Exit(1)
     elif mode == "forward":
-        typer.echo(typer.style("Mode: FORWARD", fg=typer.colors.CYAN))
-        typer.echo(f"  Forward URL: {cfg.forward_url}")
+        from .plugins import get_plugin_for_url
+        plugin = get_plugin_for_url(cfg.forward_url, cfg)
+        if plugin:
+            typer.echo(typer.style(f"Mode: PLUGIN ({plugin.name})", fg=typer.colors.CYAN))
+            typer.echo(f"  {plugin.display_info()}")
+        else:
+            typer.echo(typer.style("Mode: FORWARD", fg=typer.colors.CYAN))
+            typer.echo(f"  Forward URL: {cfg.forward_url}")
     else:
         typer.echo(typer.style("Mode: INGEST", fg=typer.colors.CYAN))
         typer.echo(f"  OpenSearch Host: {cfg.opensearch_host}")
@@ -145,6 +158,14 @@ def check():
                 typer.echo("    Run 'devlogs init' to create the index")
         except Exception as e:
             typer.echo(typer.style(f"  OpenSearch: FAILED - {e}", fg=typer.colors.RED))
+            raise typer.Exit(1)
+    elif plugin:
+        typer.echo(f"Testing {plugin.name} connectivity...")
+        try:
+            status = plugin.check()
+            typer.echo(typer.style(f"  {status}", fg=typer.colors.GREEN))
+        except Exception as e:
+            typer.echo(typer.style(f"  Plugin check failed: {e}", fg=typer.colors.RED))
             raise typer.Exit(1)
     else:
         typer.echo("Testing forward URL connectivity...")

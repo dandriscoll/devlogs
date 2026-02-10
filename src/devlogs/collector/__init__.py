@@ -13,6 +13,7 @@ from .errors import (
     ValidationError,
     ForwardError,
     IngestError,
+    PluginError,
     ConfigurationError,
     error_response,
     map_upstream_error,
@@ -22,7 +23,16 @@ from .errors import (
     ERROR_INVALID_PAYLOAD,
     ERROR_FORWARD_FAILED,
     ERROR_INGEST_FAILED,
+    ERROR_PLUGIN_FAILED,
     ERROR_NOT_CONFIGURED,
+)
+from .plugins import (
+    OutputPlugin,
+    register_plugin,
+    get_plugin_for_url,
+    get_registered_schemes,
+    list_plugins,
+    dict_to_record,
 )
 
 __all__ = [
@@ -34,6 +44,7 @@ __all__ = [
     "ValidationError",
     "ForwardError",
     "IngestError",
+    "PluginError",
     "ConfigurationError",
     "CollectorError",
     "error_response",
@@ -44,5 +55,12 @@ __all__ = [
     "ERROR_INVALID_PAYLOAD",
     "ERROR_FORWARD_FAILED",
     "ERROR_INGEST_FAILED",
+    "ERROR_PLUGIN_FAILED",
     "ERROR_NOT_CONFIGURED",
+    "OutputPlugin",
+    "register_plugin",
+    "get_plugin_for_url",
+    "get_registered_schemes",
+    "list_plugins",
+    "dict_to_record",
 ]

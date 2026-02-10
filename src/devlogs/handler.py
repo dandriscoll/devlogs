@@ -115,7 +115,16 @@ class DevlogsHandler(logging.Handler):
 		# Collector mode setup
 		self._collector_endpoint = None
 		self._collector_headers = None
+		self._plugin = None
 		if collector_url:
+			try:
+				from .collector.plugins import get_plugin_for_url
+				from .config import load_config
+				self._plugin = get_plugin_for_url(collector_url, load_config())
+			except Exception:
+				pass
+			if self._plugin:
+				return  # Plugin handles delivery; skip HTTP/OpenSearch setup
 			from .config import parse_url, CollectorURLConfig
 			try:
 				parsed = parse_url(collector_url)
@@ -151,7 +160,13 @@ class DevlogsHandler(logging.Handler):
 			return
 
 		try:
-			if self._collector_endpoint:
+			if self._plugin:
+				from .collector.plugins import dict_to_record
+				self._plugin.send([dict_to_record(doc)])
+				if DevlogsHandler._circuit_open:
+					DevlogsHandler._circuit_open = False
+					print(f"[devlogs] Connection restored, resuming logging")
+			elif self._collector_endpoint:
 				# Collector mode: POST to collector endpoint
 				data = json.dumps(doc).encode("utf-8")
 				req = urllib.request.Request(

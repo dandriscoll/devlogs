@@ -10,6 +10,7 @@ ERROR_INVALID_PAYLOAD = "INVALID_PAYLOAD"
 ERROR_FORWARD_FAILED = "FORWARD_FAILED"
 ERROR_INGEST_FAILED = "INGEST_FAILED"
 ERROR_NOT_CONFIGURED = "NOT_CONFIGURED"
+ERROR_PLUGIN_FAILED = "PLUGIN_FAILED"
 ERROR_RATE_LIMITED = "RATE_LIMITED"
 ERROR_PAYLOAD_TOO_LARGE = "PAYLOAD_TOO_LARGE"
 
@@ -69,6 +70,18 @@ class IngestError(CollectorError):
     def __init__(self, subcode: str, message: str, status_code: int = 500):
         super().__init__(
             code=ERROR_INGEST_FAILED,
+            subcode=subcode,
+            message=message,
+            status_code=status_code,
+        )
+
+
+class PluginError(CollectorError):
+    """Raised when an output plugin operation fails."""
+
+    def __init__(self, subcode: str, message: str, status_code: int = 502):
+        super().__init__(
+            code=ERROR_PLUGIN_FAILED,
             subcode=subcode,
             message=message,
             status_code=status_code,

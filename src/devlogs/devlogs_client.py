@@ -151,6 +151,7 @@ class DevlogsClient:
     # Internal fields set by __post_init__
     _clean_url: str = field(default="", init=False, repr=False)
     _resolved_token: Optional[str] = field(default=None, init=False, repr=False)
+    _plugin: Any = field(default=None, init=False, repr=False)
 
     def __post_init__(self):
         """Parse collector URL and extract token if present."""
@@ -158,6 +159,14 @@ class DevlogsClient:
         self._clean_url = clean_url
         # Explicit auth_token parameter takes precedence over URL token
         self._resolved_token = self.auth_token if self.auth_token else url_token
+
+        self._plugin = None
+        try:
+            from devlogs.collector.plugins import get_plugin_for_url
+            from devlogs.config import load_config
+            self._plugin = get_plugin_for_url(self.collector_url, load_config())
+        except Exception:
+            pass
 
     def _get_endpoint(self) -> str:
         """Get the collector endpoint URL."""
@@ -292,6 +301,15 @@ class DevlogsClient:
         Returns:
             True if accepted (202), False otherwise
         """
+        if self._plugin:
+            try:
+                from devlogs.collector.plugins import dict_to_record
+                devlogs_records = [dict_to_record(r) for r in records]
+                self._plugin.send(devlogs_records)
+                return True
+            except Exception:
+                return False
+
         if len(records) == 1:
             payload = records[0]
         else:

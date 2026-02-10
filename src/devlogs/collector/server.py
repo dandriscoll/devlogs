@@ -24,11 +24,12 @@ from .schema import (
 from .errors import (
     CollectorError,
     ValidationError,
+    PluginError,
     ConfigurationError,
     error_response,
 )
 from .auth import (
-    extract_token_from_headers,
+    extract_token,
     parse_token_map_kv,
     parse_forward_index_map_kv,
     resolve_identity,
@@ -36,6 +37,7 @@ from .auth import (
 )
 from .forwarder import forward_request
 from .ingestor import ingest_records
+from .plugins import get_plugin_for_url
 from ..version import __version__
 
 @asynccontextmanager
@@ -178,6 +180,15 @@ async def ingest_logs(request: Request):
     mode = cfg.get_collector_mode()
 
     if mode == "forward":
+        try:
+            plugin = get_plugin_for_url(cfg.forward_url, cfg)
+        except Exception as e:
+            raise PluginError(
+                "INIT_FAILED",
+                f"Failed to initialize plugin for {cfg.forward_url}: {e}",
+            )
+        if plugin:
+            return await _handle_plugin_mode(request, cfg, body, plugin)
         return await _handle_forward_mode(request, cfg, body)
     elif mode == "ingest":
         return await _handle_ingest_mode(request, cfg, body)
@@ -218,8 +229,16 @@ async def _handle_forward_mode(request: Request, cfg, body: bytes) -> Response:
         )
 
 
-async def _handle_ingest_mode(request: Request, cfg, body: bytes) -> Response:
-    """Handle request in ingest mode."""
+def _validate_and_enrich_records(request: Request, cfg, body: bytes):
+    """Parse, validate, and enrich records from request body.
+
+    Shared by ingest mode and plugin mode. Handles JSON parsing,
+    schema validation, token extraction, identity resolution, and
+    record enrichment.
+
+    Returns:
+        List of enriched DevlogsRecord objects
+    """
     # Parse JSON payload
     try:
         payload = json.loads(body.decode("utf-8"))
@@ -250,10 +269,14 @@ async def _handle_ingest_mode(request: Request, cfg, body: bytes) -> Response:
     # Get client info
     client_ip = get_client_ip(request)
 
-    # Extract token from headers (precedence: Devlogs1 → Bearer → X-Devlogs-Token)
+    # Extract token (precedence: Bearer header → X-Devlogs-Token → URL userinfo → ?token=)
     authorization = request.headers.get("Authorization")
     x_devlogs_token = request.headers.get("X-Devlogs-Token")
-    token, _token_source = extract_token_from_headers(authorization, x_devlogs_token)
+    url_userinfo = request.url.username if hasattr(request.url, 'username') else None
+    url_query_token = request.query_params.get("token")
+    token, _token_source = extract_token(
+        authorization, x_devlogs_token, url_userinfo, url_query_token
+    )
 
     # Parse token map from config
     token_map = parse_token_map_kv(cfg.token_map_kv)
@@ -272,6 +295,13 @@ async def _handle_ingest_mode(request: Request, cfg, body: bytes) -> Response:
         except AuthError as e:
             raise ValidationError(e.code, e.message)
 
+    return enriched_records
+
+
+async def _handle_ingest_mode(request: Request, cfg, body: bytes) -> Response:
+    """Handle request in ingest mode."""
+    enriched_records = _validate_and_enrich_records(request, cfg, body)
+
     # Get OpenSearch client and ingest
     try:
         client = get_opensearch_client()
@@ -288,6 +318,37 @@ async def _handle_ingest_mode(request: Request, cfg, body: bytes) -> Response:
         content=json.dumps({
             "status": "accepted",
             "ingested": result["ingested"],
+        }),
+        media_type="application/json",
+    )
+
+
+async def _handle_plugin_mode(request: Request, cfg, body: bytes, plugin) -> Response:
+    """Handle request in plugin mode.
+
+    Validates and enriches records like ingest mode, then delegates
+    to the output plugin for delivery.
+    """
+    enriched_records = _validate_and_enrich_records(request, cfg, body)
+
+    try:
+        result = plugin.send(enriched_records)
+    except PluginError:
+        raise
+    except Exception as e:
+        raise PluginError(
+            "UNEXPECTED_ERROR",
+            f"Plugin '{plugin.name}' failed: {e}",
+        )
+
+    if not isinstance(result, dict):
+        result = {}
+
+    return Response(
+        status_code=202,
+        content=json.dumps({
+            "status": "accepted",
+            "ingested": result.get("ingested", len(enriched_records)),
         }),
         media_type="application/json",
     )

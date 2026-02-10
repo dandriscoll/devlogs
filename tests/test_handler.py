@@ -531,3 +531,203 @@ class TestEmitCounters:
         logger.info("skipped")
         assert DevlogsHandler._emit_count == 3
         assert DevlogsHandler._emit_skipped == 1
+
+
+class TestPluginMode:
+    """Tests for plugin URL support in DevlogsHandler."""
+
+    def setup_method(self):
+        DevlogsHandler._circuit_open = False
+        DevlogsHandler._circuit_open_until = 0.0
+        DevlogsHandler._last_error_printed = 0.0
+        DevlogsHandler.reset_counters()
+
+    def _make_record(self, msg="test message"):
+        return logging.LogRecord(
+            name="test.logger",
+            level=logging.INFO,
+            pathname="/path/to/file.py",
+            lineno=42,
+            msg=msg,
+            args=(),
+            exc_info=None,
+        )
+
+    def test_plugin_url_sets_plugin(self):
+        """Handler with plugin URL resolves plugin."""
+        from devlogs.collector.plugins import OutputPlugin, register_plugin, _registry
+
+        saved = dict(_registry)
+        _registry.clear()
+
+        class FakePlugin(OutputPlugin):
+            name = "fake"
+            schemes = ["fake"]
+            def __init__(self, url, cfg):
+                self.url = url
+            def send(self, records):
+                return {"ingested": len(records)}
+            def check(self):
+                return "OK"
+            def display_info(self):
+                return self.url
+
+        register_plugin(FakePlugin)
+        try:
+            handler = DevlogsHandler(
+                application="test-app",
+                component="api",
+                collector_url="fake://localhost:9000",
+            )
+            assert handler._plugin is not None
+            assert isinstance(handler._plugin, FakePlugin)
+            assert handler._collector_endpoint is None
+        finally:
+            _registry.clear()
+            _registry.update(saved)
+
+    def test_plugin_emit_calls_send(self):
+        """emit() calls plugin.send() with DevlogsRecord."""
+        from devlogs.collector.plugins import OutputPlugin, register_plugin, _registry
+        from devlogs.collector.schema import DevlogsRecord
+
+        saved = dict(_registry)
+        _registry.clear()
+
+        sent = []
+
+        class TrackPlugin(OutputPlugin):
+            name = "track"
+            schemes = ["track"]
+            def __init__(self, url, cfg):
+                self.url = url
+            def send(self, records):
+                sent.extend(records)
+                return {"ingested": len(records)}
+            def check(self):
+                return "OK"
+            def display_info(self):
+                return self.url
+
+        register_plugin(TrackPlugin)
+        try:
+            handler = DevlogsHandler(
+                application="test-app",
+                component="api",
+                collector_url="track://localhost:9000",
+            )
+            handler.emit(self._make_record())
+            assert len(sent) == 1
+            assert isinstance(sent[0], DevlogsRecord)
+            assert sent[0].application == "test-app"
+            assert sent[0].component == "api"
+            assert sent[0].message is not None
+        finally:
+            _registry.clear()
+            _registry.update(saved)
+
+    def test_plugin_emit_preserves_extra_fields(self):
+        """logger/pathname/lineno etc. end up in fields."""
+        from devlogs.collector.plugins import OutputPlugin, register_plugin, _registry
+
+        saved = dict(_registry)
+        _registry.clear()
+
+        sent = []
+
+        class TrackPlugin(OutputPlugin):
+            name = "trackf"
+            schemes = ["trackf"]
+            def __init__(self, url, cfg):
+                self.url = url
+            def send(self, records):
+                sent.extend(records)
+                return {"ingested": len(records)}
+            def check(self):
+                return "OK"
+            def display_info(self):
+                return self.url
+
+        register_plugin(TrackPlugin)
+        try:
+            handler = DevlogsHandler(
+                application="test-app",
+                component="api",
+                collector_url="trackf://localhost:9000",
+            )
+            handler.emit(self._make_record())
+            record = sent[0]
+            assert record.fields is not None
+            assert "logger" in record.fields
+            assert "pathname" in record.fields
+            assert "lineno" in record.fields
+        finally:
+            _registry.clear()
+            _registry.update(saved)
+
+    def test_plugin_emit_circuit_breaker(self):
+        """Circuit breaker still works with plugins."""
+        from devlogs.collector.plugins import OutputPlugin, register_plugin, _registry
+
+        saved = dict(_registry)
+        _registry.clear()
+
+        class FailPlugin(OutputPlugin):
+            name = "failp"
+            schemes = ["failp"]
+            def __init__(self, url, cfg):
+                self.url = url
+            def send(self, records):
+                raise ConnectionError("backend down")
+            def check(self):
+                return "OK"
+            def display_info(self):
+                return self.url
+
+        register_plugin(FailPlugin)
+        try:
+            handler = DevlogsHandler(
+                application="test-app",
+                component="api",
+                collector_url="failp://localhost:9000",
+            )
+            with patch("builtins.print"):
+                handler.emit(self._make_record())
+
+            assert DevlogsHandler._circuit_open is True
+            assert DevlogsHandler._emit_errors == 1
+        finally:
+            _registry.clear()
+            _registry.update(saved)
+
+    def test_http_url_does_not_use_plugin(self):
+        """http:// URL still uses HTTP POST, not plugin."""
+        from devlogs.collector.plugins import OutputPlugin, register_plugin, _registry
+
+        saved = dict(_registry)
+        _registry.clear()
+
+        class DummyPlugin(OutputPlugin):
+            name = "dummy"
+            schemes = ["dummy"]
+            def __init__(self, url, cfg):
+                self.url = url
+            def send(self, records):
+                return {"ingested": len(records)}
+            def check(self):
+                return "OK"
+            def display_info(self):
+                return self.url
+
+        register_plugin(DummyPlugin)
+        try:
+            handler = DevlogsHandler(
+                application="test-app",
+                component="api",
+                collector_url="http://localhost:8080",
+            )
+            assert handler._plugin is None
+            assert handler._collector_endpoint is not None
+        finally:
+            _registry.clear()
+            _registry.update(saved)

@@ -5,7 +5,7 @@ from devlogs.collector.auth import (
     Identity,
     TokenMapping,
     is_token_well_formed,
-    extract_token_from_headers,
+    extract_token,
     parse_token_map_kv,
     parse_forward_index_map_kv,
     resolve_identity,
@@ -106,60 +106,78 @@ class TestIsTokenWellFormed:
         assert is_token_well_formed("12345678") is True
 
 
-class TestExtractTokenFromHeaders:
-    """Tests for token extraction from headers."""
+class TestExtractToken:
+    """Tests for token extraction from headers, URL userinfo, and query params."""
 
-    def test_devlogs1_takes_precedence(self):
-        token, source = extract_token_from_headers(
-            authorization="Devlogs1 dl1_abc123_12345678901234567890123456789012",
-            x_devlogs_token="dl1_other1_12345678901234567890123456789012",
-        )
-        assert token == "dl1_abc123_12345678901234567890123456789012"
-        assert source == "devlogs1"
-
-    def test_bearer_second_precedence(self):
-        token, source = extract_token_from_headers(
+    def test_bearer_takes_precedence(self):
+        token, source = extract_token(
             authorization="Bearer dl1_abc123_12345678901234567890123456789012",
             x_devlogs_token="dl1_other1_12345678901234567890123456789012",
+            url_userinfo="url_token_value_here",
+            url_query_token="query_token_value",
         )
         assert token == "dl1_abc123_12345678901234567890123456789012"
         assert source == "bearer"
 
-    def test_x_devlogs_token_fallback(self):
-        token, source = extract_token_from_headers(
+    def test_x_devlogs_token_second(self):
+        token, source = extract_token(
             authorization=None,
             x_devlogs_token="dl1_abc123_12345678901234567890123456789012",
+            url_userinfo="url_token_value_here",
         )
         assert token == "dl1_abc123_12345678901234567890123456789012"
         assert source == "x-devlogs-token"
 
+    def test_url_userinfo_third(self):
+        token, source = extract_token(
+            authorization=None,
+            x_devlogs_token=None,
+            url_userinfo="835c53b0fe234f8fa343002b7f5ef1e0",
+        )
+        assert token == "835c53b0fe234f8fa343002b7f5ef1e0"
+        assert source == "url-userinfo"
+
+    def test_url_query_token_last(self):
+        token, source = extract_token(
+            authorization=None,
+            x_devlogs_token=None,
+            url_userinfo=None,
+            url_query_token="835c53b0fe234f8fa343002b7f5ef1e0",
+        )
+        assert token == "835c53b0fe234f8fa343002b7f5ef1e0"
+        assert source == "url-query"
+
     def test_no_token(self):
-        token, source = extract_token_from_headers(None, None)
+        token, source = extract_token(None, None, None, None)
         assert token is None
         assert source == "none"
 
-    def test_devlogs1_case_insensitive(self):
-        token, source = extract_token_from_headers(
-            authorization="DEVLOGS1 mytoken",
-            x_devlogs_token=None,
-        )
-        assert token == "mytoken"
-        assert source == "devlogs1"
-
     def test_bearer_case_insensitive(self):
-        token, source = extract_token_from_headers(
+        token, source = extract_token(
             authorization="BEARER mytoken",
-            x_devlogs_token=None,
         )
         assert token == "mytoken"
         assert source == "bearer"
 
     def test_whitespace_handling(self):
-        token, source = extract_token_from_headers(
+        token, source = extract_token(
             authorization="  Bearer   mytoken  ",
-            x_devlogs_token=None,
         )
         assert token == "mytoken"
+
+    def test_url_userinfo_percent_decoded(self):
+        token, source = extract_token(
+            url_userinfo="my%20token%21",
+        )
+        assert token == "my token!"
+        assert source == "url-userinfo"
+
+    def test_url_query_token_percent_decoded(self):
+        token, source = extract_token(
+            url_query_token="my%20token%21",
+        )
+        assert token == "my token!"
+        assert source == "url-query"
 
 
 class TestParseTokenMapKV:

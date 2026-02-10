@@ -290,7 +290,7 @@ class TestIngestEndpoint:
         assert body["identity"]["custom_id"] == "abc"
         assert body["identity"]["role"] == "admin"
 
-    def test_devlogs1_auth_header(self, client, reset_config, monkeypatch):
+    def test_bearer_auth_header(self, client, reset_config, monkeypatch):
         monkeypatch.setenv("DEVLOGS_OPENSEARCH_HOST", "localhost")
         monkeypatch.setenv("DEVLOGS_INDEX", "test-index")
         token = "dl1_testky_12345678901234567890123456789012"
@@ -307,7 +307,30 @@ class TestIngestEndpoint:
                     "component": "api",
                     "timestamp": "2024-01-15T10:30:00Z"
                 },
-                headers={"Authorization": f"Devlogs1 {token}"}
+                headers={"Authorization": f"Bearer {token}"}
+            )
+
+        assert response.status_code == 202
+        body = mock_client.index.call_args.kwargs["body"]
+        assert body["identity"]["mode"] == "verified"
+
+    def test_query_token_auth(self, client, reset_config, monkeypatch):
+        monkeypatch.setenv("DEVLOGS_OPENSEARCH_HOST", "localhost")
+        monkeypatch.setenv("DEVLOGS_INDEX", "test-index")
+        token = "dl1_testky_12345678901234567890123456789012"
+        monkeypatch.setenv("DEVLOGS_TOKEN_MAP_KV", f"{token}=service-1")
+
+        mock_client = Mock()
+        mock_client.index = Mock(return_value={})
+
+        with patch("devlogs.collector.server.get_opensearch_client", return_value=mock_client):
+            response = client.post(
+                f"/?token={token}",
+                json={
+                    "application": "test-app",
+                    "component": "api",
+                    "timestamp": "2024-01-15T10:30:00Z"
+                },
             )
 
         assert response.status_code == 202

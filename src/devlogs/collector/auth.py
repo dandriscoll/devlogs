@@ -15,7 +15,6 @@ from urllib.parse import unquote
 TOKEN_PATTERN = re.compile(r"^.{8,}$")
 
 # Auth header patterns
-DEVLOGS1_PATTERN = re.compile(r"^Devlogs1\s+(\S+)", re.IGNORECASE)
 BEARER_PATTERN = re.compile(r"^Bearer\s+(\S+)", re.IGNORECASE)
 
 # Auth modes
@@ -117,42 +116,52 @@ def is_token_well_formed(token: Optional[str]) -> bool:
     return bool(TOKEN_PATTERN.match(token))
 
 
-def extract_token_from_headers(
+def extract_token(
     authorization: Optional[str] = None,
     x_devlogs_token: Optional[str] = None,
+    url_userinfo: Optional[str] = None,
+    url_query_token: Optional[str] = None,
 ) -> Tuple[Optional[str], str]:
-    """Extract token from request headers with proper precedence.
+    """Extract token from request with proper precedence.
 
-    Precedence: Devlogs1 → Bearer → X-Devlogs-Token
+    Precedence: Bearer header → X-Devlogs-Token header → URL userinfo → ?token= query
 
     Args:
         authorization: The Authorization header value
         x_devlogs_token: The X-Devlogs-Token header value
+        url_userinfo: Username from URL (e.g. token@host)
+        url_query_token: The ?token= query parameter value
 
     Returns:
         Tuple of (token_value, source) where source is one of:
-        'devlogs1', 'bearer', 'x-devlogs-token', or 'none'
+        'bearer', 'x-devlogs-token', 'url-userinfo', 'url-query', or 'none'
     """
     if authorization:
         authorization = authorization.strip()
-
-        # Try Devlogs1 first
-        match = DEVLOGS1_PATTERN.match(authorization)
-        if match:
-            return match.group(1), "devlogs1"
-
-        # Try Bearer
         match = BEARER_PATTERN.match(authorization)
         if match:
             return match.group(1), "bearer"
 
-    # Fall back to X-Devlogs-Token
     if x_devlogs_token:
         token = x_devlogs_token.strip()
         if token:
             return token, "x-devlogs-token"
 
+    if url_userinfo:
+        token = unquote(url_userinfo.strip())
+        if token:
+            return token, "url-userinfo"
+
+    if url_query_token:
+        token = unquote(url_query_token.strip())
+        if token:
+            return token, "url-query"
+
     return None, "none"
+
+
+# Keep old name as alias for backwards compatibility
+extract_token_from_headers = extract_token
 
 
 def parse_token_map_kv(kv_string: Optional[str]) -> Dict[str, TokenMapping]:

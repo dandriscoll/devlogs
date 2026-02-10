@@ -348,3 +348,137 @@ class TestEmitLog:
             )
 
         assert result is True
+
+
+class TestPluginMode:
+    """Tests for plugin URL support in DevlogsClient."""
+
+    def _setup_plugin(self):
+        """Register a tracking plugin and return (sent_list, cleanup_fn)."""
+        from devlogs.collector.plugins import OutputPlugin, register_plugin, _registry
+
+        saved = dict(_registry)
+        _registry.clear()
+
+        sent = []
+
+        class TrackPlugin(OutputPlugin):
+            name = "track"
+            schemes = ["track"]
+            def __init__(self, url, cfg):
+                self.url = url
+            def send(self, records):
+                sent.extend(records)
+                return {"ingested": len(records)}
+            def check(self):
+                return "OK"
+            def display_info(self):
+                return self.url
+
+        register_plugin(TrackPlugin)
+
+        def cleanup():
+            _registry.clear()
+            _registry.update(saved)
+
+        return sent, cleanup, TrackPlugin
+
+    def test_plugin_url_activates_plugin(self):
+        """Client with plugin URL stores plugin."""
+        sent, cleanup, TrackPlugin = self._setup_plugin()
+        try:
+            client = DevlogsClient(
+                collector_url="track://localhost:9000",
+                application="test-app",
+                component="api",
+            )
+            assert client._plugin is not None
+            assert isinstance(client._plugin, TrackPlugin)
+        finally:
+            cleanup()
+
+    def test_plugin_emit_calls_send(self):
+        """emit() calls plugin.send()."""
+        from devlogs.collector.schema import DevlogsRecord
+
+        sent, cleanup, _ = self._setup_plugin()
+        try:
+            client = DevlogsClient(
+                collector_url="track://localhost:9000",
+                application="test-app",
+                component="api",
+            )
+            result = client.emit(message="Hello", level="info")
+            assert result is True
+            assert len(sent) == 1
+            assert isinstance(sent[0], DevlogsRecord)
+            assert sent[0].application == "test-app"
+            assert sent[0].message == "Hello"
+        finally:
+            cleanup()
+
+    def test_plugin_emit_batch_calls_send(self):
+        """emit_batch() calls plugin.send()."""
+        from devlogs.collector.schema import DevlogsRecord
+
+        sent, cleanup, _ = self._setup_plugin()
+        try:
+            client = DevlogsClient(
+                collector_url="track://localhost:9000",
+                application="test-app",
+                component="api",
+            )
+            result = client.emit_batch([
+                {"message": "Event 1", "level": "info"},
+                {"message": "Event 2", "level": "warning"},
+            ])
+            assert result is True
+            assert len(sent) == 2
+            assert all(isinstance(r, DevlogsRecord) for r in sent)
+        finally:
+            cleanup()
+
+    def test_plugin_error_returns_false(self):
+        """Plugin exception returns False."""
+        from devlogs.collector.plugins import OutputPlugin, register_plugin, _registry
+
+        saved = dict(_registry)
+        _registry.clear()
+
+        class FailPlugin(OutputPlugin):
+            name = "fail"
+            schemes = ["fail"]
+            def __init__(self, url, cfg):
+                self.url = url
+            def send(self, records):
+                raise ConnectionError("backend down")
+            def check(self):
+                return "OK"
+            def display_info(self):
+                return self.url
+
+        register_plugin(FailPlugin)
+        try:
+            client = DevlogsClient(
+                collector_url="fail://localhost:9000",
+                application="test-app",
+                component="api",
+            )
+            result = client.emit(message="Hello")
+            assert result is False
+        finally:
+            _registry.clear()
+            _registry.update(saved)
+
+    def test_http_url_does_not_use_plugin(self):
+        """http:// URL still POSTs via HTTP."""
+        sent, cleanup, _ = self._setup_plugin()
+        try:
+            client = DevlogsClient(
+                collector_url="http://localhost:8080",
+                application="test-app",
+                component="api",
+            )
+            assert client._plugin is None
+        finally:
+            cleanup()
