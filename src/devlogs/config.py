@@ -162,7 +162,14 @@ def parse_url(url: str):
 	parsed = urlparse(url)
 
 	if parsed.scheme not in ("http", "https"):
-		raise URLParseError(f"Invalid URL scheme '{parsed.scheme}': expected 'http', 'https', 'opensearch', or 'opensearchs'")
+		# Check if the scheme is handled by a registered plugin
+		try:
+			from .collector.plugins import get_registered_schemes
+			if parsed.scheme.lower() in get_registered_schemes():
+				return CollectorURLConfig(url=url)
+		except Exception:
+			pass
+		raise URLParseError(f"Invalid URL scheme '{parsed.scheme}': must be 'http', 'https', 'opensearch', 'opensearchs', or a registered plugin scheme")
 
 	if not parsed.hostname:
 		raise URLParseError(f"Invalid URL '{url}': missing hostname")

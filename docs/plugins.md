@@ -271,6 +271,36 @@ client.emit(message="Hello", level="info")
 
 Both `emit()` and `emit_batch()` route through the plugin when a plugin URL is configured.
 
+### MCP Server
+
+The MCP server exposes an `emit_log` tool that writes logs through the same plugin routing. When `DEVLOGS_URL` points to a plugin scheme, the tool creates a `DevlogsClient` internally and routes through `plugin.send()`:
+
+```json
+{
+  "name": "emit_log",
+  "arguments": {
+    "message": "Deployment complete",
+    "level": "info",
+    "collector_url": "loki://loki-host:3100"
+  }
+}
+```
+
+The `collector_url` argument is optional — if omitted, the tool uses the configured `DEVLOGS_URL`.
+
+### CLI Diagnose
+
+The `devlogs diagnose` command detects plugin mode and checks plugin connectivity:
+
+```
+$ DEVLOGS_URL=loki://loki-host:3100 devlogs diagnose
+[OK] Mode: plugin (loki)
+[OK] Plugin: Loki: OK (200)
+[WARN] OpenSearch: Devlogs is disabled
+```
+
+When in collector/plugin mode, OpenSearch errors are reported as warnings instead of errors, since OpenSearch is not required.
+
 ### Notes
 
 - Client-side plugin delivery skips collector-side enrichment (no `collected_ts`, `client_ip`, or `identity` fields).

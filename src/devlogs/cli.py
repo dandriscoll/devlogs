@@ -600,14 +600,29 @@ def diagnose(
 		else:
 			_emit("warn", ".env: not found and no DEVLOGS_* settings detected")
 
+	# Plugin / collector mode check
+	if cfg.url_mode == "collector":
+		from .collector.plugins import get_plugin_for_url
+		plugin = get_plugin_for_url(cfg.collector_url, cfg)
+		if plugin:
+			_emit("ok", f"Mode: plugin ({plugin.name})")
+			try:
+				status = plugin.check()
+				_emit("ok", f"Plugin: {status}")
+			except Exception as e:
+				_emit("error", f"Plugin: {e}")
+		else:
+			_emit("ok", f"Mode: collector ({cfg.collector_url})")
+
 	client = None
 	connection_ok = False
+	os_severity = "warn" if cfg.url_mode == "collector" else "error"
 	try:
 		client = get_opensearch_client()
 	except DevlogsDisabledError as exc:
-		_emit("error", f"OpenSearch: {exc}")
+		_emit(os_severity, f"OpenSearch: {exc}")
 	except OpenSearchError as exc:
-		_emit("error", f"OpenSearch: {exc}")
+		_emit(os_severity, f"OpenSearch: {exc}")
 	else:
 		try:
 			check_connection(client)

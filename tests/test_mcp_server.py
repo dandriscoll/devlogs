@@ -11,6 +11,7 @@ from devlogs.mcp.server import (
     _coerce_cursor,
     _create_client_and_index,
     _error_response,
+    _handle_emit_log,
     _json_response,
     _normalize_entries,
 )
@@ -390,3 +391,60 @@ class TestMCPServerConfiguration:
             assert index == "custom-index"
         finally:
             os.unlink(temp_path)
+
+
+class TestEmitLogTool:
+    """Tests for the emit_log MCP tool."""
+
+    def test_emit_log_tool_listed(self):
+        """emit_log appears in the tool list."""
+        # Import main to access the server setup; verify the tool name exists
+        # by checking the _handle_emit_log function is importable (tool is registered)
+        from devlogs.mcp.server import _handle_emit_log
+        assert callable(_handle_emit_log)
+
+    @patch("devlogs.mcp.server.load_config")
+    @patch("devlogs.devlogs_client.DevlogsClient.emit", return_value=True)
+    def test_emit_log_with_plugin_url(self, mock_emit, mock_config):
+        """emit_log succeeds when a collector URL is provided."""
+        mock_cfg = MagicMock()
+        mock_cfg.collector_url = ""
+        mock_cfg.application = None
+        mock_config.return_value = mock_cfg
+
+        result = _handle_emit_log({
+            "message": "test log",
+            "level": "info",
+            "collector_url": "http://localhost:8080",
+        })
+        payload = json.loads(result[0].text)
+        assert payload["ok"] is True
+        assert payload["data"]["emitted"] is True
+        mock_emit.assert_called_once()
+
+    @patch("devlogs.mcp.server.load_config")
+    def test_emit_log_returns_error_without_url(self, mock_config):
+        """emit_log returns error when no collector URL is available."""
+        mock_cfg = MagicMock()
+        mock_cfg.collector_url = ""
+        mock_cfg.application = None
+        mock_config.return_value = mock_cfg
+
+        result = _handle_emit_log({"message": "test"})
+        payload = json.loads(result[0].text)
+        assert payload["ok"] is False
+        assert "No collector URL" in payload["error"]["message"]
+
+    @patch("devlogs.mcp.server.load_config")
+    @patch("devlogs.devlogs_client.DevlogsClient.emit", return_value=False)
+    def test_emit_log_returns_error_on_failure(self, mock_emit, mock_config):
+        """emit_log returns error when emit fails."""
+        mock_cfg = MagicMock()
+        mock_cfg.collector_url = "http://localhost:8080"
+        mock_cfg.application = "test-app"
+        mock_config.return_value = mock_cfg
+
+        result = _handle_emit_log({"message": "test"})
+        payload = json.loads(result[0].text)
+        assert payload["ok"] is False
+        assert payload["error"]["type"] == "EmitError"

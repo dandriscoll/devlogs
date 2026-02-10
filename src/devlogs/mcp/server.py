@@ -113,6 +113,38 @@ def _error_response(message: str, error_type: str = "Error") -> list[types.TextC
     return _json_response(error={"type": error_type, "message": message})
 
 
+def _handle_emit_log(arguments: dict) -> list[types.TextContent]:
+    """Handle the emit_log tool call."""
+    from ..devlogs_client import DevlogsClient
+
+    cfg = load_config()
+    collector_url = arguments.get("collector_url") or cfg.collector_url
+    if not collector_url:
+        return _error_response("No collector URL configured (set DEVLOGS_URL or pass collector_url)", "ConfigurationError")
+
+    application = arguments.get("application") or cfg.application or "devlogs-mcp"
+    component = arguments.get("component") or "mcp"
+
+    try:
+        client = DevlogsClient(
+            collector_url=collector_url,
+            application=application,
+            component=component,
+        )
+        ok = client.emit(
+            message=arguments.get("message"),
+            level=arguments.get("level", "info"),
+            area=arguments.get("area"),
+            fields=arguments.get("fields"),
+        )
+        if ok:
+            return _json_response(data={"emitted": True})
+        else:
+            return _error_response("Failed to emit log entry", "EmitError")
+    except Exception as e:
+        return _error_response(f"Emit failed: {e}", "EmitError")
+
+
 async def main():
     """Run the MCP server."""
     server = Server("devlogs")
@@ -536,6 +568,23 @@ async def main():
                     "required": ["anchor_timestamp"],
                 },
             ),
+            types.Tool(
+                name="emit_log",
+                description="Emit a log entry to the configured devlogs backend (collector, OpenSearch, or plugin).",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "message": {"type": "string", "description": "Log message"},
+                        "level": {"type": "string", "description": "Log level (debug, info, warning, error, critical)", "default": "info"},
+                        "area": {"type": "string", "description": "Functional area or category"},
+                        "application": {"type": "string", "description": "Application name (overrides config)"},
+                        "component": {"type": "string", "description": "Component name (overrides config)"},
+                        "fields": {"type": "object", "description": "Custom key-value fields"},
+                        "collector_url": {"type": "string", "description": "Override collector URL (e.g., loki://host:3100)"},
+                    },
+                    "required": ["message"],
+                },
+            ),
         ]
 
     @server.call_tool()
@@ -545,6 +594,10 @@ async def main():
         """Handle tool calls."""
         if arguments is None:
             arguments = {}
+
+        # emit_log does not need OpenSearch — handle it before _create_client_and_index()
+        if name == "emit_log":
+            return _handle_emit_log(arguments)
 
         try:
             client, index, config_application = _create_client_and_index()

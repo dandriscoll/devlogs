@@ -772,3 +772,106 @@ class TestMkurlCommand:
         assert "DEVLOGS_OPENSEARCH_PASS=P@ss!w#rd" in result.output
         # The URL should have the encoded version
         assert "P%40ss%21w%23rd" in result.output
+
+
+class TestDiagnosePluginMode:
+    """Tests for diagnose command with plugin/collector modes."""
+
+    def test_diagnose_shows_plugin_mode(self, tmp_path, monkeypatch):
+        """diagnose shows plugin mode when a plugin URL is configured."""
+        from unittest.mock import patch, MagicMock
+        from devlogs.collector.plugins import OutputPlugin, register_plugin, _registry
+
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+
+        # Set up a fake plugin
+        class FakePlugin(OutputPlugin):
+            name = "fakeplugin"
+            schemes = ["fakeplugin"]
+
+            def __init__(self, url, cfg):
+                pass
+
+            def send(self, records):
+                return {"ingested": len(records)}
+
+            def check(self):
+                return "FakePlugin: OK"
+
+            def display_info(self):
+                return "FakePlugin: fake://host"
+
+        # Register and ensure cleanup
+        old_registry = dict(_registry)
+        register_plugin(FakePlugin)
+
+        try:
+            for key in config._DEVLOGS_CONFIG_KEYS:
+                monkeypatch.delenv(key, raising=False)
+            monkeypatch.delenv("DOTENV_PATH", raising=False)
+            monkeypatch.setattr(config, "_dotenv_loaded", True)
+            monkeypatch.setenv("DEVLOGS_URL", "fakeplugin://myhost:9999")
+
+            result = runner.invoke(cli.app, ["diagnose"], color=False)
+            assert "Mode: plugin (fakeplugin)" in result.output
+            assert "Plugin: FakePlugin: OK" in result.output
+            # OpenSearch disabled should be warn, not error, in collector mode
+            assert "[WARN]" in result.output or "WARN" in result.output
+        finally:
+            _registry.clear()
+            _registry.update(old_registry)
+
+    def test_diagnose_shows_collector_mode(self, tmp_path, monkeypatch):
+        """diagnose shows collector mode for http:// collector URL."""
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+
+        for key in config._DEVLOGS_CONFIG_KEYS:
+            monkeypatch.delenv(key, raising=False)
+        monkeypatch.delenv("DOTENV_PATH", raising=False)
+        monkeypatch.setattr(config, "_dotenv_loaded", True)
+        monkeypatch.setenv("DEVLOGS_URL", "http://localhost:8080")
+
+        result = runner.invoke(cli.app, ["diagnose"], color=False)
+        assert "Mode: collector (http://localhost:8080)" in result.output
+
+    def test_diagnose_plugin_check_failure(self, tmp_path, monkeypatch):
+        """diagnose reports plugin check failure."""
+        from devlogs.collector.plugins import OutputPlugin, register_plugin, _registry
+
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+
+        class FailPlugin(OutputPlugin):
+            name = "failplugin"
+            schemes = ["failplugin"]
+
+            def __init__(self, url, cfg):
+                pass
+
+            def send(self, records):
+                return {"ingested": 0}
+
+            def check(self):
+                raise ConnectionError("cannot reach backend")
+
+            def display_info(self):
+                return "FailPlugin"
+
+        old_registry = dict(_registry)
+        register_plugin(FailPlugin)
+
+        try:
+            for key in config._DEVLOGS_CONFIG_KEYS:
+                monkeypatch.delenv(key, raising=False)
+            monkeypatch.delenv("DOTENV_PATH", raising=False)
+            monkeypatch.setattr(config, "_dotenv_loaded", True)
+            monkeypatch.setenv("DEVLOGS_URL", "failplugin://myhost:9999")
+
+            result = runner.invoke(cli.app, ["diagnose"], color=False)
+            assert "Mode: plugin (failplugin)" in result.output
+            assert "Plugin: cannot reach backend" in result.output
+        finally:
+            _registry.clear()
+            _registry.update(old_registry)
