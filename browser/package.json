@@ -5,7 +5,7 @@
   "description": "Browser logging library for DevLogs - forwards console logs to OpenSearch",
   "main": "dist/devlogs.cjs.js",
   "module": "dist/devlogs.esm.js",
-  "browser": "dist/devlogs.iife.js",
+  "browser": "dist/devlogs.esm.js",
   "types": "dist/index.d.ts",
   "files": [
     "dist"
