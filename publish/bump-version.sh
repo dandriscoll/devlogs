@@ -53,6 +53,10 @@ update browser/package.json \
     "\"version\": \"${OLD}\"" \
     "\"version\": \"${NEW}\""
 
+update node/package.json \
+    "\"version\": \"${OLD}\"" \
+    "\"version\": \"${NEW}\""
+
 update dotnet/src/Devlogs/Devlogs.csproj \
     "<Version>${OLD}</Version>" \
     "<Version>${NEW}</Version>"
@@ -69,6 +73,11 @@ update jenkins-plugin/pom.xml \
 if [[ -f browser/package-lock.json ]]; then
     sed -i "s|\"version\": \"${OLD}\"|\"version\": \"${NEW}\"|g" browser/package-lock.json
     echo -e "${GREEN}  updated  browser/package-lock.json${NC}"
+fi
+
+if [[ -f node/package-lock.json ]]; then
+    sed -i "s|\"version\": \"${OLD}\"|\"version\": \"${NEW}\"|g" node/package-lock.json
+    echo -e "${GREEN}  updated  node/package-lock.json${NC}"
 fi
 
 echo ""
