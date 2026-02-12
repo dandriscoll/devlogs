@@ -1,29 +1,6 @@
-# Agent Instructions: JavaScript / TypeScript (browser)
+# JavaScript / TypeScript (browser): Language-Specific Notes
 
-Copy/paste the block below into your coding agent.
-
-> Please do the following in this project:
-> 1. Install the browser package as a dev dependency: `npm install --save-dev devlogs-browser`.
-> 2. Initialize devlogs early in the application entrypoint, wrapped in an environment check so it only runs in development:
->    ```javascript
->    import * as devlogs from 'devlogs-browser';
->
->    if (process.env.NODE_ENV === 'development') {
->      devlogs.init({
->        url: 'https://admin:YourPasswordHere@localhost:9200',
->        index: 'devlogs-<projectname>',
->        application: 'my-app',   // Required: your app name
->        component: 'frontend',   // Required: component name
->      });
->      devlogs.installGlobalHandlers();
->    }
->    ```
-> 3. Use `devlogs.setArea('dashboard')` and `devlogs.setOperationId('op-123')` to add context to logs. Pass a plain object as the last argument to attach custom fields:
->    ```javascript
->    console.log('User action', { userId: 123, action: 'clicked' });
->    ```
-
-## Browser-specific notes
+See the [main README](README.md#javascript--typescript-browser) for the copy/paste agent prompt.
 
 - **How it works**: `devlogs.init()` intercepts `console.log`, `console.warn`, `console.error`, `console.debug`, and `console.info`. Each call is forwarded to your backend while the original console output is preserved for browser DevTools.
 - **`installGlobalHandlers()`** registers `window` event listeners for `error` (uncaught exceptions) and `unhandledrejection` (unhandled promise rejections). Without this, errors that never pass through `console.error()` — such as an unhandled `throw` or a rejected promise with no `.catch()` — will not be captured.
