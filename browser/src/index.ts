@@ -4,6 +4,8 @@ import { DevlogsClient } from './client';
 import {
   interceptConsole,
   restoreConsole,
+  installGlobalHandlers as installGlobalHandlersImpl,
+  removeGlobalHandlers,
   setContext,
   setArea,
   setOperationId,
@@ -59,6 +61,26 @@ export function init(options: DevlogsOptions): void {
 }
 
 /**
+ * Install global handlers for uncaught errors and unhandled promise rejections.
+ * Must be called after init(). These capture errors that never pass through
+ * console.error(), such as uncaught exceptions and unhandled promise rejections.
+ *
+ * @example
+ * ```js
+ * devlogs.init({ url: '...', application: 'my-app', component: 'ui' });
+ * devlogs.installGlobalHandlers();
+ * // Now uncaught errors and unhandled rejections are captured automatically
+ * ```
+ */
+export function installGlobalHandlers(): void {
+  if (!initialized || !client) {
+    originalConsole.warn('[devlogs] Must call init() before installGlobalHandlers()');
+    return;
+  }
+  installGlobalHandlersImpl(client);
+}
+
+/**
  * Disable devlogs and restore original console methods.
  */
 export function destroy(): void {
@@ -66,6 +88,7 @@ export function destroy(): void {
     return;
   }
 
+  removeGlobalHandlers();
   restoreConsole();
   client = null;
   initialized = false;
@@ -80,6 +103,8 @@ export function isInitialized(): boolean {
 
 // Re-export context utilities
 export { setArea, setOperationId, setFields, setFeatures, withOperation };
+
+// Note: installGlobalHandlers is exported directly above as a named function
 
 // Re-export types for TypeScript users
 export type { DevlogsOptions, LogContext, LogDocument, LogSource, LogProcess } from './types';

@@ -19,60 +19,18 @@ If you don't have OpenSearch running and you want to stand one up:
 
 ## Step 2: Copy/paste these instructions into your coding agent
 
-### Python
+Each language-specific page below has a ready-to-paste prompt block. The agent will:
 
-> Please do the following in this project:
-> 1. Install `devlogs` as a dev dependency (`pip install devlogs` or add it to `requirements-dev.txt`/`pyproject.toml` optional dependencies).
-> 2. Create a `.env.devlogs` file in the project root with a single `DEVLOGS_URL` variable (devlogs auto-discovers this file). Use the `opensearchs://` scheme for TLS or `opensearch://` for non-TLS:
->    ```
->    DEVLOGS_URL=opensearchs://admin:YourPasswordHere@localhost:9200/devlogs-<projectname>
->    ```
-> 3. Run `devlogs init` (inside the virtualenv if one is set up) and verify the index is healthy.
-> 4. Add devlogs hooks at the beginning of the application (main entrypoint/startup module), wrapped in an environment check so it only runs in development:
->    ```python
->    import os
->    import logging
->    if os.getenv("ENVIRONMENT") != "production":
->        from devlogs.handler import DevlogsHandler
->        from devlogs.opensearch.client import get_opensearch_client
->        from devlogs.build_info import resolve_build_info
->
->        build_info = resolve_build_info(write_if_missing=True)
->        handler = DevlogsHandler(
->            application="my-app",  # Required: your app name
->            component="api",       # Required: component name
->            level=logging.INFO,
->            opensearch_client=get_opensearch_client(),
->            version=build_info.build_id,
->        )
->        logging.getLogger().addHandler(handler)
->        logging.getLogger().setLevel(logging.INFO)
->        logging.info("App started")
->    ```
-> 5. Ask the user if they want MCP set up; if yes, state which agent you are (`copilot`, `claude`, or `codex`) and run `devlogs initmcp <agent>`.
+1. **Install devlogs** as a dev dependency (never a production dependency).
+2. **Create a config file** (`.env.devlogs`) pointing at your OpenSearch instance.
+3. **Initialize the index** by running `devlogs init`.
+4. **Add logging hooks** to your app entrypoint, guarded by an environment check so they only run in development. Existing code is not modified — a small initialization block is added once.
+5. **Optionally set up MCP** so the agent can query logs directly.
 
-### JavaScript / TypeScript (browser)
+Pick the guide for your language:
 
-> Please do the following in this project:
-> 1. Install the browser package as a dev dependency: `npm install --save-dev devlogs-browser`.
-> 2. Initialize devlogs early in the application entrypoint, wrapped in an environment check so it only runs in development:
->    ```javascript
->    import * as devlogs from 'devlogs-browser';
->
->    if (process.env.NODE_ENV === 'development') {
->      devlogs.init({
->        url: 'https://admin:YourPasswordHere@localhost:9200',
->        index: 'devlogs-<projectname>',
->        application: 'my-app',   // Required: your app name
->        component: 'frontend',   // Required: component name
->      });
->    }
->    ```
->    After `init()`, all `console.log`, `console.warn`, `console.error`, and `console.debug` calls are automatically forwarded to OpenSearch. The original console output is preserved.
-> 3. Use `devlogs.setArea('dashboard')` and `devlogs.setOperationId('op-123')` to add context to logs. Pass a plain object as the last argument to attach custom fields:
->    ```javascript
->    console.log('User action', { userId: 123, action: 'clicked' });
->    ```
+- [Python](AGENT_HOWTO_PYTHON.md) — uses the standard `logging` module with a `DevlogsHandler`
+- [JavaScript / TypeScript (browser)](AGENT_HOWTO_JAVASCRIPT.md) — intercepts `console.*` calls and captures uncaught errors
 
 ## Step 3: Use devlogs
 
@@ -416,6 +374,8 @@ See [docs/build-info.md](docs/build-info.md) for CI integration examples and ful
 
 ## See Also
 
+- [AGENT_HOWTO_PYTHON.md](AGENT_HOWTO_PYTHON.md) - Agent setup instructions for Python
+- [AGENT_HOWTO_JAVASCRIPT.md](AGENT_HOWTO_JAVASCRIPT.md) - Agent setup instructions for browser JS/TS
 - [MIGRATION-V2.md](MIGRATION-V2.md) - Migration guide from v1.x to v2.0
 - [HOWTO-COLLECTOR.md](HOWTO-COLLECTOR.md) - HTTP collector setup and deployment
 - [HOWTO-DEVLOGS-FORMAT.md](HOWTO-DEVLOGS-FORMAT.md) - Devlogs record format reference

@@ -112,3 +112,63 @@ export function restoreConsole(): void {
     console[method] = originalConsole[method];
   });
 }
+
+// --- Global error handlers ---
+
+let errorHandler: ((event: ErrorEvent) => void) | null = null;
+let rejectionHandler: ((event: PromiseRejectionEvent) => void) | null = null;
+let globalHandlersInstalled = false;
+
+/**
+ * Install global handlers for uncaught errors and unhandled promise rejections.
+ * These capture errors that never pass through console.error, such as uncaught
+ * exceptions and unhandled promise rejections.
+ */
+export function installGlobalHandlers(client: DevlogsClient): void {
+  if (globalHandlersInstalled) return;
+  if (typeof window === 'undefined') return;
+
+  errorHandler = (event: ErrorEvent) => {
+    const error = event.error;
+    const errorMessage =
+      error instanceof Error
+        ? `${error.name}: ${error.message}`
+        : String(event.message);
+    const doc = formatLogDocument('error', [errorMessage], getContext());
+    doc.source.pathname = event.filename || doc.source.pathname;
+    doc.source.lineno = event.lineno || null;
+    client.index(doc);
+  };
+
+  rejectionHandler = (event: PromiseRejectionEvent) => {
+    const reason = event.reason;
+    const errorMessage =
+      reason instanceof Error
+        ? `Unhandled rejection: ${reason.name}: ${reason.message}`
+        : `Unhandled rejection: ${String(reason)}`;
+    const doc = formatLogDocument('error', [errorMessage], getContext());
+    client.index(doc);
+  };
+
+  window.addEventListener('error', errorHandler);
+  window.addEventListener('unhandledrejection', rejectionHandler);
+  globalHandlersInstalled = true;
+}
+
+/**
+ * Remove global error handlers installed by installGlobalHandlers.
+ */
+export function removeGlobalHandlers(): void {
+  if (!globalHandlersInstalled) return;
+  if (typeof window === 'undefined') return;
+
+  if (errorHandler) {
+    window.removeEventListener('error', errorHandler);
+    errorHandler = null;
+  }
+  if (rejectionHandler) {
+    window.removeEventListener('unhandledrejection', rejectionHandler);
+    rejectionHandler = null;
+  }
+  globalHandlersInstalled = false;
+}
