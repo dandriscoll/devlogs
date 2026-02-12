@@ -1,5 +1,5 @@
 import type { ConsoleMethod, LogContext, OriginalConsole } from './types';
-import type { DevlogsOpenSearchClient } from './client';
+import type { DevlogsClient } from './client';
 import { formatLogDocument } from './formatter';
 
 /**
@@ -91,7 +91,7 @@ export function withOperation<T>(operationId: string, fn: () => T): T {
  * Intercept console methods to forward logs to the index.
  * Original console methods are still called so devtools work normally.
  */
-export function interceptConsole(client: DevlogsOpenSearchClient): void {
+export function interceptConsole(client: DevlogsClient): void {
   METHODS.forEach((method) => {
     console[method] = (...args: unknown[]) => {
       // Always call the original console method first

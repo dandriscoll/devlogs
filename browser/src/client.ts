@@ -2,24 +2,30 @@ import type { DevlogsConfig, LogDocument } from './types';
 import { originalConsole } from './interceptor';
 
 /**
- * Lightweight OpenSearch client for browser environments.
+ * Lightweight log client for browser environments.
  *
  * Features:
  * - Uses native fetch API (no dependencies)
+ * - Supports both OpenSearch and collector modes
  * - Circuit breaker pattern: shows single error on connection failure
  * - Fire-and-forget logging (non-blocking)
  */
-export class DevlogsOpenSearchClient {
-  private readonly baseUrl: string;
-  private readonly authHeader: string;
-  private readonly indexName: string;
+export class DevlogsClient {
+  private readonly url: string;
+  private readonly authHeader: string | null;
   private circuitOpen = false;
   private errorShown = false;
 
   constructor(config: DevlogsConfig) {
-    this.baseUrl = `${config.scheme}://${config.host}:${config.port}`;
-    this.authHeader = `Basic ${btoa(`${config.user}:${config.password}`)}`;
-    this.indexName = config.index;
+    const baseUrl = `${config.scheme}://${config.host}:${config.port}`;
+
+    if (config.mode === 'opensearch') {
+      this.url = `${baseUrl}/${config.index}/_doc`;
+      this.authHeader = `Basic ${btoa(`${config.user}:${config.password}`)}`;
+    } else {
+      this.url = `${baseUrl}/`;
+      this.authHeader = config.token ? `Bearer ${config.token}` : null;
+    }
   }
 
   /**
@@ -30,12 +36,17 @@ export class DevlogsOpenSearchClient {
       return;
     }
 
-    fetch(`${this.baseUrl}/${this.indexName}/_doc`, {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    if (this.authHeader) {
+      headers['Authorization'] = this.authHeader;
+    }
+
+    fetch(this.url, {
       method: 'POST',
-      headers: {
-        'Authorization': this.authHeader,
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify(doc),
     }).catch((error) => {
       this.handleConnectionError(error);

@@ -1,6 +1,6 @@
 import type { DevlogsOptions } from './types';
 import { parseDevlogsUrl } from './url-parser';
-import { DevlogsOpenSearchClient } from './client';
+import { DevlogsClient } from './client';
 import {
   interceptConsole,
   restoreConsole,
@@ -14,7 +14,7 @@ import {
 } from './interceptor';
 
 let initialized = false;
-let client: DevlogsOpenSearchClient | null = null;
+let client: DevlogsClient | null = null;
 
 /**
  * Initialize the devlogs browser client (v2.0).
@@ -41,7 +41,7 @@ export function init(options: DevlogsOptions): void {
   }
 
   const config = parseDevlogsUrl(options.url, options.index);
-  client = new DevlogsOpenSearchClient(config);
+  client = new DevlogsClient(config);
 
   setContext({
     application: options.application,

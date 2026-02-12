@@ -1,7 +1,13 @@
 /**
- * Configuration parsed from the DEVLOGS URL
+ * Mode of operation: direct OpenSearch or collector endpoint.
  */
-export interface DevlogsConfig {
+export type DevlogsMode = 'opensearch' | 'collector';
+
+/**
+ * Parsed configuration for OpenSearch mode.
+ */
+export interface OpenSearchConfig {
+  mode: 'opensearch';
   scheme: 'http' | 'https';
   host: string;
   port: number;
@@ -11,10 +17,27 @@ export interface DevlogsConfig {
 }
 
 /**
+ * Parsed configuration for collector mode.
+ */
+export interface CollectorConfig {
+  mode: 'collector';
+  scheme: 'http' | 'https';
+  host: string;
+  port: number;
+  token: string | null;
+  index: string;
+}
+
+/**
+ * Union of both config modes.
+ */
+export type DevlogsConfig = OpenSearchConfig | CollectorConfig;
+
+/**
  * Options for initializing the devlogs client (v2.0)
  */
 export interface DevlogsOptions {
-  /** OpenSearch URL in format: http://user:pass@host:port */
+  /** URL in format: http://user:pass@host:port (OpenSearch) or https://token@host:port (collector) */
   url: string;
   /** Index name (default: devlogs-0001) */
   index?: string;

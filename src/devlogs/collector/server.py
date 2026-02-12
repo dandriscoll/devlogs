@@ -11,6 +11,7 @@ from typing import Optional
 
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.responses import JSONResponse
+from starlette.middleware.cors import CORSMiddleware
 
 from ..config import load_config
 from ..opensearch.client import get_opensearch_client, OpenSearchError
@@ -105,6 +106,14 @@ app = FastAPI(
     description="HTTP log collector for the devlogs format",
     version=__version__,
     lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Devlogs-Token", "X-Request-ID"],
+    max_age=86400,
 )
 
 
