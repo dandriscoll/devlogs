@@ -263,4 +263,28 @@ public class DevlogsOutputTest {
         assertEquals("error", DevlogsLogStorage.detectLevel("ERROR: something broke"));
         assertEquals("error", DevlogsLogStorage.detectLevel("Build FAILED with exit code 1"));
     }
+
+    @Test
+    public void testFilenamesWithKeywordsAreNotFalsePositives() {
+        // Pytest progress lines with "error"/"fail" in filenames should be info
+        assertEquals("info", DevlogsLogStorage.detectLevel("tests/test_errors.py ........                                            [ 72%]"));
+        assertEquals("info", DevlogsLogStorage.detectLevel("tests/test_errors.py ...                                                 [ 55%]"));
+        assertEquals("info", DevlogsLogStorage.detectLevel("tests/test_error_handling.py ..                                           [ 80%]"));
+        assertEquals("info", DevlogsLogStorage.detectLevel("tests/test_failed.py ....                                                [ 90%]"));
+        assertEquals("info", DevlogsLogStorage.detectLevel("tests/test_failures.py ..                                                [ 95%]"));
+        assertEquals("info", DevlogsLogStorage.detectLevel("tests/test_warnings.py ...                                               [100%]"));
+
+        // Snake-case identifiers containing keywords should be info
+        assertEquals("info", DevlogsLogStorage.detectLevel("Collecting test_errors"));
+        assertEquals("info", DevlogsLogStorage.detectLevel("  test_error_handler (0.3s)"));
+
+        // Real errors/warnings should still be detected correctly
+        assertEquals("error", DevlogsLogStorage.detectLevel("ERROR: something broke"));
+        assertEquals("error", DevlogsLogStorage.detectLevel("[ERROR] Build failed"));
+        assertEquals("error", DevlogsLogStorage.detectLevel("FATAL: build aborted"));
+        assertEquals("error", DevlogsLogStorage.detectLevel("FAILED tests/test_foo.py::test_bar - AssertionError"));
+        assertEquals("error", DevlogsLogStorage.detectLevel("Build FAILED with exit code 1"));
+        assertEquals("warning", DevlogsLogStorage.detectLevel("WARNING: deprecated API"));
+        assertEquals("warning", DevlogsLogStorage.detectLevel("[WARN] slow query detected"));
+    }
 }

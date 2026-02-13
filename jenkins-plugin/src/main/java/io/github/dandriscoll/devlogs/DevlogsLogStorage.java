@@ -350,7 +350,9 @@ public class DevlogsLogStorage implements LogStorage {
     }
 
     /**
-     * Detect log level from line content.
+     * Detect log level from line content using word-boundary matching.
+     * Keywords must appear as whole words so that filenames like
+     * "test_errors.py" or "test_failed.py" are not mis-classified.
      */
     static String detectLevel(String line) {
         // Downgrade zip/tar verbose output to debug before keyword matching,
@@ -358,12 +360,29 @@ public class DevlogsLogStorage implements LogStorage {
         String trimmed = line.trim();
         if (isArchiveVerbose(trimmed)) return "debug";
 
-        String upper = line.toUpperCase();
-        if (upper.contains("ERROR") || upper.contains("FATAL") || upper.contains("FAILED")) return "error";
-        if (upper.contains("WARN")) return "warning";
-        if (upper.contains("DEBUG")) return "debug";
+        if (ERROR_LEVEL_PATTERN.matcher(line).find()) return "error";
+        if (WARN_LEVEL_PATTERN.matcher(line).find()) return "warning";
+        if (DEBUG_LEVEL_PATTERN.matcher(line).find()) return "debug";
         return "info";
     }
+
+    // Word-boundary patterns for level detection.  Underscore is a "word"
+    // character in \b, so keywords embedded in snake_case identifiers or
+    // filenames (e.g. test_errors, _failed) will NOT match.
+    private static final java.util.regex.Pattern ERROR_LEVEL_PATTERN =
+        java.util.regex.Pattern.compile(
+            "\\bERROR\\b|\\bFATAL\\b|\\bFAILED\\b",
+            java.util.regex.Pattern.CASE_INSENSITIVE);
+
+    private static final java.util.regex.Pattern WARN_LEVEL_PATTERN =
+        java.util.regex.Pattern.compile(
+            "\\bWARN",
+            java.util.regex.Pattern.CASE_INSENSITIVE);
+
+    private static final java.util.regex.Pattern DEBUG_LEVEL_PATTERN =
+        java.util.regex.Pattern.compile(
+            "\\bDEBUG\\b",
+            java.util.regex.Pattern.CASE_INSENSITIVE);
 
     private static final java.util.regex.Pattern ARCHIVE_VERBOSE_PATTERN =
         java.util.regex.Pattern.compile(
