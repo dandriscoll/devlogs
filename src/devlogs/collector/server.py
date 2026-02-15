@@ -5,9 +5,12 @@
 # - Ingest mode: write directly to OpenSearch
 
 import json
+import logging
 import platform
 from contextlib import asynccontextmanager
 from typing import Optional
+
+logger = logging.getLogger("devlogs.collector")
 
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.responses import JSONResponse
@@ -120,6 +123,9 @@ app.add_middleware(
 def get_client_ip(request: Request) -> str:
     """Extract client IP from request.
 
+    Returns a bare IPv4 or IPv6 address string (e.g. "192.168.1.5", "::1").
+    No port, no brackets, no CIDR suffix.
+
     Checks X-Forwarded-For header first (for proxied requests),
     then falls back to direct client connection.
     """
@@ -144,6 +150,8 @@ def get_client_ip(request: Request) -> str:
 @app.exception_handler(CollectorError)
 async def collector_error_handler(request: Request, exc: CollectorError):
     """Handle CollectorError exceptions with structured response."""
+    client_ip = get_client_ip(request)
+    logger.warning("%s %d %s: %s", client_ip, exc.status_code, exc.subcode, exc.message)
     return JSONResponse(
         status_code=exc.status_code,
         content=exc.to_dict(),
@@ -187,6 +195,8 @@ async def ingest_logs(request: Request):
 
     # Determine operating mode
     mode = cfg.get_collector_mode()
+    client_ip = get_client_ip(request)
+    logger.info("%s POST / (%d bytes)", client_ip, len(body))
 
     if mode == "forward":
         try:
@@ -223,8 +233,11 @@ async def _handle_forward_mode(request: Request, cfg, body: bytes) -> Response:
         timeout=cfg.opensearch_timeout,
     )
 
+    client_ip = get_client_ip(request)
+
     # If upstream returned 2xx, return 202
     if 200 <= status < 300:
+        logger.info("%s 202 forwarded", client_ip)
         return Response(
             status_code=202,
             content=json.dumps({"status": "accepted", "forwarded": True}),
@@ -232,6 +245,7 @@ async def _handle_forward_mode(request: Request, cfg, body: bytes) -> Response:
         )
     else:
         # This shouldn't happen - HTTPError should have been raised
+        logger.warning("%s %d forward failed", client_ip, status)
         return JSONResponse(
             status_code=status,
             content=response_body,
@@ -321,6 +335,8 @@ async def _handle_ingest_mode(request: Request, cfg, body: bytes) -> Response:
     index_map = parse_forward_index_map_kv(cfg.forward_index_map_kv)
 
     result = ingest_records(client, cfg.index, enriched_records, index_map)
+    client_ip = get_client_ip(request)
+    logger.info("%s 202 ingested %d record(s)", client_ip, result["ingested"])
 
     return Response(
         status_code=202,
@@ -353,11 +369,15 @@ async def _handle_plugin_mode(request: Request, cfg, body: bytes, plugin) -> Res
     if not isinstance(result, dict):
         result = {}
 
+    ingested = result.get("ingested", len(enriched_records))
+    client_ip = get_client_ip(request)
+    logger.info("%s 202 plugin '%s' ingested %d record(s)", client_ip, plugin.name, ingested)
+
     return Response(
         status_code=202,
         content=json.dumps({
             "status": "accepted",
-            "ingested": result.get("ingested", len(enriched_records)),
+            "ingested": ingested,
         }),
         media_type="application/json",
     )

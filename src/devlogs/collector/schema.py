@@ -14,9 +14,12 @@
 #   - environment (string): Deployment environment (e.g., "development", "staging", "production")
 #   - version (string): Application version
 #
-# Collector-set fields (added during ingestion):
+# Collector-set fields (added during ingestion, always overwritten by collector):
 #   - collected_ts (string): ISO 8601 UTC timestamp when collector received the record
-#   - client_ip (string): IP address of the submitting client
+#   - client_ip (string): IP address of the submitting client as a bare IPv4 or IPv6
+#     address string (e.g. "192.168.1.5", "::1"). No port, no brackets, no CIDR suffix.
+#     Always set by the collector from the network connection; any value in the payload
+#     is discarded.
 #   - identity (object): Identity information resolved from auth token
 #     - mode: "anonymous" | "verified" | "passthrough"
 #     - For verified: id, name (optional), type (optional), tags (optional)
@@ -60,7 +63,8 @@ class DevlogsRecord:
         version: Application version (optional)
         fields: Arbitrary nested JSON for custom data (optional)
         collected_ts: Timestamp when collector received (set by collector)
-        client_ip: Submitting client IP address (set by collector)
+        client_ip: Submitting client IP address as a bare IPv4 or IPv6
+            string (set by collector, never accepted from payload)
         identity: Identity information resolved from auth (set by collector)
     """
 
@@ -329,9 +333,12 @@ def enrich_record(
 ) -> DevlogsRecord:
     """Enrich a record with collector metadata.
 
+    All three collector-set fields are unconditionally overwritten here;
+    any values from the payload are discarded.
+
     Args:
         record: The validated record
-        client_ip: IP address of the submitting client
+        client_ip: Bare IPv4/IPv6 address string from get_client_ip()
         identity: Identity object or dict from auth resolution
 
     Returns:
