@@ -28,7 +28,7 @@ from .opensearch.mappings import (
 	build_reindex_script,
 	SCHEMA_VERSION,
 )
-from .opensearch.queries import normalize_log_entries, search_logs, tail_logs, get_last_errors
+from .opensearch.queries import normalize_log_entries, search_logs, tail_logs, get_last_errors, get_index_stats
 from .retention import cleanup_old_logs, get_retention_stats
 from .jenkins.cli import jenkins_app
 from .version import __version__
@@ -460,6 +460,117 @@ def refresh(
 	except OpenSearchError as e:
 		typer.echo(typer.style(f"Error: Failed to refresh index: {e}", fg=typer.colors.RED), err=True)
 		raise typer.Exit(1)
+
+
+def _check_collector_liveness(collector_url: str) -> tuple[bool, str]:
+	"""Probe a collector URL for liveness. Returns (reachable, detail)."""
+	import urllib.request
+	import urllib.error
+	from .devlogs_client import _parse_collector_url
+
+	clean_url, token = _parse_collector_url(collector_url)
+	endpoint = clean_url.rstrip("/")
+	headers = {}
+	if token:
+		headers["Authorization"] = f"Bearer {token}"
+	req = urllib.request.Request(endpoint, method="HEAD", headers=headers)
+	try:
+		with urllib.request.urlopen(req, timeout=5):
+			pass
+		return True, "reachable"
+	except urllib.error.HTTPError as e:
+		# Any HTTP response means the server is up
+		return True, f"reachable (HTTP {e.code})"
+	except urllib.error.URLError as e:
+		return False, str(e.reason)
+	except Exception as e:
+		return False, f"{type(e).__name__}: {e}"
+
+
+def _print_index_stats(stats: dict):
+	"""Print OpenSearch index statistics."""
+	typer.echo(f"Total records:  {stats['total']:,}")
+	typer.echo(f"First entry:    {stats['first_entry'] or '(none)'}")
+	typer.echo(f"Last entry:     {stats['last_entry'] or '(none)'}")
+
+	counts = stats["counts_by_level"]
+	if counts:
+		typer.echo()
+		typer.echo("Records by level:")
+		for level_name in ("debug", "info", "warning", "error", "critical"):
+			if level_name in counts:
+				typer.echo(f"  {level_name + ':':12s} {counts[level_name]:>8,}")
+		for level_name in sorted(counts):
+			if level_name not in ("debug", "info", "warning", "error", "critical"):
+				typer.echo(f"  {level_name + ':':12s} {counts[level_name]:>8,}")
+
+
+@app.command()
+def status(
+	env: str = ENV_OPTION,
+	url: str = URL_OPTION,
+):
+	"""Show connection status and index statistics.
+
+	Detects the configured mode automatically:
+
+	  OpenSearch mode  — queries the index for record counts, timestamps,
+	                     and level breakdowns.
+
+	  Collector mode   — probes the write-only HTTP endpoint for liveness.
+	                     Collectors accept logs but cannot be queried, so
+	                     index statistics are not available.
+	"""
+	_apply_common_options(env, url)
+	cfg = load_config()
+
+	if cfg.url_mode == "collector":
+		typer.echo(f"Mode:           collector (write-only)")
+		typer.echo(f"Collector URL:  {cfg.collector_url}")
+
+		# Check for plugin
+		from .collector.plugins import get_plugin_for_url
+		plugin = get_plugin_for_url(cfg.collector_url, cfg)
+		if plugin:
+			typer.echo(f"Plugin:         {plugin.name}")
+			try:
+				plugin_status = plugin.check()
+				typer.echo(typer.style(f"Status:         {plugin_status}", fg=typer.colors.GREEN))
+			except Exception as e:
+				typer.echo(typer.style(f"Status:         unreachable ({e})", fg=typer.colors.RED))
+				raise typer.Exit(1)
+		else:
+			reachable, detail = _check_collector_liveness(cfg.collector_url)
+			if reachable:
+				typer.echo(typer.style(f"Status:         {detail}", fg=typer.colors.GREEN))
+			else:
+				typer.echo(typer.style(f"Status:         unreachable ({detail})", fg=typer.colors.RED))
+				raise typer.Exit(1)
+
+		typer.echo()
+		typer.echo(typer.style(
+			"Index statistics are not available in collector mode.\n"
+			"The collector is a write-only HTTP endpoint that accepts logs\n"
+			"but cannot be queried. Use an OpenSearch URL to see index stats.",
+			dim=True,
+		))
+		return
+
+	if cfg.url_mode == "none":
+		typer.echo(typer.style(
+			"Error: No OpenSearch or collector URL configured.\n"
+			"Set DEVLOGS_URL or DEVLOGS_OPENSEARCH_HOST.",
+			fg=typer.colors.RED,
+		), err=True)
+		raise typer.Exit(1)
+
+	# OpenSearch mode
+	client, cfg = require_opensearch()
+	typer.echo(f"Mode:           opensearch (read/write)")
+	typer.echo(f"Index:          {cfg.index}")
+
+	stats = get_index_stats(client, cfg.index)
+	_print_index_stats(stats)
 
 
 @app.command()

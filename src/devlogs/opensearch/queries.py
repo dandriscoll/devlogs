@@ -677,6 +677,48 @@ def get_error_context(
 	return before_docs + after_docs
 
 
+def get_index_stats(client, index):
+	"""Get index-level statistics using aggregations.
+
+	Uses only timestamp (date) and level (keyword) fields for aggregations
+	so the query works on both v1 and v2 index schemas without requiring
+	keyword subfields on text-mapped fields like application/component.
+	"""
+	body = {
+		"query": {"match_all": {}},
+		"size": 0,
+		"track_total_hits": True,
+		"aggs": {
+			"min_timestamp": {"min": {"field": "timestamp"}},
+			"max_timestamp": {"max": {"field": "timestamp"}},
+			"by_level": {"terms": {"field": "level", "size": 20}},
+		},
+	}
+	response = _require_response(
+		client.search(index=index, body=body),
+		"get_index_stats",
+		client=client,
+		index=index,
+	)
+	total = response.get("hits", {}).get("total", {})
+	if isinstance(total, dict):
+		total_count = total.get("value", 0)
+	else:
+		total_count = int(total) if total else 0
+
+	aggs = response.get("aggregations", {})
+	counts_by_level = {}
+	for bucket in aggs.get("by_level", {}).get("buckets", []):
+		counts_by_level[bucket["key"]] = bucket["doc_count"]
+
+	return {
+		"total": total_count,
+		"first_entry": aggs.get("min_timestamp", {}).get("value_as_string"),
+		"last_entry": aggs.get("max_timestamp", {}).get("value_as_string"),
+		"counts_by_level": counts_by_level,
+	}
+
+
 def list_areas(client, index, since=None, min_operations=1, application=None, component=None):
 	"""List all application areas with activity counts."""
 	query_filters = []
