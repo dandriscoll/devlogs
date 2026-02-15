@@ -1,6 +1,6 @@
 {
   "name": "devlogs-node",
-  "version": "2.2.8",
+  "version": "2.2.9",
   "type": "module",
   "description": "Node.js logging library for DevLogs - forwards console logs to OpenSearch with async context isolation",
   "main": "dist/devlogs.cjs.js",
