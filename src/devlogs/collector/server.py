@@ -44,6 +44,12 @@ from .ingestor import ingest_records
 from .plugins import get_plugin_for_url
 from ..version import __version__
 
+# Register built-in output plugins by importing them (side-effect: register_plugin is called)
+try:
+    from . import loki_plugin as _loki_plugin  # noqa: F401
+except ImportError:
+    pass
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Emit a startup trace to the index so operators can see when the collector started."""
