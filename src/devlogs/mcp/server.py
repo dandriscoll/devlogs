@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 from typing import Any
 
 import mcp.server.stdio
@@ -111,6 +112,101 @@ def _json_response(data: Any = None, error: dict | None = None, meta: dict | Non
 
 def _error_response(message: str, error_type: str = "Error") -> list[types.TextContent]:
     return _json_response(error={"type": error_type, "message": message})
+
+
+def _get_loki_url() -> str | None:
+    """Return LOKI_URL from environment, or None if not set."""
+    return os.environ.get("LOKI_URL") or None
+
+
+def _handle_loki_search(arguments: dict) -> list[types.TextContent]:
+    """Handle search_logs when LOKI_URL is configured."""
+    from ..loki.queries import search as loki_search
+
+    loki_url = _get_loki_url()
+    app = arguments.get("application") or load_config().application
+    if not app:
+        return _error_response(
+            "application is required for Loki backend (set via argument or DEVLOGS_URL)",
+            "ValidationError",
+        )
+
+    try:
+        entries = loki_search(
+            loki_url=loki_url,
+            app=app,
+            level=arguments.get("level"),
+            component=arguments.get("component"),
+            area=arguments.get("area"),
+            start=arguments.get("since"),
+            end=arguments.get("until"),
+            limit=_coerce_limit(arguments.get("limit"), 50, 100),
+            filter_text=arguments.get("query"),
+        )
+        return _json_response(
+            data={"entries": entries},
+            meta={"count": len(entries)},
+        )
+    except Exception as e:
+        return _error_response(f"Loki search error: {e}", "SearchError")
+
+
+def _handle_loki_tail(arguments: dict) -> list[types.TextContent]:
+    """Handle tail_logs when LOKI_URL is configured."""
+    from ..loki.queries import tail as loki_tail
+
+    loki_url = _get_loki_url()
+    app = arguments.get("application") or load_config().application
+    if not app:
+        return _error_response(
+            "application is required for Loki backend (set via argument or DEVLOGS_URL)",
+            "ValidationError",
+        )
+
+    try:
+        entries = loki_tail(
+            loki_url=loki_url,
+            app=app,
+            level=arguments.get("level"),
+            component=arguments.get("component"),
+            since=arguments.get("since", "10m"),
+            limit=_coerce_limit(arguments.get("limit"), 20, 100),
+        )
+        return _json_response(
+            data={"entries": entries},
+            meta={"count": len(entries)},
+        )
+    except Exception as e:
+        return _error_response(f"Loki tail error: {e}", "TailError")
+
+
+def _handle_loki_get_log_stats(arguments: dict) -> list[types.TextContent]:
+    """Handle get_log_stats using Loki count_over_time."""
+    from ..loki.queries import count_over_time as loki_count_over_time
+
+    loki_url = _get_loki_url()
+    app = arguments.get("application") or load_config().application
+    if not app:
+        return _error_response(
+            "application is required for Loki backend (set via argument or DEVLOGS_URL)",
+            "ValidationError",
+        )
+
+    try:
+        stats = loki_count_over_time(
+            loki_url=loki_url,
+            app=app,
+            interval=arguments.get("interval", "5m"),
+            group_by=arguments.get("group_by"),
+            start=arguments.get("since"),
+            end=arguments.get("until"),
+        )
+        return _json_response(
+            data={"stats": stats},
+            meta={"count": len(stats)},
+        )
+    except Exception as e:
+        return _error_response(f"Loki stats error: {e}", "StatsError")
 
 
 def _handle_emit_log(arguments: dict) -> list[types.TextContent]:
@@ -569,6 +665,37 @@ async def main():
                 },
             ),
             types.Tool(
+                name="get_log_stats",
+                description="Get log counts aggregated over a time interval. Requires Loki backend (LOKI_URL).",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "application": {
+                            "type": "string",
+                            "description": "Application name to aggregate stats for",
+                        },
+                        "interval": {
+                            "type": "string",
+                            "description": "Aggregation interval (e.g. '1m', '5m', '1h')",
+                            "default": "5m",
+                        },
+                        "group_by": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Labels to group by (e.g. ['level', 'component'])",
+                        },
+                        "since": {
+                            "type": "string",
+                            "description": "Range start as ISO timestamp or relative duration like '1h'",
+                        },
+                        "until": {
+                            "type": "string",
+                            "description": "Range end as ISO timestamp or relative duration",
+                        },
+                    },
+                },
+            ),
+            types.Tool(
                 name="emit_log",
                 description="Emit a log entry to the configured devlogs backend (collector, OpenSearch, or plugin).",
                 inputSchema={
@@ -598,6 +725,21 @@ async def main():
         # emit_log does not need OpenSearch — handle it before _create_client_and_index()
         if name == "emit_log":
             return _handle_emit_log(arguments)
+
+        # get_log_stats is a Loki-only tool
+        if name == "get_log_stats":
+            if not _get_loki_url():
+                return _error_response(
+                    "get_log_stats requires LOKI_URL to be set", "ConfigurationError"
+                )
+            return _handle_loki_get_log_stats(arguments)
+
+        # Route search_logs and tail_logs to Loki when LOKI_URL is configured
+        if _get_loki_url():
+            if name == "search_logs":
+                return _handle_loki_search(arguments)
+            if name == "tail_logs":
+                return _handle_loki_tail(arguments)
 
         try:
             client, index, config_application = _create_client_and_index()
