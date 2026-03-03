@@ -8,11 +8,35 @@
 #   Log line payload: message, operation_id, timestamp, fields, version
 
 import json
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional
+
+# ---------------------------------------------------------------------------
+# Input validation
+# ---------------------------------------------------------------------------
+
+_LABEL_NAME_RE = re.compile(r'^[a-z_][a-z0-9_]*$')
+_DURATION_RE = re.compile(r'^[0-9]+(ms|s|m|h|d|w)$')
+
+
+def _validate_label_name(name: str) -> str:
+    """Ensure a label name contains only safe characters."""
+    if not _LABEL_NAME_RE.match(name):
+        raise ValueError(f"Invalid label name for group_by: {name!r}")
+    return name
+
+
+def _validate_duration(interval: str) -> str:
+    """Ensure a duration string matches the Loki duration format."""
+    if not _DURATION_RE.match(interval):
+        raise ValueError(
+            f"Invalid interval {interval!r}. Must match [0-9]+(ms|s|m|h|d|w), e.g. '5m', '1h'."
+        )
+    return interval
 
 
 # ---------------------------------------------------------------------------
@@ -44,7 +68,7 @@ def build_log_pipeline(filter_text: Optional[str], use_json: bool = True) -> str
         parts.append("| json")
     if filter_text:
         escaped = filter_text.replace("\\", "\\\\").replace('"', '\\"')
-        parts.append(f'| message =~ "{escaped}"')
+        parts.append(f'|= "{escaped}"')
     return " ".join(parts)
 
 
@@ -286,11 +310,14 @@ def count_over_time(
     start_dt = _parse_time_param(start) or (now - timedelta(hours=1))
     end_dt = _parse_time_param(end) or now
 
+    _validate_duration(interval)
+
     selector = build_stream_selector({"application": app})
     inner = f"count_over_time({selector}[{interval}])"
 
     if group_by:
-        by_clause = ", ".join(group_by)
+        validated_labels = [_validate_label_name(lbl) for lbl in group_by]
+        by_clause = ", ".join(validated_labels)
         query = f"sum by ({by_clause}) ({inner})"
     else:
         query = f"sum({inner})"

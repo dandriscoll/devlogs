@@ -50,6 +50,7 @@ try:
 except ImportError:
     pass
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Emit a startup trace to the index so operators can see when the collector started."""

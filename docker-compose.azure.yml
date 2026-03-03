@@ -37,7 +37,7 @@ services:
   grafana:
     image: grafana/grafana:10.2.0
     ports:
-      - "3000:3000"             # expose externally if desired; consider adding auth
+      - "127.0.0.1:3000:3000"   # internal only; use a TLS reverse proxy for external access
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
       - GF_AUTH_ANONYMOUS_ENABLED=false
