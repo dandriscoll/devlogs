@@ -91,7 +91,8 @@ class TestEnvBuildIdPrecedence:
 class TestEnvBranchAndTimestamp:
     """Test env provides branch and timestamp (build_id computed)."""
 
-    def test_env_branch_generates_build_id(self, monkeypatch):
+    def test_env_branch_generates_build_id(self, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)
         monkeypatch.delenv("DEVLOGS_BUILD_ID", raising=False)
         monkeypatch.setenv("DEVLOGS_BRANCH", "feature/my-feature")
 
@@ -102,7 +103,8 @@ class TestEnvBranchAndTimestamp:
         assert result.timestamp_utc == FIXED_TIMESTAMP
         assert result.source == "env"
 
-    def test_env_timestamp_used(self, monkeypatch):
+    def test_env_timestamp_used(self, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)
         monkeypatch.delenv("DEVLOGS_BUILD_ID", raising=False)
         monkeypatch.setenv("DEVLOGS_BRANCH", "main")
         monkeypatch.setenv("DEVLOGS_BUILD_TIMESTAMP_UTC", "20250101T120000Z")
@@ -333,7 +335,8 @@ class TestWriteIfMissing:
 class TestAllowGitFalse:
     """Test that allow_git=False never calls git."""
 
-    def test_no_subprocess_called_when_allow_git_false(self, monkeypatch):
+    def test_no_subprocess_called_when_allow_git_false(self, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)
         monkeypatch.delenv("DEVLOGS_BUILD_ID", raising=False)
         monkeypatch.delenv("DEVLOGS_BRANCH", raising=False)
 
@@ -357,7 +360,8 @@ class TestAllowGitFalse:
 class TestAllowGitTrue:
     """Test allow_git=True behavior with various git scenarios."""
 
-    def test_git_success_gets_branch(self, monkeypatch):
+    def test_git_success_gets_branch(self, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)
         monkeypatch.delenv("DEVLOGS_BUILD_ID", raising=False)
         monkeypatch.delenv("DEVLOGS_BRANCH", raising=False)
 
@@ -371,7 +375,8 @@ class TestAllowGitTrue:
         assert result.branch == "feature/test-branch"
         assert result.build_id == f"feature/test-branch-{FIXED_TIMESTAMP}"
 
-    def test_git_command_not_found(self, monkeypatch):
+    def test_git_command_not_found(self, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)
         monkeypatch.delenv("DEVLOGS_BUILD_ID", raising=False)
         monkeypatch.delenv("DEVLOGS_BRANCH", raising=False)
 
@@ -381,7 +386,8 @@ class TestAllowGitTrue:
         assert result.branch is None
         assert result.build_id == f"unknown-{FIXED_TIMESTAMP}"
 
-    def test_git_nonzero_exit(self, monkeypatch):
+    def test_git_nonzero_exit(self, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)
         monkeypatch.delenv("DEVLOGS_BUILD_ID", raising=False)
         monkeypatch.delenv("DEVLOGS_BRANCH", raising=False)
 
@@ -395,7 +401,8 @@ class TestAllowGitTrue:
         assert result.branch is None
         assert result.build_id == f"unknown-{FIXED_TIMESTAMP}"
 
-    def test_git_timeout(self, monkeypatch):
+    def test_git_timeout(self, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)
         monkeypatch.delenv("DEVLOGS_BUILD_ID", raising=False)
         monkeypatch.delenv("DEVLOGS_BRANCH", raising=False)
 
@@ -405,7 +412,8 @@ class TestAllowGitTrue:
         assert result.branch is None
         assert result.build_id == f"unknown-{FIXED_TIMESTAMP}"
 
-    def test_git_returns_HEAD_detached(self, monkeypatch):
+    def test_git_returns_HEAD_detached(self, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)
         monkeypatch.delenv("DEVLOGS_BUILD_ID", raising=False)
         monkeypatch.delenv("DEVLOGS_BRANCH", raising=False)
 
@@ -434,7 +442,8 @@ class TestDeterministicBuildId:
         assert result1.build_id == result2.build_id
         assert result1.timestamp_utc == result2.timestamp_utc
 
-    def test_different_now_fn_gives_different_result(self, monkeypatch):
+    def test_different_now_fn_gives_different_result(self, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)
         monkeypatch.delenv("DEVLOGS_BUILD_ID", raising=False)
         monkeypatch.delenv("DEVLOGS_BRANCH", raising=False)
 
@@ -533,7 +542,8 @@ class TestSearchUpBehavior:
 class TestResolveBuildId:
     """Test the resolve_build_id convenience function."""
 
-    def test_returns_string_only(self, monkeypatch):
+    def test_returns_string_only(self, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)
         monkeypatch.delenv("DEVLOGS_BUILD_ID", raising=False)
         monkeypatch.delenv("DEVLOGS_BRANCH", raising=False)
 

@@ -44,6 +44,11 @@ rm -rf dist/*.tar.gz dist/*.whl build/*.egg-info 2>/dev/null || true
 echo "Building package..."
 python3 -m build
 
+# Run tests
+echo -e "\n${GREEN}Running tests...${NC}"
+python3 -m pytest tests/ -m "not integration"
+echo -e "${GREEN}Tests passed!${NC}"
+
 # Show what will be uploaded
 echo -e "\n${GREEN}Built packages:${NC}"
 ls -la dist/*.tar.gz dist/*.whl 2>/dev/null

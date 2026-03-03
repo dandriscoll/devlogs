@@ -43,6 +43,11 @@ npm install
 echo "Building package..."
 npm run build
 
+# Run tests
+echo -e "\n${GREEN}Running tests...${NC}"
+npm test
+echo -e "${GREEN}Tests passed!${NC}"
+
 # Show what will be published
 echo -e "\n${GREEN}Package contents:${NC}"
 npm pack --dry-run 2>&1 | head -20
@@ -84,6 +89,11 @@ npm install
 
 echo "Building package..."
 npm run build
+
+# Run tests
+echo -e "\n${GREEN}Running tests...${NC}"
+npm test
+echo -e "${GREEN}Tests passed!${NC}"
 
 echo -e "\n${GREEN}Package contents:${NC}"
 npm pack --dry-run 2>&1 | head -20
