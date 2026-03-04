@@ -15,6 +15,7 @@
 # Run:
 #   python -m devlogs.proxy.server
 
+import hmac
 import logging
 import os
 
@@ -49,7 +50,10 @@ def _build_target(base: str, strip_prefix: str, request: web.Request) -> str:
 def _check_admin_token(request: web.Request) -> bool:
     if not LOKI_ADMIN_TOKEN:
         return False
-    return request.headers.get("Authorization", "") == f"Bearer {LOKI_ADMIN_TOKEN}"
+    return hmac.compare_digest(
+        request.headers.get("Authorization", ""),
+        f"Bearer {LOKI_ADMIN_TOKEN}",
+    )
 
 
 async def handle_ingest(request: web.Request) -> web.Response:
@@ -124,7 +128,7 @@ async def on_cleanup(app: web.Application) -> None:
 
 
 def create_app() -> web.Application:
-    app = web.Application()
+    app = web.Application(client_max_size=1024 * 1024)  # 1 MB
     app.on_startup.append(on_startup)
     app.on_cleanup.append(on_cleanup)
 
