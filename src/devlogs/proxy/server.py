@@ -18,6 +18,7 @@
 import hmac
 import logging
 import os
+import posixpath
 
 try:
     from aiohttp import web, ClientSession, ClientTimeout
@@ -32,7 +33,11 @@ GRAFANA_URL = os.environ.get("GRAFANA_URL", "http://localhost:3000").rstrip("/")
 LOKI_ADMIN_TOKEN = os.environ.get("LOKI_ADMIN_TOKEN", "")
 PORT = int(os.environ.get("PORT", "8080"))
 
-_SKIP_HEADERS = frozenset({"host", "content-length", "transfer-encoding"})
+_SKIP_HEADERS = frozenset({
+    "host", "content-length", "transfer-encoding",
+    "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto",
+    "forwarded", "x-real-ip", "x-original-url", "x-rewrite-url",
+})
 
 
 def _proxy_headers(request: web.Request) -> dict:
@@ -41,6 +46,9 @@ def _proxy_headers(request: web.Request) -> dict:
 
 def _build_target(base: str, strip_prefix: str, request: web.Request) -> str:
     path = request.path.removeprefix(strip_prefix) or "/"
+    path = posixpath.normpath(path)
+    if not path.startswith("/"):
+        path = "/" + path
     url = f"{base}{path}"
     if request.query_string:
         url += f"?{request.query_string}"
@@ -69,7 +77,8 @@ async def handle_ingest(request: web.Request) -> web.Response:
         allow_redirects=False,
     ) as resp:
         resp_body = await resp.read()
-        logger.info("%s /ingest → %s %d", request.method, target, resp.status)
+        log_url = target.split("?")[0]
+        logger.info("%s /ingest → %s %d", request.method, log_url, resp.status)
         content_type = resp.content_type or "application/octet-stream"
         return web.Response(status=resp.status, body=resp_body, content_type=content_type)
 
