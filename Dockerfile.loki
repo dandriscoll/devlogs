@@ -1,0 +1,13 @@
+# Dockerfile for devlogs Loki service
+#
+# Extends the official Loki image with the devlogs config baked in.
+# Needed for Azure Container Apps where config file mounts aren't available.
+#
+# Build:
+#   docker build -f Dockerfile.loki -t devlogs-loki .
+
+FROM grafana/loki:2.9.0
+
+COPY config/loki.yaml /etc/loki/local-config.yaml
+
+CMD ["-config.file=/etc/loki/local-config.yaml"]
