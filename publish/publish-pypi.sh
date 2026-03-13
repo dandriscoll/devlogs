@@ -32,26 +32,33 @@ if pip index versions devlogs 2>/dev/null | grep -q "$VERSION"; then
     fi
 fi
 
-# Ensure build tools are installed
-echo "Installing/upgrading build tools..."
-pip install --upgrade build twine
+# Activate local venv
+source .venv/bin/activate 2>/dev/null || true
 
-# Clean previous builds
-echo "Cleaning previous builds..."
-rm -rf dist/*.tar.gz dist/*.whl build/*.egg-info 2>/dev/null || true
+if [[ "${DRY_RUN:-}" == "true" ]]; then
+    echo -e "${YELLOW}DRY RUN: Would build and test package${NC}"
+else
+    # Ensure build tools are installed
+    echo "Installing/upgrading build tools..."
+    pip install --upgrade build twine
 
-# Build the package
-echo "Building package..."
-python3 -m build
+    # Clean previous builds
+    echo "Cleaning previous builds..."
+    rm -rf dist/*.tar.gz dist/*.whl build/*.egg-info 2>/dev/null || true
 
-# Run tests
-echo -e "\n${GREEN}Running tests...${NC}"
-python3 -m pytest tests/ -m "not integration"
-echo -e "${GREEN}Tests passed!${NC}"
+    # Build the package
+    echo "Building package..."
+    python3 -m build
 
-# Show what will be uploaded
-echo -e "\n${GREEN}Built packages:${NC}"
-ls -la dist/*.tar.gz dist/*.whl 2>/dev/null
+    # Run tests
+    echo -e "\n${GREEN}Running tests...${NC}"
+    python3 -m pytest tests/ -m "not integration"
+    echo -e "${GREEN}Tests passed!${NC}"
+
+    # Show what will be uploaded
+    echo -e "\n${GREEN}Built packages:${NC}"
+    ls -la dist/*.tar.gz dist/*.whl 2>/dev/null
+fi
 
 # Upload to PyPI
 echo -e "\n${GREEN}Uploading to PyPI...${NC}"

@@ -4,6 +4,10 @@
 # Requires: pip install devlogs[proxy] pytest-aiohttp
 
 import pytest
+
+aiohttp = pytest.importorskip("aiohttp", reason="requires devlogs[proxy]")
+pytest.importorskip("pytest_asyncio", reason="requires pytest-asyncio")
+
 import pytest_asyncio
 from unittest.mock import AsyncMock, MagicMock
 from aiohttp import web

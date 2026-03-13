@@ -32,43 +32,46 @@ TAG="v${VERSION}"
 echo -e "Version: ${YELLOW}${VERSION}${NC}"
 echo -e "Tag: ${YELLOW}${TAG}${NC}"
 
-# Check if binary exists
 BINARY="dist/devlogs-linux"
-if [[ ! -f "$BINARY" ]]; then
-    echo -e "${YELLOW}Binary not found. Building...${NC}"
-    ./build-standalone.sh
-fi
 
-# Verify binary works
-echo "Verifying binary..."
-if ! "${BINARY}" --help &> /dev/null; then
-    echo -e "${RED}Error: Binary verification failed${NC}"
-    exit 1
-fi
-echo -e "${GREEN}Binary OK${NC}"
+if [[ "${DRY_RUN:-}" != "true" ]]; then
+    # Check if binary exists
+    if [[ ! -f "$BINARY" ]]; then
+        echo -e "${YELLOW}Binary not found. Building...${NC}"
+        ./build-standalone.sh
+    fi
 
-# Check if tag already exists
-if git rev-parse "$TAG" &> /dev/null; then
-    echo -e "${YELLOW}Warning: Tag ${TAG} already exists${NC}"
-    read -p "Delete and recreate? (y/N) " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        git tag -d "$TAG" 2>/dev/null || true
-        git push origin --delete "$TAG" 2>/dev/null || true
-    else
+    # Verify binary works
+    echo "Verifying binary..."
+    if ! "${BINARY}" --help &> /dev/null; then
+        echo -e "${RED}Error: Binary verification failed${NC}"
         exit 1
     fi
-fi
+    echo -e "${GREEN}Binary OK${NC}"
 
-# Check if release already exists
-if gh release view "$TAG" &> /dev/null; then
-    echo -e "${YELLOW}Warning: Release ${TAG} already exists${NC}"
-    read -p "Delete and recreate? (y/N) " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        gh release delete "$TAG" --yes
-    else
-        exit 1
+    # Check if tag already exists
+    if git rev-parse "$TAG" &> /dev/null; then
+        echo -e "${YELLOW}Warning: Tag ${TAG} already exists${NC}"
+        read -p "Delete and recreate? (y/N) " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            git tag -d "$TAG" 2>/dev/null || true
+            git push origin --delete "$TAG" 2>/dev/null || true
+        else
+            exit 1
+        fi
+    fi
+
+    # Check if release already exists
+    if gh release view "$TAG" &> /dev/null; then
+        echo -e "${YELLOW}Warning: Release ${TAG} already exists${NC}"
+        read -p "Delete and recreate? (y/N) " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            gh release delete "$TAG" --yes
+        else
+            exit 1
+        fi
     fi
 fi
 
