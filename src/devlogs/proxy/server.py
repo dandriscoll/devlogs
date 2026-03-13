@@ -39,6 +39,10 @@ _SKIP_HEADERS = frozenset({
     "forwarded", "x-real-ip", "x-original-url", "x-rewrite-url",
 })
 
+_SKIP_RESPONSE_HEADERS = frozenset({
+    "content-length", "transfer-encoding", "connection", "content-type",
+})
+
 
 def _proxy_headers(request: web.Request) -> dict:
     return {k: v for k, v in request.headers.items() if k.lower() not in _SKIP_HEADERS}
@@ -123,8 +127,9 @@ async def handle_grafana(request: web.Request) -> web.Response:
     ) as resp:
         resp_body = await resp.read()
         logger.info("%s /grafana → %s %d", request.method, target, resp.status)
+        resp_headers = {k: v for k, v in resp.headers.items() if k.lower() not in _SKIP_RESPONSE_HEADERS}
         content_type = resp.content_type or "application/octet-stream"
-        return web.Response(status=resp.status, body=resp_body, content_type=content_type)
+        return web.Response(status=resp.status, body=resp_body, content_type=content_type, headers=resp_headers)
 
 
 async def on_startup(app: web.Application) -> None:
