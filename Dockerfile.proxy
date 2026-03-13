@@ -22,9 +22,9 @@ COPY src/ ./src/
 # Install the package with proxy dependencies
 RUN pip install --no-cache-dir -e ".[proxy]"
 
-# Create non-root user for security
-RUN useradd -r -u 1000 proxy
-USER proxy
+# Create non-root user for security (use 'appuser' since 'proxy' already exists in base image)
+RUN useradd -r -u 1001 appuser
+USER appuser
 
 EXPOSE 8080
 

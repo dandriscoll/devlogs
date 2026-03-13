@@ -105,11 +105,11 @@ async def handle_query(request: web.Request) -> web.Response:
 
 
 async def handle_grafana(request: web.Request) -> web.Response:
-    """Validate Bearer token, strip /grafana prefix, forward to Grafana."""
+    """Validate Bearer token, forward to Grafana preserving /grafana prefix (serve_from_sub_path)."""
     if not _check_admin_token(request):
         return web.Response(status=401, text="Unauthorized")
 
-    target = _build_target(GRAFANA_URL, "/grafana", request)
+    target = _build_target(GRAFANA_URL, "", request)
     # Strip Authorization so Grafana uses its own session mechanism
     headers = {k: v for k, v in _proxy_headers(request).items() if k.lower() != "authorization"}
     body = await request.read()
