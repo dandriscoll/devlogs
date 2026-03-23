@@ -128,26 +128,15 @@ app.add_middleware(
 
 
 def get_client_ip(request: Request) -> str:
-    """Extract client IP from request.
+    """Extract client IP from the direct connection.
 
     Returns a bare IPv4 or IPv6 address string (e.g. "192.168.1.5", "::1").
     No port, no brackets, no CIDR suffix.
 
-    Checks X-Forwarded-For header first (for proxied requests),
-    then falls back to direct client connection.
+    Proxy headers (X-Forwarded-For, X-Real-IP) are not trusted because they
+    can be spoofed by any client. If the collector runs behind a reverse proxy,
+    configure the proxy to set the client address at the transport level.
     """
-    # Check X-Forwarded-For header (from reverse proxy)
-    forwarded_for = request.headers.get("X-Forwarded-For")
-    if forwarded_for:
-        # Take the first (leftmost) IP in the chain
-        return forwarded_for.split(",")[0].strip()
-
-    # Check X-Real-IP header (alternative proxy header)
-    real_ip = request.headers.get("X-Real-IP")
-    if real_ip:
-        return real_ip.strip()
-
-    # Fall back to direct client
     if request.client:
         return request.client.host
 

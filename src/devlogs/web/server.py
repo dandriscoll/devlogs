@@ -78,8 +78,10 @@ def tail(operation_id: Optional[str] = None, area: Optional[str] = None, compone
 
 @app.get("/ui/{path:path}")
 def serve_ui(path: str):
-	static_dir = os.path.join(os.path.dirname(__file__), "static")
-	file_path = os.path.join(static_dir, path)
+	static_dir = os.path.realpath(os.path.join(os.path.dirname(__file__), "static"))
+	file_path = os.path.realpath(os.path.join(static_dir, path))
+	if not file_path.startswith(static_dir + os.sep) and file_path != static_dir:
+		file_path = os.path.join(static_dir, "index.html")
 	if not os.path.isfile(file_path):
 		file_path = os.path.join(static_dir, "index.html")
 	return FileResponse(file_path)
