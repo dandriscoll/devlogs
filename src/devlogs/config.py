@@ -49,6 +49,9 @@ _DEVLOGS_CONFIG_KEYS = (
 	"DEVLOGS_TOKEN_MAP_KV",
 	# Legacy: Auth token header name (default: Authorization)
 	"DEVLOGS_AUTH_HEADER",
+	# Proxy trust: shared secret that a reverse proxy must present to have
+	# X-Forwarded-For / X-Real-IP headers honored
+	"DEVLOGS_TRUSTED_PROXY_TOKEN",
 )
 
 
@@ -464,6 +467,11 @@ class DevlogsConfig:
 
 		# Token-to-identity mapping (KV format)
 		self.token_map_kv = _getenv("DEVLOGS_TOKEN_MAP_KV", "")
+
+		# Trusted proxy token: if set, X-Forwarded-For / X-Real-IP headers are
+		# only honored when the request includes this token in X-Trusted-Proxy-Token.
+		# If empty, forwarded headers are never trusted.
+		self.trusted_proxy_token = _getenv("DEVLOGS_TRUSTED_PROXY_TOKEN", "")
 
 		# Forward mode: per-application index routing (KV format)
 		self.forward_index_map_kv = _getenv("DEVLOGS_FORWARD_INDEX_MAP_KV", "")

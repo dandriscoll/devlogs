@@ -4,6 +4,7 @@
 # - Forward mode: proxy to upstream collector
 # - Ingest mode: write directly to OpenSearch
 
+import hmac
 import json
 import logging
 import platform
@@ -127,16 +128,28 @@ app.add_middleware(
 )
 
 
-def get_client_ip(request: Request) -> str:
-    """Extract client IP from the direct connection.
+def get_client_ip(request: Request, trusted_proxy_token: str = "") -> str:
+    """Extract client IP from request.
 
     Returns a bare IPv4 or IPv6 address string (e.g. "192.168.1.5", "::1").
     No port, no brackets, no CIDR suffix.
 
-    Proxy headers (X-Forwarded-For, X-Real-IP) are not trusted because they
-    can be spoofed by any client. If the collector runs behind a reverse proxy,
-    configure the proxy to set the client address at the transport level.
+    Proxy headers (X-Forwarded-For, X-Real-IP) are only honored when
+    DEVLOGS_TRUSTED_PROXY_TOKEN is configured and the request presents
+    a matching X-Trusted-Proxy-Token header. This prevents clients from
+    spoofing their IP address.
     """
+    if trusted_proxy_token:
+        presented = request.headers.get("X-Trusted-Proxy-Token", "")
+        if presented and hmac.compare_digest(presented, trusted_proxy_token):
+            forwarded_for = request.headers.get("X-Forwarded-For")
+            if forwarded_for:
+                return forwarded_for.split(",")[0].strip()
+
+            real_ip = request.headers.get("X-Real-IP")
+            if real_ip:
+                return real_ip.strip()
+
     if request.client:
         return request.client.host
 
@@ -146,7 +159,8 @@ def get_client_ip(request: Request) -> str:
 @app.exception_handler(CollectorError)
 async def collector_error_handler(request: Request, exc: CollectorError):
     """Handle CollectorError exceptions with structured response."""
-    client_ip = get_client_ip(request)
+    cfg = load_config()
+    client_ip = get_client_ip(request, cfg.trusted_proxy_token)
     logger.warning("%s %d %s: %s", client_ip, exc.status_code, exc.subcode, exc.message)
     return JSONResponse(
         status_code=exc.status_code,
@@ -191,7 +205,7 @@ async def ingest_logs(request: Request):
 
     # Determine operating mode
     mode = cfg.get_collector_mode()
-    client_ip = get_client_ip(request)
+    client_ip = get_client_ip(request, cfg.trusted_proxy_token)
     logger.info("%s POST / (%d bytes)", client_ip, len(body))
 
     if mode == "forward":
@@ -229,7 +243,7 @@ async def _handle_forward_mode(request: Request, cfg, body: bytes) -> Response:
         timeout=cfg.opensearch_timeout,
     )
 
-    client_ip = get_client_ip(request)
+    client_ip = get_client_ip(request, cfg.trusted_proxy_token)
 
     # If upstream returned 2xx, return 202
     if 200 <= status < 300:
@@ -286,7 +300,7 @@ def _validate_and_enrich_records(request: Request, cfg, body: bytes):
             raise
 
     # Get client info
-    client_ip = get_client_ip(request)
+    client_ip = get_client_ip(request, cfg.trusted_proxy_token)
 
     # Extract token (precedence: Bearer header → X-Devlogs-Token → URL userinfo → ?token=)
     authorization = request.headers.get("Authorization")
@@ -331,7 +345,7 @@ async def _handle_ingest_mode(request: Request, cfg, body: bytes) -> Response:
     index_map = parse_forward_index_map_kv(cfg.forward_index_map_kv)
 
     result = ingest_records(client, cfg.index, enriched_records, index_map)
-    client_ip = get_client_ip(request)
+    client_ip = get_client_ip(request, cfg.trusted_proxy_token)
     logger.info("%s 202 ingested %d record(s)", client_ip, result["ingested"])
 
     return Response(
@@ -366,7 +380,7 @@ async def _handle_plugin_mode(request: Request, cfg, body: bytes, plugin) -> Res
         result = {}
 
     ingested = result.get("ingested", len(enriched_records))
-    client_ip = get_client_ip(request)
+    client_ip = get_client_ip(request, cfg.trusted_proxy_token)
     logger.info("%s 202 plugin '%s' ingested %d record(s)", client_ip, plugin.name, ingested)
 
     return Response(

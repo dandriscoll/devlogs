@@ -166,7 +166,7 @@ class TestIngestEndpoint:
         # TestClient uses testclient as host
         assert body["client_ip"] is not None
 
-    def test_captures_forwarded_ip(self, client, reset_config, monkeypatch):
+    def test_ignores_forwarded_ip_without_proxy_token(self, client, reset_config, monkeypatch):
         monkeypatch.setenv("DEVLOGS_OPENSEARCH_HOST", "localhost")
         monkeypatch.setenv("DEVLOGS_INDEX", "test-index")
 
@@ -182,6 +182,32 @@ class TestIngestEndpoint:
                     "timestamp": "2024-01-15T10:30:00Z"
                 },
                 headers={"X-Forwarded-For": "192.168.1.100, 10.0.0.1"}
+            )
+
+        assert response.status_code == 202
+        body = mock_client.index.call_args.kwargs["body"]
+        assert body["client_ip"] != "192.168.1.100"
+
+    def test_captures_forwarded_ip_with_proxy_token(self, client, reset_config, monkeypatch):
+        monkeypatch.setenv("DEVLOGS_OPENSEARCH_HOST", "localhost")
+        monkeypatch.setenv("DEVLOGS_INDEX", "test-index")
+        monkeypatch.setenv("DEVLOGS_TRUSTED_PROXY_TOKEN", "my-proxy-secret")
+
+        mock_client = Mock()
+        mock_client.index = Mock(return_value={})
+
+        with patch("devlogs.collector.server.get_opensearch_client", return_value=mock_client):
+            response = client.post(
+                "/",
+                json={
+                    "application": "test-app",
+                    "component": "api",
+                    "timestamp": "2024-01-15T10:30:00Z"
+                },
+                headers={
+                    "X-Forwarded-For": "192.168.1.100, 10.0.0.1",
+                    "X-Trusted-Proxy-Token": "my-proxy-secret",
+                }
             )
 
         assert response.status_code == 202
@@ -575,17 +601,44 @@ class TestForwardMode:
 class TestGetClientIp:
     """Tests for client IP extraction."""
 
-    def test_extracts_forwarded_for(self):
+    def test_ignores_forwarded_for_without_token(self):
         mock_request = Mock()
         mock_request.headers = {"X-Forwarded-For": "192.168.1.1, 10.0.0.1"}
         mock_request.client = Mock(host="127.0.0.1")
-        assert get_client_ip(mock_request) == "192.168.1.1"
+        assert get_client_ip(mock_request) == "127.0.0.1"
 
-    def test_extracts_real_ip(self):
+    def test_ignores_real_ip_without_token(self):
         mock_request = Mock()
         mock_request.headers = {"X-Real-IP": "192.168.1.1"}
         mock_request.client = Mock(host="127.0.0.1")
-        assert get_client_ip(mock_request) == "192.168.1.1"
+        assert get_client_ip(mock_request) == "127.0.0.1"
+
+    def test_extracts_forwarded_for_with_proxy_token(self):
+        mock_request = Mock()
+        mock_request.headers = {
+            "X-Forwarded-For": "192.168.1.1, 10.0.0.1",
+            "X-Trusted-Proxy-Token": "secret",
+        }
+        mock_request.client = Mock(host="127.0.0.1")
+        assert get_client_ip(mock_request, "secret") == "192.168.1.1"
+
+    def test_extracts_real_ip_with_proxy_token(self):
+        mock_request = Mock()
+        mock_request.headers = {
+            "X-Real-IP": "192.168.1.1",
+            "X-Trusted-Proxy-Token": "secret",
+        }
+        mock_request.client = Mock(host="127.0.0.1")
+        assert get_client_ip(mock_request, "secret") == "192.168.1.1"
+
+    def test_ignores_forwarded_for_with_wrong_token(self):
+        mock_request = Mock()
+        mock_request.headers = {
+            "X-Forwarded-For": "192.168.1.1, 10.0.0.1",
+            "X-Trusted-Proxy-Token": "wrong",
+        }
+        mock_request.client = Mock(host="127.0.0.1")
+        assert get_client_ip(mock_request, "secret") == "127.0.0.1"
 
     def test_falls_back_to_client(self):
         mock_request = Mock()
