@@ -24,6 +24,7 @@ def _get_logger(name, handler):
     return logger
 
 
+@pytest.mark.integration
 def test_diagnostics_handler_uses_context(opensearch_client, test_index):
     handler = DiagnosticsHandler(opensearch_client=opensearch_client, index_name=test_index)
     logger = _get_logger("ctx-context", handler)
@@ -40,6 +41,7 @@ def test_diagnostics_handler_uses_context(opensearch_client, test_index):
     assert "hello" in (doc.get("message") or "")
 
 
+@pytest.mark.integration
 def test_diagnostics_handler_nested_contexts(opensearch_client, test_index):
     handler = DiagnosticsHandler(opensearch_client=opensearch_client, index_name=test_index)
     logger = _get_logger("ctx-nested", handler)
@@ -67,6 +69,7 @@ def test_diagnostics_handler_nested_contexts(opensearch_client, test_index):
     assert "inner" in (inner_entry.get("message") or "")
 
 
+@pytest.mark.integration
 def test_diagnostics_handler_extra_overrides_context(opensearch_client, test_index):
     handler = DiagnosticsHandler(opensearch_client=opensearch_client, index_name=test_index)
     logger = _get_logger("ctx-extra", handler)

@@ -1,9 +1,13 @@
 import logging
 import time
 
+import pytest
+
 from devlogs.context import operation
 from devlogs.handler import DiagnosticsHandler, OpenSearchHandler
 from devlogs.opensearch.queries import normalize_log_entries, search_logs, tail_logs
+
+pytestmark = pytest.mark.integration
 
 
 def _get_logger(name, handler):

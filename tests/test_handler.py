@@ -15,6 +15,7 @@ from devlogs.handler import (
 )
 
 
+@pytest.mark.integration
 def test_handler_emits_and_indexes(opensearch_client, test_index):
     handler = DiagnosticsHandler(opensearch_client=opensearch_client, index_name=test_index)
     logger = logging.getLogger("devlogs-test")
