@@ -875,3 +875,47 @@ class TestDiagnosePluginMode:
         finally:
             _registry.clear()
             _registry.update(old_registry)
+
+
+class TestLokiCLI:
+    """Test CLI commands with Loki backends."""
+
+    def test_init_refuses_loki_backend(self, monkeypatch):
+        """Test that init exits cleanly for Loki URLs."""
+        monkeypatch.setattr(config, "_dotenv_loaded", True)
+        monkeypatch.delenv("DEVLOGS_OPENSEARCH_URL", raising=False)
+        monkeypatch.delenv("DEVLOGS_OPENSEARCH_HOST", raising=False)
+        runner = CliRunner()
+        result = runner.invoke(cli.app, ["--url", "lokis://token@host.example.io/query", "init"])
+        assert result.exit_code == 0
+        assert "Loki backends do not require initialization" in result.output
+
+    def test_tail_requires_application_for_loki(self, monkeypatch):
+        """Test that tail requires --application for Loki backends."""
+        monkeypatch.setattr(config, "_dotenv_loaded", True)
+        monkeypatch.delenv("DEVLOGS_OPENSEARCH_URL", raising=False)
+        monkeypatch.delenv("DEVLOGS_OPENSEARCH_HOST", raising=False)
+        runner = CliRunner()
+        result = runner.invoke(cli.app, ["--url", "lokis://token@host.example.io/query", "tail"])
+        assert result.exit_code == 1
+        assert "--application is required" in result.output
+
+    def test_search_requires_application_for_loki(self, monkeypatch):
+        """Test that search requires --application for Loki backends."""
+        monkeypatch.setattr(config, "_dotenv_loaded", True)
+        monkeypatch.delenv("DEVLOGS_OPENSEARCH_URL", raising=False)
+        monkeypatch.delenv("DEVLOGS_OPENSEARCH_HOST", raising=False)
+        runner = CliRunner()
+        result = runner.invoke(cli.app, ["--url", "lokis://token@host.example.io/query", "search"])
+        assert result.exit_code == 1
+        assert "--application is required" in result.output
+
+    def test_last_error_requires_application_for_loki(self, monkeypatch):
+        """Test that last-error requires --application for Loki backends."""
+        monkeypatch.setattr(config, "_dotenv_loaded", True)
+        monkeypatch.delenv("DEVLOGS_OPENSEARCH_URL", raising=False)
+        monkeypatch.delenv("DEVLOGS_OPENSEARCH_HOST", raising=False)
+        runner = CliRunner()
+        result = runner.invoke(cli.app, ["--url", "lokis://token@host.example.io/query", "last-error"])
+        assert result.exit_code == 1
+        assert "--application is required" in result.output

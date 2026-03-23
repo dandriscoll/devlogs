@@ -206,6 +206,73 @@ def test_retention_duration_strings(monkeypatch):
 
 # URL format tests
 
+# Loki URL format tests
+
+def test_parse_url_lokis_with_token_and_path():
+    """Test lokis:// URL parsing extracts token and converts to https."""
+    result = config.parse_url("lokis://mytoken@host.example.io/query")
+    assert isinstance(result, config.LokiURLConfig)
+    assert result.url == "https://host.example.io/query"
+    assert result.token == "mytoken"
+
+
+def test_parse_url_loki_no_token():
+    """Test loki:// URL parsing without token."""
+    result = config.parse_url("loki://localhost:3100")
+    assert isinstance(result, config.LokiURLConfig)
+    assert result.url == "http://localhost:3100"
+    assert result.token is None
+
+
+def test_parse_url_lokis_no_path():
+    """Test lokis:// URL with no path."""
+    result = config.parse_url("lokis://host.example.io")
+    assert isinstance(result, config.LokiURLConfig)
+    assert result.url == "https://host.example.io"
+    assert result.token is None
+
+
+def test_parse_url_loki_with_port():
+    """Test loki:// URL with custom port."""
+    result = config.parse_url("loki://token@localhost:3100/loki")
+    assert isinstance(result, config.LokiURLConfig)
+    assert result.url == "http://localhost:3100/loki"
+    assert result.token == "token"
+
+
+def test_parse_url_loki_missing_hostname():
+    """Test loki:// URL with missing hostname raises error."""
+    import pytest
+    with pytest.raises(config.URLParseError, match="missing hostname"):
+        config.parse_url("loki://")
+
+
+def test_config_loki_url(monkeypatch):
+    """Test DevlogsConfig detects Loki URL from DEVLOGS_URL."""
+    monkeypatch.setattr(config, "_dotenv_loaded", True)
+    monkeypatch.setenv("DEVLOGS_URL", "lokis://mytoken@host.example.io/query")
+    monkeypatch.delenv("DEVLOGS_OPENSEARCH_URL", raising=False)
+
+    cfg = config.load_config()
+    assert cfg.is_loki is True
+    assert cfg.loki_url == "https://host.example.io/query"
+    assert cfg.loki_token == "mytoken"
+    assert cfg.url_mode == "loki"
+
+
+def test_config_not_loki_when_opensearch(monkeypatch):
+    """Test DevlogsConfig.is_loki is False for OpenSearch URLs."""
+    monkeypatch.setattr(config, "_dotenv_loaded", True)
+    monkeypatch.setenv("DEVLOGS_URL", "opensearchs://admin:pass@host:9200/myindex")
+    monkeypatch.delenv("DEVLOGS_OPENSEARCH_URL", raising=False)
+
+    cfg = config.load_config()
+    assert cfg.is_loki is False
+    assert cfg.loki_url is None
+
+
+# OpenSearch URL format tests
+
 def test_parse_opensearch_url_with_index():
     """Test URL parsing extracts index from path."""
     result = config._parse_opensearch_url("https://admin:pass@host:9200/myindex")

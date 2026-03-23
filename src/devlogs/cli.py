@@ -10,7 +10,7 @@ import click
 import typer
 from pathlib import Path
 
-from .config import load_config, set_dotenv_path, set_url, URLParseError, _parse_opensearch_url, parse_url, CollectorURLConfig
+from .config import load_config, set_dotenv_path, set_url, URLParseError, _parse_opensearch_url, parse_url, CollectorURLConfig, LokiURLConfig
 from .formatting import format_timestamp, all_entries_today, format_entry_text
 from .opensearch.client import (
 	get_opensearch_client,
@@ -313,6 +313,12 @@ def init(
 	automatically migrate data from v1 to v2 schema.
 	"""
 	_apply_common_options(env, url)
+
+	cfg = load_config()
+	if cfg.is_loki:
+		typer.echo("Loki backends do not require initialization. No action needed.")
+		return
+
 	client, cfg = require_opensearch(check_idx=False)
 
 	# Check existing index schema
@@ -780,6 +786,123 @@ def diagnose(
 		raise typer.Exit(1)
 
 
+def _format_loki_entries(entries, utc=False, jsonl=False):
+	"""Format and print Loki log entries."""
+	if jsonl:
+		for entry in entries:
+			typer.echo(json.dumps(entry, default=str))
+	else:
+		use_color = sys.stdout.isatty()
+		normalized = []
+		for e in entries:
+			normalized.append({
+				"timestamp": e.get("timestamp") or "",
+				"level": e.get("level") or "",
+				"area": e.get("area") or "",
+				"component": e.get("component") or "",
+				"operation_id": e.get("operation_id") or "",
+				"message": e.get("message") or "",
+				"fields": e.get("fields"),
+			})
+		omit_date = all_entries_today(normalized, use_utc=utc)
+		for doc in normalized:
+			line = format_entry_text(
+				doc, use_utc=utc, omit_date=omit_date,
+				color=use_color, format_features_fn=_format_features,
+			)
+			typer.echo(line)
+
+
+def _tail_loki(cfg, application=None, operation_id=None, area=None,
+	component=None, level=None, since=None, limit=20, follow=False,
+	utc=False, jsonl=False):
+	"""Tail logs from a Loki backend."""
+	from .loki.queries import tail as loki_tail
+
+	effective_app = application or cfg.application
+	if not effective_app:
+		typer.echo(typer.style(
+			"Error: --application is required for Loki backends",
+			fg=typer.colors.RED
+		), err=True)
+		raise typer.Exit(1)
+
+	first_poll = True
+	while True:
+		try:
+			entries = loki_tail(
+				loki_url=cfg.loki_url,
+				app=effective_app,
+				level=level,
+				component=component,
+				since=since or "10m",
+				limit=limit,
+				token=cfg.loki_token,
+			)
+		except Exception as e:
+			typer.echo(typer.style(
+				f"Error: {type(e).__name__}: {e}",
+				fg=typer.colors.RED
+			), err=True)
+			raise typer.Exit(1)
+
+		if first_poll and not entries:
+			typer.echo(typer.style("No logs found.", dim=True), err=True)
+		first_poll = False
+
+		_format_loki_entries(entries, utc=utc, jsonl=jsonl)
+
+		if not follow:
+			break
+		time.sleep(2)
+
+
+def _search_loki(cfg, q="", application=None, area=None, component=None,
+	level=None, operation_id=None, since=None, limit=50, follow=False,
+	utc=False, jsonl=False):
+	"""Search logs from a Loki backend."""
+	from .loki.queries import search as loki_search
+
+	effective_app = application or cfg.application
+	if not effective_app:
+		typer.echo(typer.style(
+			"Error: --application is required for Loki backends",
+			fg=typer.colors.RED
+		), err=True)
+		raise typer.Exit(1)
+
+	first_poll = True
+	while True:
+		try:
+			entries = loki_search(
+				loki_url=cfg.loki_url,
+				app=effective_app,
+				level=level,
+				component=component,
+				area=area,
+				start=since,
+				limit=limit,
+				filter_text=q or None,
+				token=cfg.loki_token,
+			)
+		except Exception as e:
+			typer.echo(typer.style(
+				f"Error: {type(e).__name__}: {e}",
+				fg=typer.colors.RED
+			), err=True)
+			raise typer.Exit(1)
+
+		if first_poll and not entries:
+			typer.echo(typer.style("No logs found.", dim=True), err=True)
+		first_poll = False
+
+		_format_loki_entries(entries, utc=utc, jsonl=jsonl)
+
+		if not follow:
+			break
+		time.sleep(2)
+
+
 @app.command()
 def tail(
 	operation_id: str = typer.Option(None, "--operation", "-o"),
@@ -801,6 +924,14 @@ def tail(
 	import traceback
 
 	_apply_common_options(env, url)
+
+	cfg = load_config()
+	if cfg.is_loki:
+		_tail_loki(cfg, application=application, operation_id=operation_id, area=area,
+			component=component, level=level, since=since, limit=limit, follow=follow,
+			utc=utc, jsonl=jsonl)
+		return
+
 	client, cfg = require_opensearch()
 
 	def _verbose_echo(message, color=typer.colors.BLUE):
@@ -982,6 +1113,14 @@ def search(
 	import urllib.error
 
 	_apply_common_options(env, url)
+
+	cfg = load_config()
+	if cfg.is_loki:
+		_search_loki(cfg, q=q, application=application, area=area,
+			component=component, level=level, operation_id=operation_id,
+			since=since, limit=limit, follow=follow, utc=utc, jsonl=jsonl)
+		return
+
 	client, cfg = require_opensearch()
 	effective_application = application or cfg.application
 	search_after = None
@@ -1094,6 +1233,14 @@ def last_error(
 	import urllib.error
 
 	_apply_common_options(env, url)
+
+	cfg = load_config()
+	if cfg.is_loki:
+		_search_loki(cfg, q=q, application=application, area=area,
+			component=component, level="error", operation_id=operation_id,
+			since=since, limit=limit, follow=False, utc=utc, jsonl=False)
+		return
+
 	client, cfg = require_opensearch()
 	effective_application = application or cfg.application
 

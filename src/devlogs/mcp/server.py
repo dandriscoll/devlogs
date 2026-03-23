@@ -115,8 +115,20 @@ def _error_response(message: str, error_type: str = "Error") -> list[types.TextC
 
 
 def _get_loki_url() -> str | None:
-    """Return LOKI_URL from environment, or None if not set."""
-    return os.environ.get("LOKI_URL") or None
+    """Return Loki URL from LOKI_URL env var or auto-detected from DEVLOGS_URL."""
+    url = os.environ.get("LOKI_URL")
+    if url:
+        return url
+    cfg = load_config()
+    if cfg.is_loki:
+        return cfg.loki_url
+    return None
+
+
+def _get_loki_token() -> str | None:
+    """Return Loki auth token from config, if available."""
+    cfg = load_config()
+    return cfg.loki_token
 
 
 def _handle_loki_search(arguments: dict) -> list[types.TextContent]:
@@ -142,6 +154,7 @@ def _handle_loki_search(arguments: dict) -> list[types.TextContent]:
             end=arguments.get("until"),
             limit=_coerce_limit(arguments.get("limit"), 50, 100),
             filter_text=arguments.get("query"),
+            token=_get_loki_token(),
         )
         return _json_response(
             data={"entries": entries},
@@ -171,6 +184,7 @@ def _handle_loki_tail(arguments: dict) -> list[types.TextContent]:
             component=arguments.get("component"),
             since=arguments.get("since", "10m"),
             limit=_coerce_limit(arguments.get("limit"), 20, 100),
+            token=_get_loki_token(),
         )
         return _json_response(
             data={"entries": entries},
@@ -200,6 +214,7 @@ def _handle_loki_get_log_stats(arguments: dict) -> list[types.TextContent]:
             group_by=arguments.get("group_by"),
             start=arguments.get("since"),
             end=arguments.get("until"),
+            token=_get_loki_token(),
         )
         return _json_response(
             data={"stats": stats},

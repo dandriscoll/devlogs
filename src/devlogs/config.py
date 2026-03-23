@@ -130,6 +130,13 @@ class CollectorURLConfig:
 
 
 @dataclass
+class LokiURLConfig:
+	"""Parsed Loki URL configuration (loki:// or lokis:// scheme)."""
+	url: str  # Base HTTP(S) URL for Loki API (no credentials)
+	token: Optional[str] = None  # Bearer token
+
+
+@dataclass
 class OpenSearchURLConfig:
 	"""Parsed OpenSearch URL configuration."""
 	scheme: str
@@ -142,18 +149,23 @@ class OpenSearchURLConfig:
 
 
 def parse_url(url: str):
-	"""Parse a URL and return a CollectorURLConfig or OpenSearchURLConfig.
+	"""Parse a URL and return a CollectorURLConfig, LokiURLConfig, or OpenSearchURLConfig.
 
 	Detection logic:
+	- loki:// (non-TLS) or lokis:// (TLS) → Loki
 	- opensearchs:// (TLS) or opensearch:// (non-TLS) → OpenSearch
 	- https:// or http:// with both user+pass → legacy OpenSearch (deprecation warning)
 	- https:// or http:// with token-only or ?token= → Collector
 
-	Returns: CollectorURLConfig or OpenSearchURLConfig
+	Returns: CollectorURLConfig, LokiURLConfig, or OpenSearchURLConfig
 	Raises: URLParseError if URL is malformed
 	"""
 	if not url:
 		raise URLParseError("Empty URL")
+
+	# Check for loki:// or lokis:// schemes
+	if url.startswith("lokis://") or url.startswith("loki://"):
+		return _parse_loki_url(url)
 
 	# Check for opensearch:// or opensearchs:// schemes
 	if url.startswith("opensearchs://") or url.startswith("opensearch://"):
@@ -186,6 +198,39 @@ def parse_url(url: str):
 
 	# Otherwise it's a collector URL
 	return _parse_collector_url_config(url)
+
+
+def _parse_loki_url(url: str) -> LokiURLConfig:
+	"""Parse loki:// (non-TLS) or lokis:// (TLS) URL into LokiURLConfig."""
+	if url.startswith("lokis://"):
+		transport_scheme = "https"
+		parse_url_str = "https://" + url[len("lokis://"):]
+	else:
+		transport_scheme = "http"
+		parse_url_str = "http://" + url[len("loki://"):]
+
+	parsed = urlparse(parse_url_str)
+
+	if not parsed.hostname:
+		raise URLParseError(f"Invalid URL '{url}': missing hostname")
+
+	token = None
+	if parsed.username and not parsed.password:
+		token = unquote(parsed.username)
+
+	# Rebuild clean URL without credentials
+	if parsed.port:
+		netloc = f"{parsed.hostname}:{parsed.port}"
+	else:
+		netloc = parsed.hostname or ""
+
+	from urllib.parse import urlunparse
+	clean_url = urlunparse((
+		transport_scheme, netloc, parsed.path,
+		parsed.params, parsed.query, parsed.fragment,
+	))
+
+	return LokiURLConfig(url=clean_url, token=token)
 
 
 def _parse_opensearch_scheme_url(url: str) -> OpenSearchURLConfig:
@@ -342,6 +387,8 @@ class DevlogsConfig:
 		# DEVLOGS_URL is the standard env var. It auto-detects collector vs OpenSearch
 		# via parse_url(). DEVLOGS_OPENSEARCH_URL is a legacy alias for OpenSearch URLs.
 		self.collector_url = ""
+		self.loki_url = None  # Loki base URL (set when loki:// or lokis:// scheme used)
+		self.loki_token = None  # Loki auth token
 		self.application = None
 		opensearch_url_config = None  # result from _parse_opensearch_url if found
 
@@ -351,7 +398,10 @@ class DevlogsConfig:
 		if devlogs_url:
 			try:
 				parsed = parse_url(devlogs_url)
-				if isinstance(parsed, CollectorURLConfig):
+				if isinstance(parsed, LokiURLConfig):
+					self.loki_url = parsed.url
+					self.loki_token = parsed.token
+				elif isinstance(parsed, CollectorURLConfig):
 					self.collector_url = devlogs_url
 				else:
 					# OpenSearch URL via DEVLOGS_URL
@@ -428,8 +478,15 @@ class DevlogsConfig:
 		self.collector_log_level = _getenv("DEVLOGS_COLLECTOR_LOG_LEVEL", "info")
 
 	@property
+	def is_loki(self) -> bool:
+		"""Return True if a Loki backend is configured."""
+		return bool(self.loki_url)
+
+	@property
 	def url_mode(self) -> str:
-		"""Return 'collector' if DEVLOGS_URL is set, 'opensearch' if OpenSearch is configured, else 'none'."""
+		"""Return 'loki', 'collector', 'opensearch', or 'none'."""
+		if self.loki_url:
+			return "loki"
 		if self.collector_url:
 			return "collector"
 		if self.has_opensearch_config():

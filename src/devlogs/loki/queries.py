@@ -110,12 +110,14 @@ def _parse_time_param(value: Optional[str]) -> Optional[datetime]:
 # HTTP helpers
 # ---------------------------------------------------------------------------
 
-def _loki_get(loki_url: str, path: str, params: Dict[str, str]) -> Dict[str, Any]:
+def _loki_get(loki_url: str, path: str, params: Dict[str, str], token: Optional[str] = None) -> Dict[str, Any]:
     """Execute a GET request against the Loki HTTP API."""
     base = loki_url.rstrip("/")
     qs = urllib.parse.urlencode(params)
     url = f"{base}{path}?{qs}"
     req = urllib.request.Request(url, method="GET")
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             return json.loads(resp.read().decode("utf-8"))
@@ -185,6 +187,7 @@ def search(
     end: Optional[str] = None,
     limit: int = 100,
     filter_text: Optional[str] = None,
+    token: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """Search log entries in a time range.
 
@@ -229,7 +232,7 @@ def search(
         "end": str(_to_ns(end_dt)),
         "limit": str(limit),
         "direction": "backward",
-    })
+    }, token=token)
 
     entries = _parse_log_streams(data)
     # Sort by Loki timestamp descending (most recent first)
@@ -244,6 +247,7 @@ def tail(
     component: Optional[str] = None,
     since: Optional[str] = None,
     limit: int = 50,
+    token: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """Get the most recent log entries (non-streaming snapshot).
 
@@ -276,7 +280,7 @@ def tail(
         "end": str(_to_ns(now)),
         "limit": str(limit),
         "direction": "backward",
-    })
+    }, token=token)
 
     entries = _parse_log_streams(data)
     entries.sort(key=lambda e: e.get("_loki_ts_ns", "0"), reverse=True)
@@ -290,6 +294,7 @@ def count_over_time(
     group_by: Optional[List[str]] = None,
     start: Optional[str] = None,
     end: Optional[str] = None,
+    token: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """Aggregate log counts over a time interval.
 
@@ -327,6 +332,6 @@ def count_over_time(
         "start": str(_to_ns(start_dt)),
         "end": str(_to_ns(end_dt)),
         "step": interval,
-    })
+    }, token=token)
 
     return _parse_metric_matrix(data)
