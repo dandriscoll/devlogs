@@ -132,6 +132,38 @@ def _get_loki_token() -> str | None:
     return cfg.loki_token
 
 
+class _Backend:
+    """Resolved backend that query tools use."""
+    __slots__ = ("mode", "url", "index", "application", "client")
+
+    def __init__(self, *, mode, url, index=None, application=None, client=None):
+        self.mode = mode
+        self.url = url
+        self.index = index
+        self.application = application
+        self.client = client
+
+
+def _resolve_backend() -> _Backend:
+    """Resolve the query backend using the same code paths as the query tools.
+
+    Returns a _Backend with mode="loki" or mode="opensearch".
+    Raises RuntimeError if the backend cannot be initialised.
+    """
+    loki_url = _get_loki_url()
+    if loki_url:
+        cfg = load_config()
+        return _Backend(mode="loki", url=loki_url, application=cfg.application)
+    client, index, application = _create_client_and_index()
+    return _Backend(
+        mode="opensearch",
+        url=client.base_url,
+        index=index,
+        application=application,
+        client=client,
+    )
+
+
 def _handle_loki_search(arguments: dict) -> list[types.TextContent]:
     """Handle search_logs when LOKI_URL is configured."""
     from ..loki.queries import search as loki_search
@@ -729,6 +761,14 @@ async def main():
                 },
             ),
             types.Tool(
+                name="get_devlogs_url",
+                description="Get the currently configured devlogs URL (DEVLOGS_URL). Returns the URL, its mode (loki, collector, opensearch), and application filter if set.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {},
+                },
+            ),
+            types.Tool(
                 name="emit_log",
                 description="Emit a log entry to the configured devlogs backend (collector, OpenSearch, or plugin).",
                 inputSchema={
@@ -755,31 +795,44 @@ async def main():
         if arguments is None:
             arguments = {}
 
+        # get_devlogs_url exercises the same code paths as the query tools
+        if name == "get_devlogs_url":
+            try:
+                backend = _resolve_backend()
+                data = {"url": backend.url, "mode": backend.mode, "application": backend.application}
+                if backend.index:
+                    data["index"] = backend.index
+                return _json_response(data=data)
+            except RuntimeError as e:
+                return _error_response(str(e), "InitializationError")
+
         # emit_log does not need OpenSearch — handle it before _create_client_and_index()
         if name == "emit_log":
             return _handle_emit_log(arguments)
 
+        try:
+            backend = _resolve_backend()
+        except RuntimeError as e:
+            return _error_response(str(e), "InitializationError")
+
         # get_log_stats is a Loki-only tool
         if name == "get_log_stats":
-            if not _get_loki_url():
+            if backend.mode != "loki":
                 return _error_response(
                     "get_log_stats requires LOKI_URL to be set", "ConfigurationError"
                 )
             return _handle_loki_get_log_stats(arguments)
 
-        # Route search_logs and tail_logs to Loki when LOKI_URL is configured
-        if _get_loki_url():
+        # Route search_logs and tail_logs to Loki when configured
+        if backend.mode == "loki":
             if name == "search_logs":
                 return _handle_loki_search(arguments)
             if name == "tail_logs":
                 return _handle_loki_tail(arguments)
 
-        try:
-            client, index, config_application = _create_client_and_index()
-        except RuntimeError as e:
-            return _error_response(str(e), "InitializationError")
-
-        application = arguments.get("application") or config_application
+        client = backend.client
+        index = backend.index
+        application = arguments.get("application") or backend.application
 
         component = arguments.get("component")
 
