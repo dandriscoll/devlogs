@@ -719,6 +719,62 @@ def get_index_stats(client, index):
 	}
 
 
+def list_applications(client, index, since=None, component=None):
+	"""List all application names with activity counts.
+
+	Args:
+		client: OpenSearch client
+		index: Index name
+		since: Optional time filter (ISO or relative)
+		component: Optional component filter
+
+	Returns:
+		List of dicts with application, log_count, error_count, last_activity.
+	"""
+	query_filters = []
+	if component:
+		query_filters.append({"term": {"component": component}})
+	if since:
+		normalized_since = resolve_relative_time(since)
+		query_filters.append({"range": {"timestamp": {"gte": normalized_since}}})
+
+	body = {
+		"query": {"bool": {"filter": query_filters}} if query_filters else {"match_all": {}},
+		"size": 0,
+		"aggs": {
+			"by_application": {
+				"terms": {"field": "application", "size": 200},
+				"aggs": {
+					"error_count": {
+						"filter": {
+							"terms": {"level": ["error", "critical"]}
+						}
+					},
+					"last_activity": {
+						"max": {"field": "timestamp"}
+					}
+				}
+			}
+		}
+	}
+
+	try:
+		response = _require_response(client.search(index=index, body=body), "list_applications", client=client, index=index)
+	except Exception:
+		return []
+
+	applications = []
+	for bucket in response.get("aggregations", {}).get("by_application", {}).get("buckets", []):
+		applications.append({
+			"application": bucket["key"],
+			"log_count": bucket["doc_count"],
+			"error_count": bucket.get("error_count", {}).get("doc_count", 0),
+			"last_activity": bucket.get("last_activity", {}).get("value_as_string"),
+		})
+
+	return applications
+
+
 def list_areas(client, index, since=None, min_operations=1, application=None, component=None):
 	"""List all application areas with activity counts."""
 	query_filters = []

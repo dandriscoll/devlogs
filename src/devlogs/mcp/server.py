@@ -23,6 +23,7 @@ from ..opensearch.queries import (
     get_operation_logs,
     get_last_errors,
     get_error_context,
+    list_applications,
     list_areas,
     list_error_signatures,
     list_operations,
@@ -542,6 +543,23 @@ async def main():
                 },
             ),
             types.Tool(
+                name="list_applications",
+                description="List all application names with activity counts. Use this to discover what applications are logging.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "since": {
+                            "type": "string",
+                            "description": "ISO timestamp or relative duration like '24h' to filter activity after this time",
+                        },
+                        "component": {
+                            "type": "string",
+                            "description": "Filter by component name",
+                        },
+                    },
+                },
+            ),
+            types.Tool(
                 name="list_recent_errors",
                 description="Aggregate error signatures (exception/message) with counts and samples.",
                 inputSchema={
@@ -987,6 +1005,27 @@ async def main():
                 return _error_response(str(e), "IndexNotFoundError")
             except Exception as e:
                 return _error_response(f"List areas error: {e}", "ListAreasError")
+
+        elif name == "list_applications":
+            since = arguments.get("since")
+
+            try:
+                apps = list_applications(
+                    client=client,
+                    index=index,
+                    since=since,
+                    component=component,
+                )
+
+                return _json_response(
+                    data={"applications": apps},
+                    meta={"count": len(apps)},
+                )
+
+            except IndexNotFoundError as e:
+                return _error_response(str(e), "IndexNotFoundError")
+            except Exception as e:
+                return _error_response(f"List applications error: {e}", "ListApplicationsError")
 
         elif name == "list_recent_errors":
             field = arguments.get("field") or "exception"

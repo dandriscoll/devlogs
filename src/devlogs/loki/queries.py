@@ -287,6 +287,133 @@ def tail(
     return entries
 
 
+def list_applications(
+    loki_url: str,
+    since: Optional[str] = None,
+    token: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """List all application names that have log data.
+
+    Uses GET /loki/api/v1/label/application/values.
+
+    Args:
+        loki_url: Base URL of the Loki instance
+        since: Optional time bound (ISO or relative like "24h")
+        token: Optional bearer token
+
+    Returns:
+        List of dicts with 'application' key, sorted alphabetically.
+    """
+    params: Dict[str, str] = {}
+    now = datetime.now(timezone.utc)
+    if since:
+        start_dt = _parse_time_param(since) or (now - timedelta(hours=24))
+        params["start"] = str(_to_ns(start_dt))
+        params["end"] = str(_to_ns(now))
+
+    data = _loki_get(loki_url, "/loki/api/v1/label/application/values", params, token=token)
+    values = data.get("data", [])
+    return [{"application": v} for v in sorted(values)]
+
+
+def list_areas(
+    loki_url: str,
+    application: Optional[str] = None,
+    since: Optional[str] = None,
+    token: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """List all area values, optionally scoped to an application.
+
+    Uses GET /loki/api/v1/label/area/values with an optional match[] selector.
+
+    Args:
+        loki_url: Base URL of the Loki instance
+        application: Optional application label to scope to
+        since: Optional time bound (ISO or relative like "24h")
+        token: Optional bearer token
+
+    Returns:
+        List of dicts with 'area' key, sorted alphabetically.
+    """
+    params: Dict[str, str] = {}
+    now = datetime.now(timezone.utc)
+    if since:
+        start_dt = _parse_time_param(since) or (now - timedelta(hours=24))
+        params["start"] = str(_to_ns(start_dt))
+        params["end"] = str(_to_ns(now))
+    if application:
+        selector = build_stream_selector({"application": application})
+        params["match[]"] = selector
+
+    data = _loki_get(loki_url, "/loki/api/v1/label/area/values", params, token=token)
+    values = data.get("data", [])
+    return [{"area": v} for v in sorted(values)]
+
+
+def list_operations(
+    loki_url: str,
+    application: Optional[str] = None,
+    area: Optional[str] = None,
+    component: Optional[str] = None,
+    since: Optional[str] = None,
+    limit: int = 50,
+    token: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """List recent operation IDs by querying log streams.
+
+    Uses a LogQL query with json pipeline to extract distinct operation_id values.
+    Falls back to a series query filtered by labels, then reads operation_id from
+    the log lines.
+
+    Args:
+        loki_url: Base URL of the Loki instance
+        application: Optional application label filter
+        area: Optional area label filter
+        component: Optional component label filter
+        since: Lookback window (default "24h")
+        limit: Max entries to scan for distinct operation IDs
+        token: Optional bearer token
+
+    Returns:
+        List of dicts with 'operation_id' key, sorted alphabetically.
+    """
+    now = datetime.now(timezone.utc)
+    start_dt = _parse_time_param(since or "24h") or (now - timedelta(hours=24))
+
+    labels: Dict[str, str] = {}
+    if application:
+        labels["application"] = application
+    if area:
+        labels["area"] = area
+    if component:
+        labels["component"] = component
+
+    selector = build_stream_selector(labels)
+    query = f"{selector} | json"
+
+    data = _loki_get(loki_url, "/loki/api/v1/query_range", {
+        "query": query,
+        "start": str(_to_ns(start_dt)),
+        "end": str(_to_ns(now)),
+        "limit": str(min(limit * 10, 5000)),  # overscan to find distinct IDs
+        "direction": "backward",
+    }, token=token)
+
+    entries = _parse_log_streams(data)
+    seen = set()
+    results = []
+    for entry in entries:
+        op_id = entry.get("operation_id")
+        if op_id and op_id not in seen:
+            seen.add(op_id)
+            results.append({"operation_id": op_id})
+            if len(results) >= limit:
+                break
+
+    results.sort(key=lambda e: e["operation_id"])
+    return results
+
+
 def count_over_time(
     loki_url: str,
     app: str,

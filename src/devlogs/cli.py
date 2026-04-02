@@ -1487,6 +1487,180 @@ def delete(
 
 
 @app.command()
+def applications(
+	since: str = typer.Option(None, "--since", help="Only show applications with activity after this time"),
+	component: str = typer.Option(None, "--component", "-c", help="Filter by component name"),
+	jsonl: bool = typer.Option(False, "--jsonl", help="Output as JSON Lines"),
+	env: str = ENV_OPTION,
+	url: str = URL_OPTION,
+):
+	"""List all application names."""
+	_apply_common_options(env, url)
+	cfg = load_config()
+
+	if cfg.is_loki:
+		from .loki.queries import list_applications as loki_list_applications
+		try:
+			apps = loki_list_applications(
+				loki_url=cfg.loki_url,
+				since=since,
+				token=cfg.loki_token,
+			)
+		except Exception as e:
+			typer.echo(typer.style(f"Error: {type(e).__name__}: {e}", fg=typer.colors.RED), err=True)
+			raise typer.Exit(1)
+	else:
+		client, cfg = require_opensearch()
+		from .opensearch.queries import list_applications as os_list_applications
+		apps = os_list_applications(client=client, index=cfg.index, since=since, component=component)
+
+	if not apps:
+		typer.echo(typer.style("No applications found.", dim=True), err=True)
+		return
+
+	if jsonl:
+		for app_entry in apps:
+			typer.echo(json.dumps(app_entry, default=str))
+	else:
+		for app_entry in apps:
+			name = app_entry["application"]
+			parts = [typer.style(name, bold=True)]
+			if "log_count" in app_entry:
+				parts.append(f"{app_entry['log_count']} logs")
+			if app_entry.get("error_count"):
+				parts.append(typer.style(f"{app_entry['error_count']} errors", fg=typer.colors.RED))
+			if app_entry.get("last_activity"):
+				parts.append(f"last: {app_entry['last_activity']}")
+			typer.echo("  ".join(parts))
+
+
+@app.command()
+def areas(
+	application: str = typer.Option(None, "--application", "-a", help="Filter by application name"),
+	component: str = typer.Option(None, "--component", "-c", help="Filter by component name"),
+	since: str = typer.Option(None, "--since", help="Only show areas with activity after this time"),
+	min_operations: int = typer.Option(1, "--min-operations", help="Minimum operations to include an area"),
+	jsonl: bool = typer.Option(False, "--jsonl", help="Output as JSON Lines"),
+	env: str = ENV_OPTION,
+	url: str = URL_OPTION,
+):
+	"""List all application areas."""
+	_apply_common_options(env, url)
+	cfg = load_config()
+
+	if cfg.is_loki:
+		from .loki.queries import list_areas as loki_list_areas
+		effective_app = application or cfg.application
+		try:
+			result = loki_list_areas(
+				loki_url=cfg.loki_url,
+				application=effective_app,
+				since=since,
+				token=cfg.loki_token,
+			)
+		except Exception as e:
+			typer.echo(typer.style(f"Error: {type(e).__name__}: {e}", fg=typer.colors.RED), err=True)
+			raise typer.Exit(1)
+	else:
+		client, cfg = require_opensearch()
+		from .opensearch.queries import list_areas as os_list_areas
+		effective_app = application or cfg.application
+		result = os_list_areas(
+			client=client, index=cfg.index, since=since,
+			min_operations=min_operations, application=effective_app, component=component,
+		)
+
+	if not result:
+		typer.echo(typer.style("No areas found.", dim=True), err=True)
+		return
+
+	if jsonl:
+		for area_entry in result:
+			typer.echo(json.dumps(area_entry, default=str))
+	else:
+		for area_entry in result:
+			name = area_entry["area"]
+			parts = [typer.style(name, bold=True)]
+			if "log_count" in area_entry:
+				parts.append(f"{area_entry['log_count']} logs")
+			if area_entry.get("operation_count"):
+				parts.append(f"{area_entry['operation_count']} operations")
+			if area_entry.get("error_count"):
+				parts.append(typer.style(f"{area_entry['error_count']} errors", fg=typer.colors.RED))
+			if area_entry.get("last_activity"):
+				parts.append(f"last: {area_entry['last_activity']}")
+			typer.echo("  ".join(parts))
+
+
+@app.command()
+def operations(
+	application: str = typer.Option(None, "--application", "-a", help="Filter by application name"),
+	area: str = typer.Option(None, "--area", help="Filter by area"),
+	component: str = typer.Option(None, "--component", "-c", help="Filter by component name"),
+	since: str = typer.Option(None, "--since", help="Only show operations after this time"),
+	limit: int = typer.Option(20, "--limit"),
+	with_errors_only: bool = typer.Option(False, "--errors-only", help="Only show operations with errors"),
+	jsonl: bool = typer.Option(False, "--jsonl", help="Output as JSON Lines"),
+	env: str = ENV_OPTION,
+	url: str = URL_OPTION,
+):
+	"""List recent operations."""
+	_apply_common_options(env, url)
+	cfg = load_config()
+
+	if cfg.is_loki:
+		from .loki.queries import list_operations as loki_list_operations
+		effective_app = application or cfg.application
+		try:
+			ops = loki_list_operations(
+				loki_url=cfg.loki_url,
+				application=effective_app,
+				area=area,
+				component=component,
+				since=since,
+				limit=limit,
+				token=cfg.loki_token,
+			)
+		except Exception as e:
+			typer.echo(typer.style(f"Error: {type(e).__name__}: {e}", fg=typer.colors.RED), err=True)
+			raise typer.Exit(1)
+	else:
+		client, cfg = require_opensearch()
+		from .opensearch.queries import list_operations as os_list_operations
+		effective_app = application or cfg.application
+		ops = os_list_operations(
+			client=client, index=cfg.index, area=area, since=since,
+			limit=limit, with_errors_only=with_errors_only,
+			application=effective_app, component=component,
+		)
+
+	if with_errors_only and cfg.is_loki:
+		# Loki list_operations doesn't support error filtering at the query level
+		pass
+
+	if not ops:
+		typer.echo(typer.style("No operations found.", dim=True), err=True)
+		return
+
+	if jsonl:
+		for op in ops:
+			typer.echo(json.dumps(op, default=str))
+	else:
+		for op in ops:
+			op_id = op["operation_id"]
+			parts = [typer.style(op_id, bold=True)]
+			if op.get("area"):
+				parts.append(f"area={op['area']}")
+			if op.get("total_logs"):
+				parts.append(f"{op['total_logs']} logs")
+			if op.get("error_count"):
+				parts.append(typer.style(f"{op['error_count']} errors", fg=typer.colors.RED))
+			if op.get("start_time"):
+				parts.append(f"started: {op['start_time']}")
+			typer.echo("  ".join(parts))
+
+
+@app.command()
 def demo(
 	duration: int = typer.Option(10, "--duration", "-t", help="Duration in seconds"),
 	count: int = typer.Option(50, "--count", "-n", help="Number of log entries to generate"),

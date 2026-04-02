@@ -8,6 +8,7 @@ from devlogs.opensearch.queries import (
     get_last_errors,
     get_operation_logs,
     get_operation_summary,
+    list_applications,
     list_areas,
     list_error_signatures,
     list_operations,
@@ -324,6 +325,27 @@ class TestApplicationFilter:
             mock_search.return_value = ([], None)
             get_operation_logs(client="client", index="idx", operation_id="op-1", application="myapp")
         assert mock_search.call_args[1]["application"] == "myapp"
+
+    def test_list_applications_returns_buckets(self):
+        response = {"aggregations": {"by_application": {"buckets": [
+            {"key": "app-a", "doc_count": 100, "error_count": {"doc_count": 5}, "last_activity": {"value_as_string": "2025-01-01T00:00:00Z"}},
+            {"key": "app-b", "doc_count": 50, "error_count": {"doc_count": 0}, "last_activity": {"value_as_string": "2025-01-02T00:00:00Z"}},
+        ]}}}
+        client = DummyClient(response)
+        result = list_applications(client, "idx")
+        assert len(result) == 2
+        assert result[0]["application"] == "app-a"
+        assert result[0]["log_count"] == 100
+        assert result[0]["error_count"] == 5
+        assert result[1]["application"] == "app-b"
+        assert result[1]["error_count"] == 0
+
+    def test_list_applications_passes_component_filter(self):
+        response = {"aggregations": {"by_application": {"buckets": []}}}
+        client = DummyClient(response)
+        list_applications(client, "idx", component="web")
+        filters = client.last_call["body"]["query"]["bool"]["filter"]
+        assert {"term": {"component": "web"}} in filters
 
     def test_no_application_filter_when_none(self):
         """Ensure no application filter when application is None."""
