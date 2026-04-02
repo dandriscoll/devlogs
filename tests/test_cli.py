@@ -919,3 +919,25 @@ class TestLokiCLI:
         result = runner.invoke(cli.app, ["--url", "lokis://token@host.example.io/query", "last-error"])
         assert result.exit_code == 1
         assert "--application is required" in result.output
+
+    def test_tail_rejects_collector_url(self, monkeypatch):
+        """Test that tail fails with a clear error for collector (https) URLs."""
+        monkeypatch.setattr(config, "_dotenv_loaded", True)
+        monkeypatch.delenv("DEVLOGS_OPENSEARCH_URL", raising=False)
+        monkeypatch.delenv("DEVLOGS_OPENSEARCH_HOST", raising=False)
+        runner = CliRunner()
+        result = runner.invoke(cli.app, ["--url", "https://token@host.example.io/ingest", "tail"])
+        assert result.exit_code == 1
+        assert "collector" in result.output
+        assert "lokis://" in result.output
+
+    def test_search_rejects_collector_url(self, monkeypatch):
+        """Test that search fails with a clear error for collector (https) URLs."""
+        monkeypatch.setattr(config, "_dotenv_loaded", True)
+        monkeypatch.delenv("DEVLOGS_OPENSEARCH_URL", raising=False)
+        monkeypatch.delenv("DEVLOGS_OPENSEARCH_HOST", raising=False)
+        runner = CliRunner()
+        result = runner.invoke(cli.app, ["--url", "https://token@host.example.io/ingest", "search"])
+        assert result.exit_code == 1
+        assert "collector" in result.output
+        assert "lokis://" in result.output

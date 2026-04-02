@@ -414,8 +414,9 @@ class DevlogsConfig:
 				# Treat unparseable DEVLOGS_URL as legacy OpenSearch
 				opensearch_url_config = _parse_opensearch_url(devlogs_url)
 
-		# Legacy: DEVLOGS_OPENSEARCH_URL overrides OpenSearch settings from DEVLOGS_URL
-		if legacy_opensearch_url:
+		# Legacy: DEVLOGS_OPENSEARCH_URL overrides OpenSearch settings from DEVLOGS_URL,
+		# but NOT when the URL was explicitly set via --url flag.
+		if legacy_opensearch_url and not _url_set_explicitly:
 			opensearch_url_config = _parse_opensearch_url(legacy_opensearch_url)
 			# Parse application filter from opensearch:// URL (second path segment)
 			if legacy_opensearch_url.startswith("opensearchs://") or legacy_opensearch_url.startswith("opensearch://"):
@@ -539,15 +540,22 @@ def set_dotenv_path(path: str):
 	_dotenv_loaded = False  # Reset to force reload with new path
 
 
+_url_set_explicitly = False
+
 def set_url(url: str):
 	"""Set the URL, auto-detecting whether it's a collector or OpenSearch URL.
 
 	Uses parse_url() to detect the URL type:
 	- Collector URLs → sets DEVLOGS_URL
 	- OpenSearch URLs → sets DEVLOGS_OPENSEARCH_URL
+
+	When called (i.e. via --url flag), marks the URL as explicitly set so that
+	dotenv values cannot silently override it.
 	"""
+	global _url_set_explicitly
 	if not url:
 		return
+	_url_set_explicitly = True
 	try:
 		parsed = parse_url(url)
 	except URLParseError:

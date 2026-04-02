@@ -55,11 +55,13 @@ def _strip_opensearch_url_index():
 
 	from devlogs import config as _config
 	prev_dotenv = _config._dotenv_loaded
+	prev_url_explicit = _config._url_set_explicitly
 	_config._dotenv_loaded = True  # Prevent .env reload restoring the path
 
 	yield
 
 	_config._dotenv_loaded = prev_dotenv
+	_config._url_set_explicitly = prev_url_explicit
 	for var, orig in (("DEVLOGS_URL", orig_devlogs_url), ("DEVLOGS_OPENSEARCH_URL", orig_opensearch_url)):
 		if orig is not None:
 			os.environ[var] = orig

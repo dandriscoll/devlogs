@@ -926,6 +926,13 @@ def tail(
 	_apply_common_options(env, url)
 
 	cfg = load_config()
+	if cfg.url_mode == "collector":
+		typer.echo(typer.style(
+			"Error: the provided URL is a collector (ingest) endpoint and cannot be used for querying.\n"
+			"For Loki backends, use lokis://TOKEN@host/path instead of https://TOKEN@host/path",
+			fg=typer.colors.RED
+		), err=True)
+		raise typer.Exit(1)
 	if cfg.is_loki:
 		_tail_loki(cfg, application=application, operation_id=operation_id, area=area,
 			component=component, level=level, since=since, limit=limit, follow=follow,
@@ -1115,6 +1122,13 @@ def search(
 	_apply_common_options(env, url)
 
 	cfg = load_config()
+	if cfg.url_mode == "collector":
+		typer.echo(typer.style(
+			"Error: the provided URL is a collector (ingest) endpoint and cannot be used for querying.\n"
+			"For Loki backends, use lokis://TOKEN@host/path instead of https://TOKEN@host/path",
+			fg=typer.colors.RED
+		), err=True)
+		raise typer.Exit(1)
 	if cfg.is_loki:
 		_search_loki(cfg, q=q, application=application, area=area,
 			component=component, level=level, operation_id=operation_id,
