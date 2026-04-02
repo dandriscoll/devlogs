@@ -126,6 +126,10 @@ public class DevlogsLogStorage implements LogStorage {
         this.authHeader = parsedAuthHeader;
         this.pipelineMode = parsedPipelineMode;
 
+        LOGGER.log(Level.INFO, "Devlogs LogStorage created for " + buildId
+            + " mode=" + (parsedPipelineMode ? "pipeline" : "opensearch")
+            + " auth=" + (parsedAuthHeader != null ? "yes" : "none"));
+
         activeBuilds.put(buildId, true);
         initTransients();
     }
