@@ -11,6 +11,8 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse, unquote, urlunparse, parse_qs, urlencode
 
+from .context import get_area as _get_area
+
 
 def _parse_collector_url(url: str) -> Tuple[str, Optional[str]]:
     """Parse a URL and extract auth token if it's a collector URL.
@@ -216,8 +218,9 @@ class DevlogsClient:
             record["message"] = message
         if level:
             record["level"] = level
-        if area:
-            record["area"] = area
+        effective_area = area or _get_area()
+        if effective_area:
+            record["area"] = effective_area
         if self.environment:
             record["environment"] = self.environment
         if self.version:

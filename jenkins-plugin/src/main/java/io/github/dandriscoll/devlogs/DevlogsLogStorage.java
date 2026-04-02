@@ -220,7 +220,7 @@ public class DevlogsLogStorage implements LogStorage {
             RequestBody body;
 
             if (pipelineMode) {
-                targetUrl = baseUrl.endsWith("/") ? baseUrl + "v1/logs" : baseUrl + "/v1/logs";
+                targetUrl = baseUrl;
                 com.google.gson.JsonArray records = new com.google.gson.JsonArray();
                 records.add(doc);
                 JsonObject payload = new JsonObject();
@@ -297,7 +297,7 @@ public class DevlogsLogStorage implements LogStorage {
             RequestBody body;
 
             if (pipelineMode) {
-                targetUrl = baseUrl.endsWith("/") ? baseUrl + "v1/logs" : baseUrl + "/v1/logs";
+                targetUrl = baseUrl;
                 com.google.gson.JsonArray records = new com.google.gson.JsonArray();
                 records.add(doc);
                 JsonObject payload = new JsonObject();

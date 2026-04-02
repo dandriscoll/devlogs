@@ -82,8 +82,8 @@ class DevlogsHandler(logging.Handler):
 
 	def __init__(
 		self,
-		application: str = "unknown",
-		component: str = "default",
+		application: str,
+		component: str,
 		level: int = logging.DEBUG,
 		opensearch_client: Any = None,
 		index_name: Optional[str] = None,

@@ -5,6 +5,7 @@ import pytest
 from unittest.mock import Mock, patch
 
 from devlogs.devlogs_client import DevlogsClient, create_client, emit_log, _parse_collector_url
+from devlogs.context import operation, _area_var
 
 
 class TestParseCollectorUrl:
@@ -482,3 +483,40 @@ class TestPluginMode:
             assert client._plugin is None
         finally:
             cleanup()
+
+
+class TestAreaContextResolution:
+    """Tests for area resolution from context in DevlogsClient."""
+
+    def test_area_from_context(self):
+        """_build_record picks up area from context when not passed explicitly."""
+        client = DevlogsClient(
+            collector_url="http://localhost:8080",
+            application="test-app",
+            component="api",
+        )
+        with operation(area="auth"):
+            record = client._build_record(message="Hello")
+        assert record["area"] == "auth"
+
+    def test_explicit_area_overrides_context(self):
+        """Explicit area parameter takes precedence over context."""
+        client = DevlogsClient(
+            collector_url="http://localhost:8080",
+            application="test-app",
+            component="api",
+        )
+        with operation(area="auth"):
+            record = client._build_record(message="Hello", area="billing")
+        assert record["area"] == "billing"
+
+    def test_no_area_without_context(self):
+        """No area field when neither explicit nor context is set."""
+        _area_var.set(None)
+        client = DevlogsClient(
+            collector_url="http://localhost:8080",
+            application="test-app",
+            component="api",
+        )
+        record = client._build_record(message="Hello")
+        assert "area" not in record

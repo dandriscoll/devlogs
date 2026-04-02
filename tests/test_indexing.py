@@ -155,7 +155,7 @@ def test_tail_logs_follow_returns_new_entries(opensearch_client, test_index):
 
 
 def test_tail_logs_finds_opensearch_handler_entries(opensearch_client, test_index):
-	handler = OpenSearchHandler(opensearch_client=opensearch_client, index_name=test_index)
+	handler = OpenSearchHandler(application="test-app", component="api", opensearch_client=opensearch_client, index_name=test_index)
 	handler.setFormatter(logging.Formatter("%(message)s"))
 	logger = _get_logger("devlogs-tail-basic", handler)
 

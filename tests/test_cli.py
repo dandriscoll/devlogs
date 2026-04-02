@@ -899,6 +899,7 @@ class TestLokiCLI:
         result = runner.invoke(cli.app, ["--url", "lokis://token@host.example.io/query", "tail"])
         assert result.exit_code == 1
         assert "--application is required" in result.output
+        assert "devlogs applications" in result.output
 
     def test_search_requires_application_for_loki(self, monkeypatch):
         """Test that search requires --application for Loki backends."""
@@ -909,6 +910,7 @@ class TestLokiCLI:
         result = runner.invoke(cli.app, ["--url", "lokis://token@host.example.io/query", "search"])
         assert result.exit_code == 1
         assert "--application is required" in result.output
+        assert "devlogs applications" in result.output
 
     def test_last_error_requires_application_for_loki(self, monkeypatch):
         """Test that last-error requires --application for Loki backends."""
@@ -919,6 +921,7 @@ class TestLokiCLI:
         result = runner.invoke(cli.app, ["--url", "lokis://token@host.example.io/query", "last-error"])
         assert result.exit_code == 1
         assert "--application is required" in result.output
+        assert "devlogs applications" in result.output
 
     def test_tail_rejects_collector_url(self, monkeypatch):
         """Test that tail fails with a clear error for collector (https) URLs."""

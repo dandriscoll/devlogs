@@ -385,11 +385,13 @@ class TestOpenSearchHandlerBackwardCompatibility:
         """Test OpenSearchHandler is an alias for DevlogsHandler."""
         assert OpenSearchHandler is DevlogsHandler
 
-    def test_opensearch_handler_works_with_defaults(self):
-        """Test OpenSearchHandler works with default parameters."""
-        handler = OpenSearchHandler()
-        assert handler.application == "unknown"
-        assert handler.component == "default"
+    def test_opensearch_handler_requires_application_and_component(self):
+        """Test OpenSearchHandler (alias) requires application and component."""
+        with pytest.raises(TypeError):
+            OpenSearchHandler()
+        handler = OpenSearchHandler(application="test-app", component="api")
+        assert handler.application == "test-app"
+        assert handler.component == "api"
 
 
 class TestDiagnosticsHandler:
@@ -473,7 +475,7 @@ class TestEmitCounters:
         assert DevlogsHandler._emit_skipped == 0
 
     def test_emit_count_increments_on_success(self):
-        handler = DevlogsHandler(collector_url="http://localhost:9999")
+        handler = DevlogsHandler(application="test-app", component="api", collector_url="http://localhost:9999")
         logger = logging.getLogger("test.counters.success")
         logger.handlers = [handler]
         logger.setLevel(logging.DEBUG)
@@ -486,7 +488,7 @@ class TestEmitCounters:
         assert DevlogsHandler._emit_skipped == 0
 
     def test_emit_errors_increments_on_failure(self):
-        handler = DevlogsHandler(collector_url="http://localhost:9999")
+        handler = DevlogsHandler(application="test-app", component="api", collector_url="http://localhost:9999")
         logger = logging.getLogger("test.counters.error")
         logger.handlers = [handler]
         logger.setLevel(logging.DEBUG)
@@ -499,7 +501,7 @@ class TestEmitCounters:
     def test_emit_skipped_increments_when_circuit_open(self):
         DevlogsHandler._circuit_open = True
         DevlogsHandler._circuit_open_until = time.time() + 60
-        handler = DevlogsHandler(collector_url="http://localhost:9999")
+        handler = DevlogsHandler(application="test-app", component="api", collector_url="http://localhost:9999")
         logger = logging.getLogger("test.counters.skipped")
         logger.handlers = [handler]
         logger.setLevel(logging.DEBUG)
@@ -510,7 +512,7 @@ class TestEmitCounters:
         assert DevlogsHandler._emit_errors == 0
 
     def test_counters_track_mixed_results(self):
-        handler = DevlogsHandler(collector_url="http://localhost:9999")
+        handler = DevlogsHandler(application="test-app", component="api", collector_url="http://localhost:9999")
         logger = logging.getLogger("test.counters.mixed")
         logger.handlers = [handler]
         logger.setLevel(logging.DEBUG)
@@ -732,3 +734,12 @@ class TestPluginMode:
         finally:
             _registry.clear()
             _registry.update(saved)
+
+    def test_application_and_component_required(self):
+        """DevlogsHandler requires application and component arguments."""
+        with pytest.raises(TypeError):
+            DevlogsHandler()
+        with pytest.raises(TypeError):
+            DevlogsHandler(application="test-app")
+        with pytest.raises(TypeError):
+            DevlogsHandler(component="api")

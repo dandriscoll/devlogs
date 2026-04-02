@@ -822,7 +822,8 @@ def _tail_loki(cfg, application=None, operation_id=None, area=None,
 	effective_app = application or cfg.application
 	if not effective_app:
 		typer.echo(typer.style(
-			"Error: --application is required for Loki backends",
+			"Error: --application is required for Loki backends.\n"
+			"Run 'devlogs applications' to list available application names.",
 			fg=typer.colors.RED
 		), err=True)
 		raise typer.Exit(1)
@@ -866,7 +867,8 @@ def _search_loki(cfg, q="", application=None, area=None, component=None,
 	effective_app = application or cfg.application
 	if not effective_app:
 		typer.echo(typer.style(
-			"Error: --application is required for Loki backends",
+			"Error: --application is required for Loki backends.\n"
+			"Run 'devlogs applications' to list available application names.",
 			fg=typer.colors.RED
 		), err=True)
 		raise typer.Exit(1)
@@ -1491,15 +1493,25 @@ def applications(
 	since: str = typer.Option(None, "--since", help="Only show applications with activity after this time"),
 	component: str = typer.Option(None, "--component", "-c", help="Filter by component name"),
 	jsonl: bool = typer.Option(False, "--jsonl", help="Output as JSON Lines"),
+	verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose output"),
 	env: str = ENV_OPTION,
 	url: str = URL_OPTION,
 ):
 	"""List all application names."""
+	import traceback as tb
+
 	_apply_common_options(env, url)
 	cfg = load_config()
 
+	def _verbose_echo(message, color=typer.colors.BLUE):
+		if verbose:
+			typer.echo(typer.style(message, fg=color), err=True)
+
 	if cfg.is_loki:
 		from .loki.queries import list_applications as loki_list_applications
+		_verbose_echo(f"Querying Loki at {cfg.loki_url}")
+		if since:
+			_verbose_echo(f"  since={since}")
 		try:
 			apps = loki_list_applications(
 				loki_url=cfg.loki_url,
@@ -1507,10 +1519,13 @@ def applications(
 				token=cfg.loki_token,
 			)
 		except Exception as e:
+			if verbose:
+				tb.print_exc()
 			typer.echo(typer.style(f"Error: {type(e).__name__}: {e}", fg=typer.colors.RED), err=True)
 			raise typer.Exit(1)
 	else:
 		client, cfg = require_opensearch()
+		_verbose_echo(f"Querying OpenSearch index '{cfg.index}'")
 		from .opensearch.queries import list_applications as os_list_applications
 		apps = os_list_applications(client=client, index=cfg.index, since=since, component=component)
 
@@ -1541,16 +1556,28 @@ def areas(
 	since: str = typer.Option(None, "--since", help="Only show areas with activity after this time"),
 	min_operations: int = typer.Option(1, "--min-operations", help="Minimum operations to include an area"),
 	jsonl: bool = typer.Option(False, "--jsonl", help="Output as JSON Lines"),
+	verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose output"),
 	env: str = ENV_OPTION,
 	url: str = URL_OPTION,
 ):
 	"""List all application areas."""
+	import traceback as tb
+
 	_apply_common_options(env, url)
 	cfg = load_config()
+
+	def _verbose_echo(message, color=typer.colors.BLUE):
+		if verbose:
+			typer.echo(typer.style(message, fg=color), err=True)
 
 	if cfg.is_loki:
 		from .loki.queries import list_areas as loki_list_areas
 		effective_app = application or cfg.application
+		_verbose_echo(f"Querying Loki at {cfg.loki_url}")
+		if effective_app:
+			_verbose_echo(f"  application={effective_app}")
+		if since:
+			_verbose_echo(f"  since={since}")
 		try:
 			result = loki_list_areas(
 				loki_url=cfg.loki_url,
@@ -1559,10 +1586,13 @@ def areas(
 				token=cfg.loki_token,
 			)
 		except Exception as e:
+			if verbose:
+				tb.print_exc()
 			typer.echo(typer.style(f"Error: {type(e).__name__}: {e}", fg=typer.colors.RED), err=True)
 			raise typer.Exit(1)
 	else:
 		client, cfg = require_opensearch()
+		_verbose_echo(f"Querying OpenSearch index '{cfg.index}'")
 		from .opensearch.queries import list_areas as os_list_areas
 		effective_app = application or cfg.application
 		result = os_list_areas(
@@ -1601,16 +1631,35 @@ def operations(
 	limit: int = typer.Option(20, "--limit"),
 	with_errors_only: bool = typer.Option(False, "--errors-only", help="Only show operations with errors"),
 	jsonl: bool = typer.Option(False, "--jsonl", help="Output as JSON Lines"),
+	verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose output"),
 	env: str = ENV_OPTION,
 	url: str = URL_OPTION,
 ):
 	"""List recent operations."""
+	import traceback as tb
+
 	_apply_common_options(env, url)
 	cfg = load_config()
+
+	def _verbose_echo(message, color=typer.colors.BLUE):
+		if verbose:
+			typer.echo(typer.style(message, fg=color), err=True)
 
 	if cfg.is_loki:
 		from .loki.queries import list_operations as loki_list_operations
 		effective_app = application or cfg.application
+		_verbose_echo(f"Querying Loki at {cfg.loki_url}")
+		parts = []
+		if effective_app:
+			parts.append(f"application={effective_app}")
+		if area:
+			parts.append(f"area={area}")
+		if component:
+			parts.append(f"component={component}")
+		if since:
+			parts.append(f"since={since}")
+		if parts:
+			_verbose_echo(f"  {', '.join(parts)}")
 		try:
 			ops = loki_list_operations(
 				loki_url=cfg.loki_url,
@@ -1622,10 +1671,13 @@ def operations(
 				token=cfg.loki_token,
 			)
 		except Exception as e:
+			if verbose:
+				tb.print_exc()
 			typer.echo(typer.style(f"Error: {type(e).__name__}: {e}", fg=typer.colors.RED), err=True)
 			raise typer.Exit(1)
 	else:
 		client, cfg = require_opensearch()
+		_verbose_echo(f"Querying OpenSearch index '{cfg.index}'")
 		from .opensearch.queries import list_operations as os_list_operations
 		effective_app = application or cfg.application
 		ops = os_list_operations(
