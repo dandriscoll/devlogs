@@ -304,12 +304,12 @@ def list_applications(
     Returns:
         List of dicts with 'application' key, sorted alphabetically.
     """
-    params: Dict[str, str] = {}
     now = datetime.now(timezone.utc)
-    if since:
-        start_dt = _parse_time_param(since) or (now - timedelta(hours=24))
-        params["start"] = str(_to_ns(start_dt))
-        params["end"] = str(_to_ns(now))
+    start_dt = _parse_time_param(since) or (now - timedelta(days=30))
+    params: Dict[str, str] = {
+        "start": str(_to_ns(start_dt)),
+        "end": str(_to_ns(now)),
+    }
 
     data = _loki_get(loki_url, "/loki/api/v1/label/application/values", params, token=token)
     values = data.get("data", [])
@@ -335,12 +335,12 @@ def list_areas(
     Returns:
         List of dicts with 'area' key, sorted alphabetically.
     """
-    params: Dict[str, str] = {}
     now = datetime.now(timezone.utc)
-    if since:
-        start_dt = _parse_time_param(since) or (now - timedelta(hours=24))
-        params["start"] = str(_to_ns(start_dt))
-        params["end"] = str(_to_ns(now))
+    start_dt = _parse_time_param(since) or (now - timedelta(days=30))
+    params: Dict[str, str] = {
+        "start": str(_to_ns(start_dt)),
+        "end": str(_to_ns(now)),
+    }
     if application:
         selector = build_stream_selector({"application": application})
         params["match[]"] = selector

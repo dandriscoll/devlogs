@@ -39,6 +39,16 @@ class TestListApplications:
         assert "start" in params
         assert "end" in params
 
+    def test_always_passes_time_params_even_without_since(self):
+        # Some Loki backends return empty data for label-value queries when
+        # start/end are absent. Always send them to avoid silent empty results.
+        patcher, mock = _mock_loki_get({"data": ["app1"]})
+        with patcher:
+            list_applications("http://loki:3100")
+        params = mock.call_args[0][2]
+        assert "start" in params
+        assert "end" in params
+
     def test_returns_empty_list_when_no_data(self):
         patcher, mock = _mock_loki_get({"data": []})
         with patcher:
@@ -79,6 +89,14 @@ class TestListAreas:
             list_areas("http://loki:3100")
         params = mock.call_args[0][2]
         assert "match[]" not in params
+
+    def test_always_passes_time_params_even_without_since(self):
+        patcher, mock = _mock_loki_get({"data": ["area1"]})
+        with patcher:
+            list_areas("http://loki:3100")
+        params = mock.call_args[0][2]
+        assert "start" in params
+        assert "end" in params
 
 
 class TestListOperations:
