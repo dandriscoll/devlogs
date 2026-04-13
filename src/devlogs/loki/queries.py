@@ -462,3 +462,423 @@ def count_over_time(
     }, token=token)
 
     return _parse_metric_matrix(data)
+
+
+# ---------------------------------------------------------------------------
+# Operation- and error-centric queries (MCP dispatch targets)
+# ---------------------------------------------------------------------------
+
+# Levels treated as errors for bucketing / filtering. Mirrors the OpenSearch
+# queries which use `{"terms": {"level": ["error", "critical"]}}`.
+_ERROR_LEVELS = ("error", "critical")
+
+
+def _ns_to_iso(ts_ns: Any) -> Optional[str]:
+    """Convert a Loki nanosecond timestamp (str or int) to an ISO-8601 string."""
+    if ts_ns is None:
+        return None
+    try:
+        ns = int(ts_ns)
+    except (TypeError, ValueError):
+        return None
+    seconds = ns / 1e9
+    return datetime.fromtimestamp(seconds, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+def _build_base_labels(
+    application: Optional[str],
+    area: Optional[str],
+    component: Optional[str],
+    level: Optional[str] = None,
+) -> Dict[str, str]:
+    labels: Dict[str, str] = {}
+    if application:
+        labels["application"] = application
+    if area:
+        labels["area"] = area
+    if component:
+        labels["component"] = component
+    if level:
+        labels["level"] = level.lower()
+    return labels
+
+
+def get_last_errors(
+    loki_url: str,
+    application: Optional[str] = None,
+    query: Optional[str] = None,
+    area: Optional[str] = None,
+    operation_id: Optional[str] = None,
+    since: Optional[str] = None,
+    until: Optional[str] = None,
+    limit: int = 1,
+    component: Optional[str] = None,
+    token: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Fetch the most recent error/critical log entries.
+
+    Since Loki does not support OR'ing label values in a single stream selector
+    efficiently, we issue one query_range per error level and merge.
+    """
+    now = datetime.now(timezone.utc)
+    start_dt = _parse_time_param(since) or (now - timedelta(hours=24))
+    end_dt = _parse_time_param(until) or now
+
+    merged: List[Dict[str, Any]] = []
+    for level in _ERROR_LEVELS:
+        labels = _build_base_labels(application, area, component, level=level)
+        selector = build_stream_selector(labels)
+        pipeline_parts = ["| json"]
+        if operation_id:
+            escaped_op = _escape_label_value(operation_id)
+            pipeline_parts.append(f'| operation_id="{escaped_op}"')
+        if query:
+            escaped_q = query.replace("\\", "\\\\").replace('"', '\\"')
+            pipeline_parts.append(f'|= "{escaped_q}"')
+        logql = f"{selector} {' '.join(pipeline_parts)}".strip()
+
+        data = _loki_get(loki_url, "/loki/api/v1/query_range", {
+            "query": logql,
+            "start": str(_to_ns(start_dt)),
+            "end": str(_to_ns(end_dt)),
+            "limit": str(limit),
+            "direction": "backward",
+        }, token=token)
+        merged.extend(_parse_log_streams(data))
+
+    merged.sort(key=lambda e: int(e.get("_loki_ts_ns") or 0), reverse=True)
+    return merged[:limit]
+
+
+def get_operation_logs(
+    loki_url: str,
+    operation_id: str,
+    query: Optional[str] = None,
+    level: Optional[str] = None,
+    since: Optional[str] = None,
+    until: Optional[str] = None,
+    limit: int = 100,
+    application: Optional[str] = None,
+    component: Optional[str] = None,
+    token: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Fetch logs for an operation in chronological order."""
+    now = datetime.now(timezone.utc)
+    start_dt = _parse_time_param(since) or (now - timedelta(hours=24))
+    end_dt = _parse_time_param(until) or now
+
+    labels = _build_base_labels(application, None, component, level=level)
+    selector = build_stream_selector(labels)
+    escaped_op = _escape_label_value(operation_id)
+    pipeline_parts = ["| json", f'| operation_id="{escaped_op}"']
+    if query:
+        escaped_q = query.replace("\\", "\\\\").replace('"', '\\"')
+        pipeline_parts.append(f'|= "{escaped_q}"')
+    logql = f"{selector} {' '.join(pipeline_parts)}".strip()
+
+    data = _loki_get(loki_url, "/loki/api/v1/query_range", {
+        "query": logql,
+        "start": str(_to_ns(start_dt)),
+        "end": str(_to_ns(end_dt)),
+        "limit": str(limit),
+        "direction": "forward",
+    }, token=token)
+
+    entries = _parse_log_streams(data)
+    entries.sort(key=lambda e: int(e.get("_loki_ts_ns") or 0))
+    return entries
+
+
+def get_operation_summary(
+    loki_url: str,
+    operation_id: str,
+    application: Optional[str] = None,
+    component: Optional[str] = None,
+    since: Optional[str] = None,
+    until: Optional[str] = None,
+    token: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Summarise an operation's logs by aggregating in Python."""
+    entries = get_operation_logs(
+        loki_url=loki_url,
+        operation_id=operation_id,
+        since=since,
+        until=until,
+        limit=5000,
+        application=application,
+        component=component,
+        token=token,
+    )
+    if not entries:
+        return None
+
+    counts_by_level: Dict[str, int] = {}
+    min_ns: Optional[int] = None
+    max_ns: Optional[int] = None
+    for entry in entries:
+        lvl = (entry.get("level") or "").lower()
+        if lvl:
+            counts_by_level[lvl] = counts_by_level.get(lvl, 0) + 1
+        ts_ns_raw = entry.get("_loki_ts_ns")
+        try:
+            ts_ns = int(ts_ns_raw) if ts_ns_raw is not None else None
+        except (TypeError, ValueError):
+            ts_ns = None
+        if ts_ns is not None:
+            if min_ns is None or ts_ns < min_ns:
+                min_ns = ts_ns
+            if max_ns is None or ts_ns > max_ns:
+                max_ns = ts_ns
+
+    error_count = sum(counts_by_level.get(level, 0) for level in _ERROR_LEVELS)
+    sample_logs = entries[:10]
+
+    return {
+        "operation_id": operation_id,
+        "counts_by_level": counts_by_level,
+        "error_count": error_count,
+        "start_time": _ns_to_iso(min_ns),
+        "end_time": _ns_to_iso(max_ns),
+        "total_entries": len(entries),
+        "sample_logs": sample_logs,
+    }
+
+
+def list_recent_operations(
+    loki_url: str,
+    application: Optional[str] = None,
+    area: Optional[str] = None,
+    component: Optional[str] = None,
+    since: Optional[str] = None,
+    until: Optional[str] = None,
+    limit: int = 20,
+    order_by: str = "last_activity",
+    with_errors_only: bool = False,
+    token: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """List recent operations grouped from a log scan.
+
+    Aggregates in Python — Loki lacks a server-side group_by on a JSON-payload
+    field. Overscans up to 5000 entries to find distinct operations.
+    """
+    if order_by not in ("last_activity", "error_count"):
+        order_by = "last_activity"
+
+    now = datetime.now(timezone.utc)
+    start_dt = _parse_time_param(since or "24h") or (now - timedelta(hours=24))
+    end_dt = _parse_time_param(until) or now
+
+    labels = _build_base_labels(application, area, component)
+    selector = build_stream_selector(labels)
+    logql = f"{selector} | json"
+
+    data = _loki_get(loki_url, "/loki/api/v1/query_range", {
+        "query": logql,
+        "start": str(_to_ns(start_dt)),
+        "end": str(_to_ns(end_dt)),
+        "limit": str(min(limit * 50, 5000)),
+        "direction": "backward",
+    }, token=token)
+
+    entries = _parse_log_streams(data)
+    grouped: Dict[str, Dict[str, Any]] = {}
+    for entry in entries:
+        op_id = entry.get("operation_id")
+        if not op_id:
+            continue
+        try:
+            ts_ns = int(entry.get("_loki_ts_ns") or 0)
+        except (TypeError, ValueError):
+            ts_ns = 0
+        lvl = (entry.get("level") or "").lower()
+        bucket = grouped.setdefault(op_id, {
+            "operation_id": op_id,
+            "area": entry.get("area"),
+            "min_ns": ts_ns,
+            "max_ns": ts_ns,
+            "total_logs": 0,
+            "error_count": 0,
+            "log_levels": {},
+            "last_error_entry": None,
+            "last_error_ns": 0,
+        })
+        bucket["total_logs"] += 1
+        if lvl:
+            bucket["log_levels"][lvl] = bucket["log_levels"].get(lvl, 0) + 1
+        if ts_ns and ts_ns < bucket["min_ns"]:
+            bucket["min_ns"] = ts_ns
+        if ts_ns > bucket["max_ns"]:
+            bucket["max_ns"] = ts_ns
+        if lvl in _ERROR_LEVELS:
+            bucket["error_count"] += 1
+            if ts_ns >= bucket["last_error_ns"]:
+                bucket["last_error_ns"] = ts_ns
+                bucket["last_error_entry"] = entry
+
+    operations = []
+    for bucket in grouped.values():
+        duration_ms = None
+        if bucket["min_ns"] and bucket["max_ns"]:
+            duration_ms = int((bucket["max_ns"] - bucket["min_ns"]) / 1e6)
+        operations.append({
+            "operation_id": bucket["operation_id"],
+            "area": bucket["area"],
+            "start_time": _ns_to_iso(bucket["min_ns"]) if bucket["min_ns"] else None,
+            "end_time": _ns_to_iso(bucket["max_ns"]) if bucket["max_ns"] else None,
+            "duration_ms": duration_ms,
+            "total_logs": bucket["total_logs"],
+            "error_count": bucket["error_count"],
+            "log_levels": bucket["log_levels"],
+            "last_activity": _ns_to_iso(bucket["max_ns"]) if bucket["max_ns"] else None,
+            "last_error": bucket["last_error_entry"],
+        })
+
+    if with_errors_only:
+        operations = [op for op in operations if op["error_count"] > 0]
+
+    if order_by == "error_count":
+        operations.sort(key=lambda op: (op["error_count"], op["last_activity"] or ""), reverse=True)
+    else:
+        operations.sort(key=lambda op: op["last_activity"] or "", reverse=True)
+
+    return operations[:limit]
+
+
+def list_error_signatures(
+    loki_url: str,
+    field: str = "exception",
+    application: Optional[str] = None,
+    area: Optional[str] = None,
+    since: Optional[str] = None,
+    until: Optional[str] = None,
+    limit: int = 20,
+    min_count: int = 1,
+    include_missing: bool = False,
+    component: Optional[str] = None,
+    token: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """List error signatures by grouping error logs by a JSON-payload field."""
+    field = field or "exception"
+
+    now = datetime.now(timezone.utc)
+    start_dt = _parse_time_param(since or "24h") or (now - timedelta(hours=24))
+    end_dt = _parse_time_param(until) or now
+
+    merged: List[Dict[str, Any]] = []
+    for level in _ERROR_LEVELS:
+        labels = _build_base_labels(application, area, component, level=level)
+        selector = build_stream_selector(labels)
+        logql = f"{selector} | json"
+        data = _loki_get(loki_url, "/loki/api/v1/query_range", {
+            "query": logql,
+            "start": str(_to_ns(start_dt)),
+            "end": str(_to_ns(end_dt)),
+            "limit": "5000",
+            "direction": "backward",
+        }, token=token)
+        merged.extend(_parse_log_streams(data))
+
+    grouped: Dict[str, Dict[str, Any]] = {}
+    missing: Dict[str, Any] = {"signature": None, "count": 0, "last_seen_ns": 0, "sample": None}
+    for entry in merged:
+        signature = entry.get(field)
+        if not signature:
+            if include_missing:
+                missing["count"] += 1
+                try:
+                    ts_ns = int(entry.get("_loki_ts_ns") or 0)
+                except (TypeError, ValueError):
+                    ts_ns = 0
+                if ts_ns >= missing["last_seen_ns"]:
+                    missing["last_seen_ns"] = ts_ns
+                    missing["sample"] = entry
+            continue
+        try:
+            ts_ns = int(entry.get("_loki_ts_ns") or 0)
+        except (TypeError, ValueError):
+            ts_ns = 0
+        bucket = grouped.setdefault(signature, {
+            "signature": signature,
+            "count": 0,
+            "last_seen_ns": 0,
+            "sample": None,
+        })
+        bucket["count"] += 1
+        if ts_ns >= bucket["last_seen_ns"]:
+            bucket["last_seen_ns"] = ts_ns
+            bucket["sample"] = entry
+
+    signatures = list(grouped.values())
+    if include_missing and missing["count"] > 0:
+        signatures.append(missing)
+
+    signatures = [s for s in signatures if s["count"] >= min_count]
+    signatures.sort(key=lambda s: s["count"], reverse=True)
+    signatures = signatures[:limit]
+
+    for s in signatures:
+        s["last_seen"] = _ns_to_iso(s.pop("last_seen_ns"))
+
+    return signatures
+
+
+def get_error_context(
+    loki_url: str,
+    anchor_timestamp: str,
+    operation_id: Optional[str] = None,
+    area: Optional[str] = None,
+    query: Optional[str] = None,
+    level: Optional[str] = None,
+    before: int = 20,
+    after: int = 20,
+    application: Optional[str] = None,
+    component: Optional[str] = None,
+    token: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Fetch logs around an anchor timestamp."""
+    anchor_dt = _parse_time_param(anchor_timestamp)
+    if anchor_dt is None:
+        raise ValueError(f"Invalid anchor_timestamp: {anchor_timestamp!r}")
+    anchor_ns = _to_ns(anchor_dt)
+
+    labels = _build_base_labels(application, area, component, level=level)
+    selector = build_stream_selector(labels)
+    pipeline_parts = ["| json"]
+    if operation_id:
+        escaped_op = _escape_label_value(operation_id)
+        pipeline_parts.append(f'| operation_id="{escaped_op}"')
+    if query:
+        escaped_q = query.replace("\\", "\\\\").replace('"', '\\"')
+        pipeline_parts.append(f'|= "{escaped_q}"')
+    logql = f"{selector} {' '.join(pipeline_parts)}".strip()
+
+    before_count = max(int(before or 0), 0)
+    after_count = max(int(after or 0), 0)
+
+    before_docs: List[Dict[str, Any]] = []
+    if before_count > 0:
+        lookback_start = anchor_dt - timedelta(hours=24)
+        data = _loki_get(loki_url, "/loki/api/v1/query_range", {
+            "query": logql,
+            "start": str(_to_ns(lookback_start)),
+            "end": str(anchor_ns),
+            "limit": str(before_count + 1),
+            "direction": "backward",
+        }, token=token)
+        before_docs = _parse_log_streams(data)
+        before_docs.sort(key=lambda e: int(e.get("_loki_ts_ns") or 0))
+
+    after_docs: List[Dict[str, Any]] = []
+    if after_count > 0:
+        lookahead_end = anchor_dt + timedelta(hours=24)
+        data = _loki_get(loki_url, "/loki/api/v1/query_range", {
+            "query": logql,
+            "start": str(anchor_ns + 1),
+            "end": str(_to_ns(lookahead_end)),
+            "limit": str(after_count),
+            "direction": "forward",
+        }, token=token)
+        after_docs = _parse_log_streams(data)
+        after_docs.sort(key=lambda e: int(e.get("_loki_ts_ns") or 0))
+
+    return before_docs + after_docs

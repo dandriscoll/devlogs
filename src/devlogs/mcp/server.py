@@ -257,6 +257,266 @@ def _handle_loki_get_log_stats(arguments: dict) -> list[types.TextContent]:
         return _error_response(f"Loki stats error: {e}", "StatsError")
 
 
+def _require_loki_application(arguments: dict, tool_name: str) -> tuple[str | None, list[types.TextContent] | None]:
+    """Resolve the application filter for a Loki tool that requires one.
+
+    Returns (application, None) on success, or (None, error_response) if missing.
+    """
+    app = arguments.get("application") or load_config().application
+    if not app:
+        return None, _error_response(
+            f"application is required for Loki backend on {tool_name} (set via argument or DEVLOGS_URL)",
+            "ValidationError",
+        )
+    return app, None
+
+
+def _handle_loki_list_applications(arguments: dict) -> list[types.TextContent]:
+    from ..loki.queries import list_applications as loki_list_applications
+
+    loki_url = _get_loki_url()
+    try:
+        apps = loki_list_applications(
+            loki_url=loki_url,
+            since=arguments.get("since"),
+            token=_get_loki_token(),
+        )
+        return _json_response(
+            data={"applications": apps},
+            meta={"count": len(apps)},
+        )
+    except Exception as e:
+        return _error_response(f"Loki list_applications error: {e}", "ListApplicationsError")
+
+
+def _handle_loki_list_areas(arguments: dict) -> list[types.TextContent]:
+    from ..loki.queries import list_areas as loki_list_areas
+
+    loki_url = _get_loki_url()
+    app = arguments.get("application") or load_config().application
+    try:
+        areas = loki_list_areas(
+            loki_url=loki_url,
+            application=app,
+            since=arguments.get("since"),
+            token=_get_loki_token(),
+        )
+        return _json_response(
+            data={"areas": areas},
+            meta={"count": len(areas)},
+        )
+    except Exception as e:
+        return _error_response(f"Loki list_areas error: {e}", "ListAreasError")
+
+
+def _handle_loki_list_operations(arguments: dict) -> list[types.TextContent]:
+    from ..loki.queries import list_operations as loki_list_operations
+
+    loki_url = _get_loki_url()
+    app = arguments.get("application") or load_config().application
+    try:
+        ops = loki_list_operations(
+            loki_url=loki_url,
+            application=app,
+            area=arguments.get("area"),
+            component=arguments.get("component"),
+            since=arguments.get("since"),
+            limit=_coerce_limit(arguments.get("limit"), 20, 100),
+            token=_get_loki_token(),
+        )
+        return _json_response(
+            data={"operations": ops},
+            meta={"count": len(ops)},
+        )
+    except Exception as e:
+        return _error_response(f"Loki list_operations error: {e}", "ListOperationsError")
+
+
+def _handle_loki_list_recent_operations(arguments: dict) -> list[types.TextContent]:
+    from ..loki.queries import list_recent_operations as loki_list_recent_operations
+
+    loki_url = _get_loki_url()
+    app, err = _require_loki_application(arguments, "list_recent_operations")
+    if err is not None:
+        return err
+    try:
+        ops = loki_list_recent_operations(
+            loki_url=loki_url,
+            application=app,
+            area=arguments.get("area"),
+            component=arguments.get("component"),
+            since=arguments.get("since"),
+            until=arguments.get("until"),
+            limit=_coerce_limit(arguments.get("limit"), 20, 100),
+            order_by=arguments.get("order_by", "last_activity"),
+            with_errors_only=bool(arguments.get("with_errors_only", False)),
+            token=_get_loki_token(),
+        )
+        return _json_response(
+            data={"operations": ops},
+            meta={"count": len(ops)},
+        )
+    except Exception as e:
+        return _error_response(f"Loki list_recent_operations error: {e}", "ListRecentOperationsError")
+
+
+def _handle_loki_list_recent_errors(arguments: dict) -> list[types.TextContent]:
+    from ..loki.queries import list_error_signatures as loki_list_error_signatures
+
+    loki_url = _get_loki_url()
+    app, err = _require_loki_application(arguments, "list_recent_errors")
+    if err is not None:
+        return err
+    try:
+        signatures = loki_list_error_signatures(
+            loki_url=loki_url,
+            field=arguments.get("field") or "exception",
+            application=app,
+            area=arguments.get("area"),
+            component=arguments.get("component"),
+            since=arguments.get("since"),
+            until=arguments.get("until"),
+            limit=_coerce_limit(arguments.get("limit"), 20, 100),
+            min_count=_coerce_nonnegative_int(arguments.get("min_count"), 1),
+            include_missing=bool(arguments.get("include_missing", False)),
+            token=_get_loki_token(),
+        )
+        return _json_response(
+            data={"signatures": signatures},
+            meta={"count": len(signatures)},
+        )
+    except Exception as e:
+        return _error_response(f"Loki list_recent_errors error: {e}", "ListRecentErrorsError")
+
+
+def _handle_loki_get_last_error(arguments: dict) -> list[types.TextContent]:
+    from ..loki.queries import get_last_errors as loki_get_last_errors
+
+    loki_url = _get_loki_url()
+    app, err = _require_loki_application(arguments, "get_last_error")
+    if err is not None:
+        return err
+    try:
+        entries = loki_get_last_errors(
+            loki_url=loki_url,
+            application=app,
+            query=arguments.get("query"),
+            area=arguments.get("area"),
+            operation_id=arguments.get("operation_id"),
+            since=arguments.get("since"),
+            until=arguments.get("until"),
+            limit=_coerce_limit(arguments.get("limit"), 1, 100),
+            component=arguments.get("component"),
+            token=_get_loki_token(),
+        )
+        return _json_response(
+            data={"entries": entries},
+            meta={"count": len(entries)},
+        )
+    except Exception as e:
+        return _error_response(f"Loki get_last_error error: {e}", "GetLastErrorError")
+
+
+def _handle_loki_get_operation_summary(arguments: dict) -> list[types.TextContent]:
+    from ..loki.queries import get_operation_summary as loki_get_operation_summary
+
+    operation_id = arguments.get("operation_id")
+    if not operation_id:
+        return _error_response("operation_id is required", "ValidationError")
+
+    loki_url = _get_loki_url()
+    app, err = _require_loki_application(arguments, "get_operation_summary")
+    if err is not None:
+        return err
+    try:
+        summary = loki_get_operation_summary(
+            loki_url=loki_url,
+            operation_id=operation_id,
+            application=app,
+            component=arguments.get("component"),
+            since=arguments.get("since"),
+            until=arguments.get("until"),
+            token=_get_loki_token(),
+        )
+        if not summary:
+            return _json_response(
+                data={"operation_id": operation_id, "found": False},
+                meta={"count": 0},
+            )
+        summary["found"] = True
+        return _json_response(data=summary)
+    except Exception as e:
+        return _error_response(f"Loki get_operation_summary error: {e}", "SummaryError")
+
+
+def _handle_loki_get_operation_logs(arguments: dict) -> list[types.TextContent]:
+    from ..loki.queries import get_operation_logs as loki_get_operation_logs
+
+    operation_id = arguments.get("operation_id")
+    if not operation_id:
+        return _error_response("operation_id is required", "ValidationError")
+
+    loki_url = _get_loki_url()
+    app, err = _require_loki_application(arguments, "get_operation_logs")
+    if err is not None:
+        return err
+    try:
+        limit = _coerce_limit(arguments.get("limit"), 50, 100)
+        entries = loki_get_operation_logs(
+            loki_url=loki_url,
+            operation_id=operation_id,
+            query=arguments.get("query"),
+            level=arguments.get("level"),
+            since=arguments.get("since"),
+            until=arguments.get("until"),
+            limit=limit,
+            application=app,
+            component=arguments.get("component"),
+            token=_get_loki_token(),
+        )
+        return _json_response(
+            data={"operation_id": operation_id, "entries": entries},
+            meta={"count": len(entries), "next_cursor": None},
+        )
+    except Exception as e:
+        return _error_response(f"Loki get_operation_logs error: {e}", "OperationLogsError")
+
+
+def _handle_loki_get_error_context(arguments: dict) -> list[types.TextContent]:
+    from ..loki.queries import get_error_context as loki_get_error_context
+
+    anchor_timestamp = arguments.get("anchor_timestamp")
+    if not anchor_timestamp:
+        return _error_response("anchor_timestamp is required", "ValidationError")
+
+    loki_url = _get_loki_url()
+    app, err = _require_loki_application(arguments, "get_error_context")
+    if err is not None:
+        return err
+    try:
+        before = _coerce_nonnegative_int(arguments.get("before"), 20)
+        after = _coerce_nonnegative_int(arguments.get("after"), 20)
+        entries = loki_get_error_context(
+            loki_url=loki_url,
+            anchor_timestamp=anchor_timestamp,
+            operation_id=arguments.get("operation_id"),
+            area=arguments.get("area"),
+            query=arguments.get("query"),
+            level=arguments.get("level"),
+            before=before,
+            after=after,
+            application=app,
+            component=arguments.get("component"),
+            token=_get_loki_token(),
+        )
+        return _json_response(
+            data={"anchor_timestamp": anchor_timestamp, "entries": entries},
+            meta={"count": len(entries), "before": before, "after": after},
+        )
+    except Exception as e:
+        return _error_response(f"Loki get_error_context error: {e}", "ErrorContextError")
+
+
 def _handle_emit_log(arguments: dict) -> list[types.TextContent]:
     """Handle the emit_log tool call."""
     from ..devlogs_client import DevlogsClient
@@ -823,12 +1083,30 @@ async def main():
                 )
             return _handle_loki_get_log_stats(arguments)
 
-        # Route search_logs and tail_logs to Loki when configured
+        # Route query tools to Loki when configured
         if backend.mode == "loki":
             if name == "search_logs":
                 return _handle_loki_search(arguments)
             if name == "tail_logs":
                 return _handle_loki_tail(arguments)
+            if name == "list_applications":
+                return _handle_loki_list_applications(arguments)
+            if name == "list_areas":
+                return _handle_loki_list_areas(arguments)
+            if name == "list_operations":
+                return _handle_loki_list_operations(arguments)
+            if name == "list_recent_operations":
+                return _handle_loki_list_recent_operations(arguments)
+            if name == "list_recent_errors":
+                return _handle_loki_list_recent_errors(arguments)
+            if name == "get_last_error":
+                return _handle_loki_get_last_error(arguments)
+            if name == "get_operation_summary":
+                return _handle_loki_get_operation_summary(arguments)
+            if name == "get_operation_logs":
+                return _handle_loki_get_operation_logs(arguments)
+            if name == "get_error_context":
+                return _handle_loki_get_error_context(arguments)
 
         client = backend.client
         index = backend.index

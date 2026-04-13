@@ -79,6 +79,39 @@ def opensearch_client():
 		pytest.skip(f"OpenSearch not available: {exc}")
 
 
+@pytest.fixture(scope="session")
+def loki_live_url():
+	"""Resolve a live Loki base URL for integration tests.
+
+	Honors DEVLOGS_TEST_LOKI_URL if set; otherwise probes the conventional
+	local ports (3100, then 3101 — the test-only port used by the docker
+	container spun up for `pytest -m integration`). Skips the test if no
+	Loki instance responds.
+	"""
+	import urllib.error
+	import urllib.request
+
+	candidates = []
+	env_url = os.getenv("DEVLOGS_TEST_LOKI_URL")
+	if env_url:
+		candidates.append(env_url.rstrip("/"))
+	candidates.extend(["http://localhost:3100", "http://localhost:3101"])
+
+	for base in candidates:
+		try:
+			with urllib.request.urlopen(f"{base}/ready", timeout=2) as resp:
+				body = resp.read().decode("utf-8", errors="replace").strip()
+				if body == "ready" or resp.status == 200:
+					return base
+		except (urllib.error.URLError, urllib.error.HTTPError, OSError):
+			continue
+	pytest.skip(
+		"No live Loki available. Start one with:\n"
+		"  docker run -d --name devlogs-test-loki -p 127.0.0.1:3101:3100 grafana/loki:2.9.0\n"
+		"or set DEVLOGS_TEST_LOKI_URL to point at an existing instance."
+	)
+
+
 @pytest.fixture()
 def test_index(opensearch_client):
 	legacy_template_created = False
