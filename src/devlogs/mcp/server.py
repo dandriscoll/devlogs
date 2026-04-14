@@ -517,6 +517,51 @@ def _handle_loki_get_error_context(arguments: dict) -> list[types.TextContent]:
         return _error_response(f"Loki get_error_context error: {e}", "ErrorContextError")
 
 
+# DEVLOGS_URL captured at server start so set_devlogs_url can reset to it.
+_ORIGINAL_DEVLOGS_URL = os.environ.get("DEVLOGS_URL", "")
+
+
+def _handle_set_devlogs_url(arguments: dict) -> list[types.TextContent]:
+    """Set DEVLOGS_URL for the lifetime of the MCP session.
+
+    Mutates os.environ on the running process; the change reverts naturally
+    when the MCP server exits. Pass an empty string (or omit `url`) to
+    restore whatever DEVLOGS_URL the server was started with.
+    """
+    # Imported lazily so a reloaded config module (some tests reload it) doesn't
+    # leave us holding a stale URLParseError class that won't catch.
+    from ..config import URLParseError, parse_url
+
+    url = arguments.get("url")
+
+    if not url:
+        if _ORIGINAL_DEVLOGS_URL:
+            os.environ["DEVLOGS_URL"] = _ORIGINAL_DEVLOGS_URL
+        else:
+            os.environ.pop("DEVLOGS_URL", None)
+    else:
+        try:
+            parse_url(url)
+        except URLParseError as e:
+            return _error_response(str(e), "ValidationError")
+        os.environ["DEVLOGS_URL"] = url
+
+    try:
+        backend = _resolve_backend()
+    except RuntimeError as e:
+        return _error_response(str(e), "InitializationError")
+
+    data = {
+        "url": backend.url,
+        "mode": backend.mode,
+        "application": backend.application,
+        "reset_to_default": not url,
+    }
+    if backend.index:
+        data["index"] = backend.index
+    return _json_response(data=data)
+
+
 def _handle_emit_log(arguments: dict) -> list[types.TextContent]:
     """Handle the emit_log tool call."""
     from ..devlogs_client import DevlogsClient
@@ -1029,6 +1074,30 @@ async def main():
                 },
             ),
             types.Tool(
+                name="set_devlogs_url",
+                description=(
+                    "Override DEVLOGS_URL for the lifetime of this MCP session. "
+                    "Useful for pointing at a different backend (loki://, opensearch://, "
+                    "http(s):// collector, etc.) without restarting the server. Reverts to "
+                    "the original DEVLOGS_URL when the session ends. Pass an empty string "
+                    "to reset immediately."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "url": {
+                            "type": "string",
+                            "description": (
+                                "New DEVLOGS_URL value (e.g. 'lokis://token@loki.example/', "
+                                "'opensearchs://user:pass@host/index/app', "
+                                "'https://collector.example/'). Pass an empty string to reset "
+                                "to the value the server started with."
+                            ),
+                        },
+                    },
+                },
+            ),
+            types.Tool(
                 name="emit_log",
                 description="Emit a log entry to the configured devlogs backend (collector, OpenSearch, or plugin).",
                 inputSchema={
@@ -1065,6 +1134,11 @@ async def main():
                 return _json_response(data=data)
             except RuntimeError as e:
                 return _error_response(str(e), "InitializationError")
+
+        # set_devlogs_url mutates env state — handle it before _resolve_backend so
+        # the resolved backend reflects the new URL.
+        if name == "set_devlogs_url":
+            return _handle_set_devlogs_url(arguments)
 
         # emit_log does not need OpenSearch — handle it before _create_client_and_index()
         if name == "emit_log":

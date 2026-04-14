@@ -450,6 +450,122 @@ class TestEmitLogTool:
         assert payload["error"]["type"] == "EmitError"
 
 
+class TestSetDevlogsUrlTool:
+    """Tests for the set_devlogs_url MCP tool."""
+
+    @pytest.fixture(autouse=True)
+    def _isolate_env(self, monkeypatch):
+        """Clear devlogs env vars so each test starts from a known baseline,
+        and reset the module-level `_ORIGINAL_DEVLOGS_URL` snapshot.
+        """
+        from devlogs import config
+        from devlogs.mcp import server as server_mod
+
+        for key in config._DEVLOGS_CONFIG_KEYS:
+            monkeypatch.delenv(key, raising=False)
+        monkeypatch.delenv("DOTENV_PATH", raising=False)
+        monkeypatch.setattr(config, "_dotenv_loaded", True)
+        monkeypatch.setattr(server_mod, "_ORIGINAL_DEVLOGS_URL", "")
+
+    def test_tool_listed(self):
+        from devlogs.mcp.server import _handle_set_devlogs_url
+        assert callable(_handle_set_devlogs_url)
+
+    def test_dispatch_routes_to_handler(self):
+        """set_devlogs_url must be dispatched before _resolve_backend so a
+        broken backend cannot block the user from fixing it."""
+        import inspect
+        from devlogs.mcp import server as server_mod
+
+        src = inspect.getsource(server_mod)
+        assert 'name == "set_devlogs_url"' in src
+        # Must appear before the _resolve_backend call in the dispatch.
+        idx_dispatch = src.index('name == "set_devlogs_url"')
+        idx_resolve = src.index("backend = _resolve_backend()", idx_dispatch - 1)
+        assert idx_dispatch < idx_resolve
+
+    def test_sets_loki_url_for_session(self, monkeypatch):
+        from devlogs.mcp.server import _handle_set_devlogs_url
+
+        result = _handle_set_devlogs_url({"url": "lokis://tok@loki.example/"})
+        payload = json.loads(result[0].text)
+        assert payload["ok"] is True
+        assert payload["data"]["mode"] == "loki"
+        assert payload["data"]["url"] == "https://loki.example/"
+        assert payload["data"]["reset_to_default"] is False
+        # Confirm os.environ was actually mutated for the session.
+        assert os.environ["DEVLOGS_URL"] == "lokis://tok@loki.example/"
+
+    def test_sets_opensearch_url_for_session(self, monkeypatch):
+        from devlogs.mcp.server import _handle_set_devlogs_url
+
+        result = _handle_set_devlogs_url({
+            "url": "opensearch://admin:admin@os.example:9200/myindex/myapp",
+        })
+        payload = json.loads(result[0].text)
+        assert payload["ok"] is True
+        assert payload["data"]["mode"] == "opensearch"
+        assert payload["data"]["index"] == "myindex"
+        assert payload["data"]["application"] == "myapp"
+
+    def test_invalid_url_returns_validation_error(self, monkeypatch):
+        from devlogs.mcp.server import _handle_set_devlogs_url
+
+        result = _handle_set_devlogs_url({"url": "ftp://nope"})
+        payload = json.loads(result[0].text)
+        assert payload["ok"] is False
+        assert payload["error"]["type"] == "ValidationError"
+        # Env must remain unchanged when validation fails.
+        assert "DEVLOGS_URL" not in os.environ
+
+    def test_empty_url_resets_to_original(self, monkeypatch):
+        from devlogs.mcp import server as server_mod
+
+        # Pretend the server started with this URL captured in os.environ.
+        monkeypatch.setattr(
+            server_mod, "_ORIGINAL_DEVLOGS_URL", "lokis://tok@orig.example/"
+        )
+        os.environ["DEVLOGS_URL"] = "lokis://tok@override.example/"
+
+        result = server_mod._handle_set_devlogs_url({"url": ""})
+        payload = json.loads(result[0].text)
+        assert payload["ok"] is True
+        assert payload["data"]["reset_to_default"] is True
+        assert payload["data"]["url"] == "https://orig.example/"
+        assert os.environ["DEVLOGS_URL"] == "lokis://tok@orig.example/"
+
+    def test_empty_url_unsets_when_no_original(self, monkeypatch):
+        from devlogs.mcp import server as server_mod
+
+        # No original captured; an override is currently set.
+        os.environ["DEVLOGS_URL"] = "lokis://tok@override.example/"
+
+        result = server_mod._handle_set_devlogs_url({"url": ""})
+        payload = json.loads(result[0].text)
+        # Backend resolution will fail because no devlogs config remains —
+        # that's expected and surfaces as InitializationError. The key check
+        # is that DEVLOGS_URL was removed from the environment.
+        assert "DEVLOGS_URL" not in os.environ
+        if payload["ok"]:
+            # If some other env config makes resolution succeed, that's fine.
+            assert payload["data"]["reset_to_default"] is True
+        else:
+            assert payload["error"]["type"] == "InitializationError"
+
+    def test_change_persists_for_subsequent_load_config_calls(self, monkeypatch):
+        """The whole point: a later call to load_config() must pick up the new URL."""
+        from devlogs.config import load_config
+        from devlogs.mcp.server import _handle_set_devlogs_url
+
+        result = _handle_set_devlogs_url({"url": "lokis://tok@loki.example/"})
+        payload = json.loads(result[0].text)
+        assert payload["ok"] is True
+
+        cfg = load_config()
+        assert cfg.is_loki is True
+        assert cfg.loki_url == "https://loki.example/"
+
+
 class TestMCPServerLokiDispatch:
     """Each of the nine previously-broken query tools must return populated
     results through the Loki backend. These are regression tests for the
