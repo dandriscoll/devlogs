@@ -1,18 +1,43 @@
-# Dockerfile combining Loki + the devlogs proxy in a single image.
+# All-in-one devlogs image: proxy + collector + Loki in a single container.
 #
-# Loki listens on 127.0.0.1:3100 inside the container; the proxy talks to it
-# over loopback and is the only port published.
+# Inside the container:
+#   Loki       127.0.0.1:3100   (log store)
+#   Collector  127.0.0.1:8081   (forward mode → loki://127.0.0.1:3100)
+#   Proxy      0.0.0.0:8080     (only port published)
+#
+# Routing through the proxy (unchanged from before):
+#   POST /ingest/*   → Collector at 127.0.0.1:8081
+#   GET  /query/*    → Loki at 127.0.0.1:3100        (Bearer LOKI_ADMIN_TOKEN)
+#   GET  /grafana/*  → external GRAFANA_URL          (Bearer LOKI_ADMIN_TOKEN)
+#
+# The collector forwards into Loki via the loki:// plugin, so no on-disk
+# buffer is used. Loki chunks/index live under /loki — mount a volume there
+# for persistence.
 #
 # Build:
 #   docker build -f Dockerfile.loki-proxy -t devlogs-loki-proxy .
 #
-# Run:
+# Run (anonymous ingest, the default):
 #   docker run -p 8080:8080 \
-#     -e COLLECTOR_URL=http://collector:8081 \
+#     -e LOKI_ADMIN_TOKEN=<secret-for-/query-and-/grafana> \
 #     -e GRAFANA_URL=http://grafana:3000 \
-#     -e LOKI_ADMIN_TOKEN=<secret> \
 #     -v devlogs-loki-data:/loki \
 #     devlogs-loki-proxy
+#
+# Run (require a token on /ingest, mapped to a verified identity):
+#   docker run -p 8080:8080 \
+#     -e LOKI_ADMIN_TOKEN=<secret> \
+#     -e DEVLOGS_AUTH_MODE=require_token_verified \
+#     -e DEVLOGS_TOKEN_MAP_KV='dl1_kid_secret123=svc-foo,foo,service' \
+#     -v devlogs-loki-data:/loki \
+#     devlogs-loki-proxy
+#
+# Auth notes:
+#   /query and /grafana require Authorization: Bearer $LOKI_ADMIN_TOKEN.
+#   /ingest auth is governed by the collector's DEVLOGS_AUTH_MODE
+#   (allow_anonymous | require_token_passthrough | require_token_verified)
+#   and DEVLOGS_TOKEN_MAP_KV — see HOWTO-COLLECTOR.md. Default is
+#   allow_anonymous so the image is usable out of the box.
 
 FROM grafana/loki:2.9.0 AS loki
 
@@ -27,6 +52,8 @@ COPY pyproject.toml README.md LICENSE ./
 COPY src/ ./src/
 COPY config/loki.yaml /etc/loki/local-config.yaml
 
+# Base install brings in the collector (fastapi, uvicorn, opensearch-py, typer);
+# the [proxy] extra adds aiohttp for the proxy server.
 RUN pip install --no-cache-dir -e ".[proxy]"
 
 # Loki needs writable storage dirs (see config/loki.yaml).
@@ -36,18 +63,22 @@ RUN mkdir -p /loki/index /loki/index_cache /loki/chunks /loki/compactor \
 
 USER devlogs
 
-# Proxy reaches Loki over loopback inside the container.
+# Proxy → collector → Loki, all over loopback inside the container.
 ENV LOKI_URL=http://127.0.0.1:3100 \
+    COLLECTOR_URL=http://127.0.0.1:8081 \
+    DEVLOGS_FORWARD_URL=loki://127.0.0.1:3100 \
+    DEVLOGS_AUTH_MODE=allow_anonymous \
     PORT=8080
 
 EXPOSE 8080
 
-# Run both processes; if either exits, the container exits.
+# Run all three processes; if any exits, the container exits.
 CMD ["sh", "-c", "\
     loki -config.file=/etc/loki/local-config.yaml & loki_pid=$!; \
+    devlogs-collector serve --host 127.0.0.1 --port 8081 & coll_pid=$!; \
     python -m devlogs.proxy.server & proxy_pid=$!; \
-    trap 'kill $loki_pid $proxy_pid 2>/dev/null' TERM INT; \
-    wait -n $loki_pid $proxy_pid; \
-    kill $loki_pid $proxy_pid 2>/dev/null; \
+    trap 'kill $loki_pid $coll_pid $proxy_pid 2>/dev/null' TERM INT; \
+    wait -n $loki_pid $coll_pid $proxy_pid; \
+    kill $loki_pid $coll_pid $proxy_pid 2>/dev/null; \
     wait \
 "]
