@@ -57,7 +57,7 @@ COPY config/loki.yaml /etc/loki/local-config.yaml
 RUN pip install --no-cache-dir -e ".[proxy]"
 
 # Loki needs writable storage dirs (see config/loki.yaml).
-RUN mkdir -p /loki/index /loki/index_cache /loki/chunks /loki/compactor \
+RUN mkdir -p /loki/index /loki/index_cache /loki/chunks /loki/compactor /loki/wal \
  && useradd -r -u 1000 devlogs \
  && chown -R devlogs:devlogs /loki
 
@@ -73,7 +73,9 @@ ENV LOKI_URL=http://127.0.0.1:3100 \
 EXPOSE 8080
 
 # Run all three processes; if any exits, the container exits.
-CMD ["sh", "-c", "\
+# Use bash explicitly: `wait -n` is a bash extension and dash (the default
+# /bin/sh on debian-slim) errors out with "Illegal option -n".
+CMD ["bash", "-c", "\
     loki -config.file=/etc/loki/local-config.yaml & loki_pid=$!; \
     devlogs-collector serve --host 127.0.0.1 --port 8081 & coll_pid=$!; \
     python -m devlogs.proxy.server & proxy_pid=$!; \
