@@ -218,3 +218,6 @@ jenkins-plugin/target/
 jenkins-plugin/work/
 jenkins-plugin/.idea/
 jenkins-plugin/*.iml
+# Local agent/tooling state — never commit
+.devbox/
+.claude/
