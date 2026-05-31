@@ -183,6 +183,8 @@ The collector supports three authentication modes via `DEVLOGS_AUTH_MODE`:
 
 Token is optional. If a valid token is provided and found in the token map, the identity is resolved to verified mode. Otherwise, identity is anonymous.
 
+**SECURITY:** this mode verifies that a token is *present* but does NOT verify *identity*. Any authenticated client can set an arbitrary `identity` in the payload, including impersonating another service. Use `require_token_verified` when attribution integrity matters.
+
 ### require_token_passthrough
 
 Token must be present (any value accepted). The token is not verified against the token map. If the payload includes an `identity` object, it's preserved as-is (passthrough mode). Otherwise, identity is anonymous.

@@ -349,6 +349,12 @@ def resolve_identity(
         return Identity.anonymous()
 
     elif auth_mode == AUTH_MODE_REQUIRE_TOKEN_PASSTHROUGH:
+        # SECURITY WARNING: this mode authenticates the TOKEN but does NOT verify
+        # IDENTITY. Any client presenting a well-formed token may set an arbitrary
+        # `identity` in the payload — including impersonating another service — and it
+        # is preserved verbatim (Identity.passthrough). The name "passthrough" refers
+        # to passing the payload identity through unchanged, NOT to verifying it. Use
+        # require_token_verified when attribution integrity matters.
         # Token must be present (reject if missing)
         if not token:
             raise AuthError("AUTH_REQUIRED", "Authentication token required")

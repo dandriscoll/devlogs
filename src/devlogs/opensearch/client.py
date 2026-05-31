@@ -2,6 +2,7 @@
 
 import json
 import socket
+import ssl
 import urllib.request
 import urllib.error
 from base64 import b64encode
@@ -80,12 +81,36 @@ def _raise_connection_error(url_error: urllib.error.URLError, url: str):
 	raise ConnectionFailedError(f"Cannot connect: {reason}")
 
 
+def build_ssl_context(verify_certs=True, ca_cert=""):
+	"""Build an ssl.SSLContext for HTTPS OpenSearch connections, or None for OS default.
+
+	- verify_certs False -> context that skips verification (check_hostname=False,
+	  verify_mode=CERT_NONE).
+	- ca_cert non-empty  -> default context that trusts the given CA bundle.
+	- otherwise          -> None (use the OS default trust store; current behaviour).
+
+	The context is passed to urllib.request.urlopen(context=...); urlopen ignores it for
+	plain-http URLs, so it is safe to build unconditionally.
+	"""
+	if not verify_certs:
+		ctx = ssl.create_default_context()
+		ctx.check_hostname = False
+		ctx.verify_mode = ssl.CERT_NONE
+		return ctx
+	if ca_cert:
+		ctx = ssl.create_default_context()
+		ctx.load_verify_locations(ca_cert)
+		return ctx
+	return None
+
+
 class LightweightOpenSearchClient:
 	"""Minimal OpenSearch client using stdlib urllib for fast imports."""
 
-	def __init__(self, host, port, user, password, timeout=5, scheme="http"):
+	def __init__(self, host, port, user, password, timeout=5, scheme="http", ssl_context=None):
 		self.base_url = f"{scheme}://{host}:{port}"
 		self.timeout = timeout
+		self.ssl_context = ssl_context
 		# Pre-compute auth header
 		credentials = b64encode(f"{user}:{password}".encode()).decode('ascii')
 		self.headers = {
@@ -100,7 +125,7 @@ class LightweightOpenSearchClient:
 		data = json.dumps(body).encode('utf-8') if body else None
 		req = urllib.request.Request(url, data=data, headers=self.headers, method=method)
 		try:
-			with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+			with urllib.request.urlopen(req, timeout=self.timeout, context=self.ssl_context) as resp:
 				raw = resp.read().decode('utf-8')
 				if not raw:
 					return {}
@@ -201,7 +226,7 @@ class LightweightOpenSearchClient:
 		headers["Content-Type"] = "application/x-ndjson"
 		req = urllib.request.Request(url, data=data, headers=headers, method="POST")
 		try:
-			with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+			with urllib.request.urlopen(req, timeout=self.timeout, context=self.ssl_context) as resp:
 				raw = resp.read().decode('utf-8')
 				if not raw:
 					return {}
@@ -286,6 +311,10 @@ def get_opensearch_client():
 		password=cfg.opensearch_pass,
 		timeout=cfg.opensearch_timeout,
 		scheme=getattr(cfg, "opensearch_scheme", "http"),
+		ssl_context=build_ssl_context(
+			getattr(cfg, "opensearch_verify_certs", True),
+			getattr(cfg, "opensearch_ca_cert", ""),
+		),
 	)
 
 

@@ -245,21 +245,16 @@ class TestGrafanaRoute:
 # ---------------------------------------------------------------------------
 
 class TestNoAdminToken:
-    async def test_query_rejects_all_when_token_unset(self, aiohttp_client, monkeypatch,
-                                                       collector_url, loki_url, grafana_url):
+    # DL-007: the proxy now REFUSES TO START when LOKI_ADMIN_TOKEN is unset, instead of
+    # silently building an app whose /query and /grafana routes reject every request.
+    # (The old behaviour — build the app, return 401 for everything — was the
+    # silent-misconfiguration shape the fix removes.)
+    async def test_create_app_raises_when_token_unset(self, monkeypatch):
         monkeypatch.setattr(proxy_mod, "LOKI_ADMIN_TOKEN", "")
+        with pytest.raises(RuntimeError):
+            proxy_mod.create_app()
+
+    async def test_create_app_succeeds_when_token_set(self, monkeypatch):
+        monkeypatch.setattr(proxy_mod, "LOKI_ADMIN_TOKEN", "a-real-admin-token-value")
         app = proxy_mod.create_app()
-        client = await aiohttp_client(app)
-
-        resp = await client.get("/query/loki/api/v1/labels",
-                                headers={"Authorization": "Bearer anything"})
-        assert resp.status == 401
-
-    async def test_grafana_rejects_all_when_token_unset(self, aiohttp_client, monkeypatch,
-                                                         collector_url, loki_url, grafana_url):
-        monkeypatch.setattr(proxy_mod, "LOKI_ADMIN_TOKEN", "")
-        app = proxy_mod.create_app()
-        client = await aiohttp_client(app)
-
-        resp = await client.get("/grafana/", headers={"Authorization": "Bearer anything"})
-        assert resp.status == 401
+        assert app is not None

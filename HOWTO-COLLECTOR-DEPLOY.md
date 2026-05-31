@@ -242,7 +242,7 @@ Or use individual variables:
 
 Auth modes:
 - `allow_anonymous` - Accept all requests (default)
-- `require_token_passthrough` - Require token, pass identity from payload
+- `require_token_passthrough` - Require token; pass payload identity through **unverified**. Verifies the token but does NOT verify identity — any authenticated client can claim any identity. Use `require_token_verified` for attribution integrity.
 - `require_token_verified` - Require token, verify against token map
 
 ### Limits (Optional)

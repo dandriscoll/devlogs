@@ -137,6 +137,11 @@ async def on_cleanup(app: web.Application) -> None:
 
 
 def create_app() -> web.Application:
+    if not LOKI_ADMIN_TOKEN:
+        raise RuntimeError(
+            "LOKI_ADMIN_TOKEN is not set — refusing to start. "
+            "Set the token or remove the proxy service."
+        )
     app = web.Application(client_max_size=1024 * 1024)  # 1 MB
     app.on_startup.append(on_startup)
     app.on_cleanup.append(on_cleanup)
@@ -157,7 +162,10 @@ if __name__ == "__main__":
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
     if not LOKI_ADMIN_TOKEN:
-        logger.warning("LOKI_ADMIN_TOKEN is not set — /query and /grafana routes will reject all requests")
+        raise SystemExit(
+            "FATAL: LOKI_ADMIN_TOKEN is not set — refusing to start. "
+            "Set the token or remove the proxy service."
+        )
 
     app = create_app()
     web.run_app(app, host="0.0.0.0", port=PORT)

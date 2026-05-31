@@ -321,11 +321,15 @@ class TestUtilityFunctions:
                 opensearch_pass="pass",
                 opensearch_timeout=15,
                 opensearch_scheme="http",
+                opensearch_verify_certs=True,
+                opensearch_ca_cert="",
                 enabled=True,
             )
             client = get_opensearch_client()
             assert client.base_url == "http://myhost:9201"
             assert client.timeout == 15
+            # DL-006: verify on + no custom CA -> default OS trust store (no context)
+            assert client.ssl_context is None
 
     def test_get_opensearch_client_disabled(self):
         """Test get_opensearch_client raises when devlogs is disabled."""
