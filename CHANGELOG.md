@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.6] - 2026-06-07
+
+### Fixed
+- README logo and all in-repo documentation links now use absolute URLs so they
+  render and navigate correctly on the PyPI project page (relative paths 404
+  there because the description is rendered with no base URL).
+
 ## [2.4.5] - 2026-06-07
 
 ### Fixed
@@ -36,5 +43,6 @@ Release notes for v2.4.4 and earlier are published on the
 [GitHub Releases](https://github.com/dandriscoll/devlogs/releases) page.
 Version 2.0.0 introduced breaking changes — see [MIGRATION.md](MIGRATION.md).
 
-[Unreleased]: https://github.com/dandriscoll/devlogs/compare/v2.4.5...HEAD
+[Unreleased]: https://github.com/dandriscoll/devlogs/compare/v2.4.6...HEAD
+[2.4.6]: https://github.com/dandriscoll/devlogs/compare/v2.4.5...v2.4.6
 [2.4.5]: https://github.com/dandriscoll/devlogs/compare/v2.4.4...v2.4.5
