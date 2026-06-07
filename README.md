@@ -1,7 +1,7 @@
 # devlogs
 
 <p align="center">
-  <img src="devlogs.png" alt="devlogs logo" width="160">
+  <img src="https://raw.githubusercontent.com/dandriscoll/devlogs/main/devlogs.png" alt="devlogs logo" width="160">
 </p>
 
 <p align="center">
