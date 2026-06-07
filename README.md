@@ -7,7 +7,7 @@
 <p align="center">
   <a href="https://pypi.org/project/devlogs/"><img src="https://img.shields.io/pypi/v/devlogs.svg" alt="PyPI version"></a>
   <a href="https://www.npmjs.com/package/devlogs-browser"><img src="https://img.shields.io/npm/v/devlogs-browser.svg" alt="npm version"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/pypi/l/devlogs.svg" alt="License: MIT"></a>
+  <a href="https://github.com/dandriscoll/devlogs/blob/main/LICENSE"><img src="https://img.shields.io/pypi/l/devlogs.svg" alt="License: MIT"></a>
 </p>
 
 **Let your AI coding agent read your app's logs and debug them for you — Python logging to OpenSearch, served over MCP.**
@@ -99,7 +99,7 @@ your app  ──DevlogsHandler──▶  OpenSearch  ◀──MCP server──  
 (dev only)                     (your logs)                  (queries + debugs)
 ```
 
-devlogs writes structured log records (the [Devlogs Record Format v2.0](HOWTO-DEVLOGS-FORMAT.md):
+devlogs writes structured log records (the [Devlogs Record Format v2.0](https://github.com/dandriscoll/devlogs/blob/main/HOWTO-DEVLOGS-FORMAT.md):
 `application`, `component`, `area`, `operation_id`, `level`, `message`, plus
 arbitrary `fields`) to OpenSearch. The bundled MCP server lets your agent search,
 tail, and summarize those records — by app, component, area, operation, or error.
@@ -130,7 +130,7 @@ devlogs.setArea('dashboard');
 console.log('User action', { userId: 123, action: 'clicked' });
 ```
 
-See [AGENT_HOWTO_JAVASCRIPT.md](AGENT_HOWTO_JAVASCRIPT.md) for the agent paste-block and details.
+See [AGENT_HOWTO_JAVASCRIPT.md](https://github.com/dandriscoll/devlogs/blob/main/AGENT_HOWTO_JAVASCRIPT.md) for the agent paste-block and details.
 
 ---
 
@@ -182,11 +182,11 @@ See [AGENT_HOWTO_JAVASCRIPT.md](AGENT_HOWTO_JAVASCRIPT.md) for the agent paste-b
 
 ## Other ways to run it
 
-- **MCP agent setup** — `devlogs initmcp copilot|claude|codex|all` writes the MCP config (`.mcp.json`, `.vscode/mcp.json`, or `~/.codex/config.toml`). See [HOWTO-MCP.md](HOWTO-MCP.md).
-- **HTTP collector** — a standalone ingest/forward service for centralized log collection: `devlogs-collector serve`. See [HOWTO-COLLECTOR.md](HOWTO-COLLECTOR.md).
-- **Jenkins** — stream build logs via the native plugin or a standalone binary. See [HOWTO-JENKINS.md](HOWTO-JENKINS.md) and [jenkins-plugin/README.md](jenkins-plugin/README.md).
-- **Python collector client** — `from devlogs.devlogs_client import create_client`. See [HOWTO-COLLECTOR.md](HOWTO-COLLECTOR.md).
-- **Web UI** — a minimal embeddable log viewer. See [HOWTO-UI.md](HOWTO-UI.md).
+- **MCP agent setup** — `devlogs initmcp copilot|claude|codex|all` writes the MCP config (`.mcp.json`, `.vscode/mcp.json`, or `~/.codex/config.toml`). See [HOWTO-MCP.md](https://github.com/dandriscoll/devlogs/blob/main/HOWTO-MCP.md).
+- **HTTP collector** — a standalone ingest/forward service for centralized log collection: `devlogs-collector serve`. See [HOWTO-COLLECTOR.md](https://github.com/dandriscoll/devlogs/blob/main/HOWTO-COLLECTOR.md).
+- **Jenkins** — stream build logs via the native plugin or a standalone binary. See [HOWTO-JENKINS.md](https://github.com/dandriscoll/devlogs/blob/main/HOWTO-JENKINS.md) and [jenkins-plugin/README.md](https://github.com/dandriscoll/devlogs/blob/main/jenkins-plugin/README.md).
+- **Python collector client** — `from devlogs.devlogs_client import create_client`. See [HOWTO-COLLECTOR.md](https://github.com/dandriscoll/devlogs/blob/main/HOWTO-COLLECTOR.md).
+- **Web UI** — a minimal embeddable log viewer. See [HOWTO-UI.md](https://github.com/dandriscoll/devlogs/blob/main/HOWTO-UI.md).
 
 ---
 
@@ -199,7 +199,7 @@ Connection (choose one):
 
 Index & retention: `DEVLOGS_INDEX`, `DEVLOGS_RETENTION_DEBUG` / `_INFO` / `_WARNING` (e.g. `24h`, `7d`).
 
-See [.env.example](.env.example) for the full template and [HOWTO-CLI.md](HOWTO-CLI.md) for the complete CLI reference (`--url`, `--env`, `mkurl`, and more).
+See [.env.example](https://github.com/dandriscoll/devlogs/blob/main/.env.example) for the full template and [HOWTO-CLI.md](https://github.com/dandriscoll/devlogs/blob/main/HOWTO-CLI.md) for the complete CLI reference (`--url`, `--env`, `mkurl`, and more).
 
 ---
 
@@ -220,24 +220,24 @@ Install with `pip install ".[dev]"` in development, `pip install .` in productio
 
 ## Documentation
 
-- [HOWTO.md](HOWTO.md) — integration guide
-- [HOWTO-CLI.md](HOWTO-CLI.md) — complete CLI reference
-- [HOWTO-MCP.md](HOWTO-MCP.md) — MCP agent setup
-- [HOWTO-UI.md](HOWTO-UI.md) — web UI guide
-- [HOWTO-COLLECTOR.md](HOWTO-COLLECTOR.md) — HTTP collector setup and deployment
-- [HOWTO-DEVLOGS-FORMAT.md](HOWTO-DEVLOGS-FORMAT.md) — record format reference
-- [HOWTO-JENKINS.md](HOWTO-JENKINS.md) — Jenkins setup
-- [docs/build-info.md](docs/build-info.md) — build-info helper guide
-- [AGENT_HOWTO_PYTHON.md](AGENT_HOWTO_PYTHON.md) / [AGENT_HOWTO_JAVASCRIPT.md](AGENT_HOWTO_JAVASCRIPT.md) — agent setup blocks
-- [MIGRATION.md](MIGRATION.md) — upgrade guide (v2.0 introduced breaking changes)
-- [CHANGELOG.md](CHANGELOG.md) — release history
+- [HOWTO.md](https://github.com/dandriscoll/devlogs/blob/main/HOWTO.md) — integration guide
+- [HOWTO-CLI.md](https://github.com/dandriscoll/devlogs/blob/main/HOWTO-CLI.md) — complete CLI reference
+- [HOWTO-MCP.md](https://github.com/dandriscoll/devlogs/blob/main/HOWTO-MCP.md) — MCP agent setup
+- [HOWTO-UI.md](https://github.com/dandriscoll/devlogs/blob/main/HOWTO-UI.md) — web UI guide
+- [HOWTO-COLLECTOR.md](https://github.com/dandriscoll/devlogs/blob/main/HOWTO-COLLECTOR.md) — HTTP collector setup and deployment
+- [HOWTO-DEVLOGS-FORMAT.md](https://github.com/dandriscoll/devlogs/blob/main/HOWTO-DEVLOGS-FORMAT.md) — record format reference
+- [HOWTO-JENKINS.md](https://github.com/dandriscoll/devlogs/blob/main/HOWTO-JENKINS.md) — Jenkins setup
+- [docs/build-info.md](https://github.com/dandriscoll/devlogs/blob/main/docs/build-info.md) — build-info helper guide
+- [AGENT_HOWTO_PYTHON.md](https://github.com/dandriscoll/devlogs/blob/main/AGENT_HOWTO_PYTHON.md) / [AGENT_HOWTO_JAVASCRIPT.md](https://github.com/dandriscoll/devlogs/blob/main/AGENT_HOWTO_JAVASCRIPT.md) — agent setup blocks
+- [MIGRATION.md](https://github.com/dandriscoll/devlogs/blob/main/MIGRATION.md) — upgrade guide (v2.0 introduced breaking changes)
+- [CHANGELOG.md](https://github.com/dandriscoll/devlogs/blob/main/CHANGELOG.md) — release history
 
 ## Contributing
 
-Issues and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
-To report a security issue, please follow [SECURITY.md](SECURITY.md) (do not open
+Issues and pull requests are welcome — see [CONTRIBUTING.md](https://github.com/dandriscoll/devlogs/blob/main/CONTRIBUTING.md).
+To report a security issue, please follow [SECURITY.md](https://github.com/dandriscoll/devlogs/blob/main/SECURITY.md) (do not open
 a public issue).
 
 ## License
 
-[MIT](LICENSE).
+[MIT](https://github.com/dandriscoll/devlogs/blob/main/LICENSE).
