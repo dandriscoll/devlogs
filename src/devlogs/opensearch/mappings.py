@@ -166,6 +166,16 @@ def build_log_index_template(index_name: str) -> dict:
 					"timestamp": {"type": "date"},
 					"level": {"type": "keyword"},
 					"levelno": {"type": "integer"},
+					# application/component are keyword so they can be aggregated and
+					# exact-matched. The redundant `.keyword` subfield is deliberate:
+					# older indices created before this mapping had application/component
+					# dynamically mapped as `text` with an auto `.keyword` subfield, and
+					# the query layer aggregates/filters on `<field>.keyword`. Carrying the
+					# subfield here lets that single query path work against both old
+					# (text + .keyword) and new (keyword + .keyword) indices without a
+					# reindex. See opensearch/queries.py _APPLICATION_KEYWORD.
+					"application": {"type": "keyword", "fields": {"keyword": {"type": "keyword"}}},
+					"component": {"type": "keyword", "fields": {"keyword": {"type": "keyword"}}},
 					"logger": {"type": "keyword"},
 					"message": {"type": "text"},
 					"area": {"type": "keyword"},

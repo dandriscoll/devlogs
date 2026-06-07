@@ -1,10 +1,24 @@
 # Search APIs for OpenSearch
 
+import logging
 from typing import Any, Dict, Iterable, List, Optional
 
 from ..time_utils import resolve_relative_time
 from ..levels import normalize_level
 from .client import IndexNotFoundError
+
+logger = logging.getLogger(__name__)
+
+# application/component are queried via their `.keyword` subfield rather than the
+# bare field name. Indices created before application/component were added to the
+# index template had them dynamically mapped as `text` (with an auto `.keyword`
+# subfield); `text` fields cannot be aggregated and `term`-match only individual
+# analyzed tokens (so a value like "my-app" never matches a bare `term`). The
+# `.keyword` subfield is a true keyword on those old indices, and the current
+# template (opensearch/mappings.py) also provides a `.keyword` subfield on the
+# new keyword fields, so this single path is correct on both index generations.
+_APPLICATION_KEYWORD = "application.keyword"
+_COMPONENT_KEYWORD = "component.keyword"
 
 
 def _normalize_level_terms(level: Optional[str]) -> Optional[List[str]]:
@@ -45,11 +59,11 @@ def _build_log_query(query=None, area=None, operation_id=None, level=None, since
 		}
 	]
 	if application:
-		filters.append({"term": {"application": application}})
+		filters.append({"term": {_APPLICATION_KEYWORD: application}})
 	if area:
 		filters.append({"term": {"area": area}})
 	if component:
-		filters.append({"term": {"component": component}})
+		filters.append({"term": {_COMPONENT_KEYWORD: component}})
 	if operation_id:
 		filters.append({"term": {"operation_id": operation_id}})
 	level_terms = _normalize_level_terms(level)
@@ -294,9 +308,9 @@ def get_operation_summary(client, index, operation_id, application=None, compone
 	"""Get summary for an operation using aggregations."""
 	op_query_filters = [{"term": {"operation_id": operation_id}}]
 	if component:
-		op_query_filters.append({"term": {"component": component}})
+		op_query_filters.append({"term": {_COMPONENT_KEYWORD: component}})
 	if application:
-		op_query_filters.append({"term": {"application": application}})
+		op_query_filters.append({"term": {_APPLICATION_KEYWORD: application}})
 	body = {
 		"query": {"bool": {"filter": op_query_filters}},
 		"size": 0,  # No documents, aggregations only
@@ -334,6 +348,7 @@ def get_operation_summary(client, index, operation_id, application=None, compone
 	try:
 		response = _require_response(client.search(index=index, body=body), "get_operation_summary", client=client, index=index)
 	except Exception:
+		logger.warning("get_operation_summary query failed on index %r", index, exc_info=True)
 		return None
 
 	aggs = response.get("aggregations", {})
@@ -373,9 +388,9 @@ def list_operations(client, index, area=None, since=None, limit=20, with_errors_
 	"""List recent operations with summary stats."""
 	query_filters = []
 	if application:
-		query_filters.append({"term": {"application": application}})
+		query_filters.append({"term": {_APPLICATION_KEYWORD: application}})
 	if component:
-		query_filters.append({"term": {"component": component}})
+		query_filters.append({"term": {_COMPONENT_KEYWORD: component}})
 	if area:
 		query_filters.append({"term": {"area": area}})
 	if since:
@@ -405,6 +420,7 @@ def list_operations(client, index, area=None, since=None, limit=20, with_errors_
 	try:
 		response = _require_response(client.search(index=index, body=body), "list_operations", client=client, index=index)
 	except Exception:
+		logger.warning("list_operations query failed on index %r", index, exc_info=True)
 		return []
 
 	# Parse aggregation results
@@ -503,6 +519,7 @@ def list_recent_operations(client, index, area=None, since=None, until=None, lim
 	try:
 		response = _require_response(client.search(index=index, body=body), "list_recent_operations", client=client, index=index)
 	except Exception:
+		logger.warning("list_recent_operations query failed on index %r", index, exc_info=True)
 		return []
 
 	operations = []
@@ -610,6 +627,7 @@ def list_error_signatures(
 	try:
 		response = _require_response(client.search(index=index, body=body), "list_error_signatures", client=client, index=index)
 	except Exception:
+		logger.warning("list_error_signatures query failed on index %r", index, exc_info=True)
 		return []
 
 	signatures = []
@@ -733,7 +751,7 @@ def list_applications(client, index, since=None, component=None):
 	"""
 	query_filters = []
 	if component:
-		query_filters.append({"term": {"component": component}})
+		query_filters.append({"term": {_COMPONENT_KEYWORD: component}})
 	if since:
 		normalized_since = resolve_relative_time(since)
 		query_filters.append({"range": {"timestamp": {"gte": normalized_since}}})
@@ -743,7 +761,7 @@ def list_applications(client, index, since=None, component=None):
 		"size": 0,
 		"aggs": {
 			"by_application": {
-				"terms": {"field": "application", "size": 200},
+				"terms": {"field": _APPLICATION_KEYWORD, "size": 200},
 				"aggs": {
 					"error_count": {
 						"filter": {
@@ -761,6 +779,7 @@ def list_applications(client, index, since=None, component=None):
 	try:
 		response = _require_response(client.search(index=index, body=body), "list_applications", client=client, index=index)
 	except Exception:
+		logger.warning("list_applications query failed on index %r", index, exc_info=True)
 		return []
 
 	applications = []
@@ -779,9 +798,9 @@ def list_areas(client, index, since=None, min_operations=1, application=None, co
 	"""List all application areas with activity counts."""
 	query_filters = []
 	if application:
-		query_filters.append({"term": {"application": application}})
+		query_filters.append({"term": {_APPLICATION_KEYWORD: application}})
 	if component:
-		query_filters.append({"term": {"component": component}})
+		query_filters.append({"term": {_COMPONENT_KEYWORD: component}})
 	if since:
 		normalized_since = resolve_relative_time(since)
 		query_filters.append({"range": {"timestamp": {"gte": normalized_since}}})
@@ -812,6 +831,7 @@ def list_areas(client, index, since=None, min_operations=1, application=None, co
 	try:
 		response = _require_response(client.search(index=index, body=body), "list_areas", client=client, index=index)
 	except Exception:
+		logger.warning("list_areas query failed on index %r", index, exc_info=True)
 		return []
 
 	# Parse aggregation results

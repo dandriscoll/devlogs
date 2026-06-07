@@ -5,6 +5,7 @@ from devlogs.opensearch.mappings import (
 	detect_schema_version,
 	get_schema_issues,
 	build_reindex_script,
+	build_log_index_template,
 	SCHEMA_VERSION,
 )
 
@@ -202,3 +203,29 @@ class TestBuildReindexScript:
 class TestSchemaVersion:
 	def test_current_version_is_2(self):
 		assert SCHEMA_VERSION == 2
+
+
+class TestLogIndexTemplate:
+	def _properties(self):
+		template = build_log_index_template("devlogs-test")
+		return template["template"]["mappings"]["properties"]
+
+	def test_application_mapped_as_keyword(self):
+		# application must be a keyword (not the dynamic-mapping default of text)
+		# so `devlogs applications` can aggregate on it. See queries.py.
+		props = self._properties()
+		assert props["application"]["type"] == "keyword"
+
+	def test_component_mapped_as_keyword(self):
+		props = self._properties()
+		assert props["component"]["type"] == "keyword"
+
+	def test_application_has_keyword_subfield(self):
+		# The query layer aggregates/filters on `<field>.keyword` so the single
+		# query path also works against legacy text-mapped indices. The new
+		# keyword field must therefore carry a `.keyword` subfield. Dropping it
+		# would make `application.keyword` resolve to an empty (silent) result
+		# on new indices.
+		props = self._properties()
+		assert props["application"]["fields"]["keyword"]["type"] == "keyword"
+		assert props["component"]["fields"]["keyword"]["type"] == "keyword"

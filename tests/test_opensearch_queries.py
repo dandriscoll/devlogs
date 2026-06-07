@@ -238,75 +238,77 @@ class TestApplicationFilter:
     def test_build_log_query_without_application(self):
         query = _build_log_query()
         filters = query["bool"]["filter"]
-        assert not any(f.get("term", {}).get("application") for f in filters)
+        assert not any(f.get("term", {}).get("application.keyword") for f in filters)
 
     def test_build_log_query_with_application(self):
         query = _build_log_query(application="myapp")
         filters = query["bool"]["filter"]
-        assert {"term": {"application": "myapp"}} in filters
+        # application/component are filtered via the `.keyword` subfield so the
+        # query is correct on both text-mapped (legacy) and keyword (new) indices.
+        assert {"term": {"application.keyword": "myapp"}} in filters
 
     def test_search_logs_passes_application(self):
         response = {"hits": {"hits": []}}
         client = DummyClient(response)
         search_logs(client, "idx", application="myapp")
         filters = client.last_call["body"]["query"]["bool"]["filter"]
-        assert {"term": {"application": "myapp"}} in filters
+        assert {"term": {"application.keyword": "myapp"}} in filters
 
     def test_search_logs_page_passes_application(self):
         response = {"hits": {"hits": []}}
         client = DummyClient(response)
         search_logs_page(client, "idx", application="myapp")
         filters = client.last_call["body"]["query"]["bool"]["filter"]
-        assert {"term": {"application": "myapp"}} in filters
+        assert {"term": {"application.keyword": "myapp"}} in filters
 
     def test_tail_logs_passes_application(self):
         response = {"hits": {"hits": []}}
         client = DummyClient(response)
         tail_logs(client, "idx", application="myapp")
         filters = client.last_call["body"]["query"]["bool"]["filter"]
-        assert {"term": {"application": "myapp"}} in filters
+        assert {"term": {"application.keyword": "myapp"}} in filters
 
     def test_get_last_errors_passes_application(self):
         response = {"hits": {"hits": []}}
         client = DummyClient(response)
         get_last_errors(client, "idx", application="myapp")
         filters = client.last_call["body"]["query"]["bool"]["filter"]
-        assert {"term": {"application": "myapp"}} in filters
+        assert {"term": {"application.keyword": "myapp"}} in filters
 
     def test_get_operation_summary_passes_application(self):
         response = {"aggregations": {"by_level": {"buckets": []}, "time_range": {}, "sample_logs": {"hits": {"hits": []}}, "total_count": {"value": 0}}}
         client = DummyClient(response)
         get_operation_summary(client, "idx", "op-1", application="myapp")
         query_filters = client.last_call["body"]["query"]["bool"]["filter"]
-        assert {"term": {"application": "myapp"}} in query_filters
+        assert {"term": {"application.keyword": "myapp"}} in query_filters
 
     def test_list_operations_passes_application(self):
         response = {"aggregations": {"by_operation": {"buckets": []}}}
         client = DummyClient(response)
         list_operations(client, "idx", application="myapp")
         filters = client.last_call["body"]["query"]["bool"]["filter"]
-        assert {"term": {"application": "myapp"}} in filters
+        assert {"term": {"application.keyword": "myapp"}} in filters
 
     def test_list_recent_operations_passes_application(self):
         response = {"aggregations": {"by_operation": {"buckets": []}}}
         client = DummyClient(response)
         list_recent_operations(client, "idx", application="myapp")
         filters = client.last_call["body"]["query"]["bool"]["filter"]
-        assert {"term": {"application": "myapp"}} in filters
+        assert {"term": {"application.keyword": "myapp"}} in filters
 
     def test_list_error_signatures_passes_application(self):
         response = {"aggregations": {"by_signature": {"buckets": []}}}
         client = DummyClient(response)
         list_error_signatures(client, "idx", application="myapp")
         filters = client.last_call["body"]["query"]["bool"]["filter"]
-        assert {"term": {"application": "myapp"}} in filters
+        assert {"term": {"application.keyword": "myapp"}} in filters
 
     def test_list_areas_passes_application(self):
         response = {"aggregations": {"by_area": {"buckets": []}}}
         client = DummyClient(response)
         list_areas(client, "idx", application="myapp")
         filters = client.last_call["body"]["query"]["bool"]["filter"]
-        assert {"term": {"application": "myapp"}} in filters
+        assert {"term": {"application.keyword": "myapp"}} in filters
 
     def test_get_error_context_passes_application(self):
         with patch("devlogs.opensearch.queries.search_logs_page") as mock_search:
@@ -345,7 +347,19 @@ class TestApplicationFilter:
         client = DummyClient(response)
         list_applications(client, "idx", component="web")
         filters = client.last_call["body"]["query"]["bool"]["filter"]
-        assert {"term": {"component": "web"}} in filters
+        assert {"term": {"component.keyword": "web"}} in filters
+
+    def test_list_applications_aggregates_on_keyword_field(self):
+        # Regression guard for the primary bug: aggregating on the bare
+        # `application` field throws "Text fields are not optimised for ...
+        # aggregations" on legacy text-mapped indices. The aggregation must
+        # target the `.keyword` subfield. If this reverts to "application",
+        # `devlogs applications` silently returns "No applications found".
+        response = {"aggregations": {"by_application": {"buckets": []}}}
+        client = DummyClient(response)
+        list_applications(client, "idx")
+        agg = client.last_call["body"]["aggs"]["by_application"]["terms"]
+        assert agg["field"] == "application.keyword"
 
     def test_no_application_filter_when_none(self):
         """Ensure no application filter when application is None."""
@@ -353,4 +367,4 @@ class TestApplicationFilter:
         client = DummyClient(response)
         search_logs(client, "idx", application=None)
         filters = client.last_call["body"]["query"]["bool"]["filter"]
-        assert not any(f.get("term", {}).get("application") for f in filters)
+        assert not any(f.get("term", {}).get("application.keyword") for f in filters)
