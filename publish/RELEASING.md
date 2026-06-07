@@ -93,9 +93,11 @@ DRY_RUN=true ./publish/publish-github.sh
 
 Versions are kept in sync across:
 - `pyproject.toml` (Python package) - **source of truth**
-- `browser/package.json` (npm package)
+- `browser/package.json` (npm package: `devlogs-browser`)
+- `node/package.json` (npm package: `devlogs-node`)
 
-The `release.sh` script automatically syncs these when bumping versions.
+The `release.sh` script automatically syncs these when bumping versions, and
+`tests/test_version_sync.py` fails if any of them drift out of sync.
 
 ### Manual Version Update
 

@@ -125,8 +125,12 @@ if [[ "$VERSION" != "$CURRENT_VERSION" && "$DRY_RUN" != "true" ]]; then
     sed -i "s/\"version\": \"${CURRENT_VERSION}\"/\"version\": \"${VERSION}\"/" browser/package.json
     echo "  Updated browser/package.json"
 
+    # Update node/package.json (devlogs-node is also published by publish-npm.sh)
+    sed -i "s/\"version\": \"${CURRENT_VERSION}\"/\"version\": \"${VERSION}\"/" node/package.json
+    echo "  Updated node/package.json"
+
     # Commit version bump
-    git add pyproject.toml browser/package.json
+    git add pyproject.toml browser/package.json node/package.json
     git commit -m "Bump version to ${VERSION}"
     echo "  Committed version bump"
 fi
