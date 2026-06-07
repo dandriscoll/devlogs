@@ -71,12 +71,63 @@ def _strip_opensearch_url_index():
 
 @pytest.fixture(scope="session")
 def opensearch_client():
-	try:
-		client = get_opensearch_client()
-		client.info()
-		return client
-	except Exception as exc:
-		pytest.skip(f"OpenSearch not available: {exc}")
+	"""A client bound to a DEDICATED TEST OpenSearch — never the ambient config.
+
+	A plain `pytest` run must not connect to whatever a developer's
+	`DEVLOGS_URL` / `.env` points at (often a real/shared cluster). This fixture
+	resolves a test cluster from `DEVLOGS_TEST_OPENSEARCH_URL`, else probes
+	`localhost:9200`, and skips otherwise — mirroring the `loki_live_url` fixture.
+	The resolved URL is kept in the environment for the session so that code under
+	test (CLI commands, `get_opensearch_client()`) targets the same test cluster.
+	"""
+	from devlogs import config as _config
+
+	candidates = []
+	env_url = os.getenv("DEVLOGS_TEST_OPENSEARCH_URL")
+	if env_url:
+		candidates.append(env_url)
+	candidates.append("opensearch://localhost:9200")
+
+	saved = {var: os.environ.get(var) for var in ("DEVLOGS_URL", "DEVLOGS_OPENSEARCH_URL")}
+	saved_dotenv = _config._dotenv_loaded
+
+	def _restore():
+		for var, val in saved.items():
+			if val is not None:
+				os.environ[var] = val
+			else:
+				os.environ.pop(var, None)
+		_config._dotenv_loaded = saved_dotenv
+
+	client = None
+	last_exc = None
+	for url in candidates:
+		# Point config at the test cluster and stop the (production) .env from
+		# overriding it on reload. Never fall back to the ambient config.
+		os.environ.pop("DEVLOGS_URL", None)
+		os.environ["DEVLOGS_OPENSEARCH_URL"] = url
+		_config._dotenv_loaded = True
+		try:
+			candidate = get_opensearch_client()
+			candidate.info()
+			client = candidate
+			break
+		except Exception as exc:
+			last_exc = exc
+
+	if client is None:
+		_restore()
+		pytest.skip(
+			"No test OpenSearch available. Start one with:\n"
+			"  docker run -d -p 127.0.0.1:9200:9200 -e discovery.type=single-node \\\n"
+			"    -e plugins.security.disabled=true \\\n"
+			"    -e OPENSEARCH_INITIAL_ADMIN_PASSWORD=changeme opensearchproject/opensearch:2.13.0\n"
+			"or set DEVLOGS_TEST_OPENSEARCH_URL to point at an existing test instance.\n"
+			f"(last error: {type(last_exc).__name__}: {last_exc})"
+		)
+
+	yield client
+	_restore()
 
 
 @pytest.fixture(scope="session")
