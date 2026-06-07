@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "devlogs"
-version = "2.4.4"
-description = "Developer-focused logging library for Python with OpenSearch integration."
+version = "2.4.5"
+description = "Let your AI coding agent read your app's logs and debug them for you — Python logging to OpenSearch, served over MCP."
 requires-python = ">=3.11"
 readme = "README.md"
 license = {file = "LICENSE"}

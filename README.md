@@ -1,29 +1,51 @@
 # devlogs
 
 <p align="center">
-  <img src="devlogs.png" alt="devlogs logo" width="200">
+  <img src="devlogs.png" alt="devlogs logo" width="160">
 </p>
 
-A developer-focused logging library for Python based on OpenSearch.
+<p align="center">
+  <a href="https://pypi.org/project/devlogs/"><img src="https://img.shields.io/pypi/v/devlogs.svg" alt="PyPI version"></a>
+  <a href="https://www.npmjs.com/package/devlogs-browser"><img src="https://img.shields.io/npm/v/devlogs-browser.svg" alt="npm version"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/pypi/l/devlogs.svg" alt="License: MIT"></a>
+</p>
 
-## Step 1: Get OpenSearch running
+**Let your AI coding agent read your app's logs and debug them for you — Python logging to OpenSearch, served over MCP.**
 
-If you don't have OpenSearch running and you want to stand one up:
-1. Install Docker (and Docker Compose) for your OS.
-2. Copy `docker-compose.example.yaml` to `docker-compose.yaml`.
-3. Change the OpenSearch password in the copied file.
-4. Start OpenSearch:
-	```sh
-	docker compose up -d
-	```
+devlogs is a drop-in logging handler for your dev environment. It ships your
+application's logs to [OpenSearch](https://opensearch.org/) and exposes them to
+your coding agent (Claude, Copilot, Codex) over [MCP](https://modelcontextprotocol.io/),
+so the agent can search your real runtime logs and fix problems on its own —
+instead of you copy-pasting tracebacks back and forth.
 
-## Step 2: Copy/paste these instructions into your coding agent
+- **Agent-native** — one command wires devlogs into Claude / Copilot / Codex; the agent queries your logs itself.
+- **Drop-in** — a standard Python `logging.Handler` (plus a browser package, an HTTP collector, a Jenkins plugin, and a small web UI).
+- **Dev-first** — guarded so it only runs in development; no production code paths changed.
 
-Pick the block for your language and paste it into your coding agent. The agent will install devlogs as a dev dependency, create a connection config file, initialize the index, and add a small logging hook to your app entrypoint — guarded by an environment check so it only runs in development. No existing code is modified.
+> **Status:** actively developed and used; it's a development tool, not a
+> production logging pipeline. See [Production deployment](#production-deployment).
 
-For language-specific details and quirks, see [AGENT_HOWTO_PYTHON.md](AGENT_HOWTO_PYTHON.md) or [AGENT_HOWTO_JAVASCRIPT.md](AGENT_HOWTO_JAVASCRIPT.md).
+---
 
-### Python
+## Quickstart — use it with your coding agent
+
+**1. Install** (one line):
+
+```sh
+pip install devlogs
+```
+
+**2. Point devlogs at OpenSearch.** Don't have one? Stand up a local instance:
+
+```sh
+cp docker-compose.example.yaml docker-compose.yaml   # then set a password
+docker compose up -d
+```
+
+**3. Paste this into your coding agent.** It installs devlogs as a dev
+dependency, writes a connection config, initializes the index, and adds a
+development-only logging hook to your entrypoint — without modifying your
+existing code:
 
 > Please do the following in this project:
 > 1. Install `devlogs` as a dev dependency (`pip install devlogs` or add it to `requirements-dev.txt`/`pyproject.toml` optional dependencies).
@@ -55,308 +77,136 @@ For language-specific details and quirks, see [AGENT_HOWTO_PYTHON.md](AGENT_HOWT
 >    ```
 > 5. Ask the user if they want MCP set up; if yes, state which agent you are (`copilot`, `claude`, or `codex`) and run `devlogs initmcp <agent>`.
 
-### JavaScript / TypeScript (browser)
-
-> Please do the following in this project:
-> 1. Install the browser package as a dev dependency: `npm install --save-dev devlogs-browser`.
-> 2. Initialize devlogs early in the application entrypoint, wrapped in an environment check so it only runs in development:
->    ```javascript
->    import * as devlogs from 'devlogs-browser';
->
->    if (process.env.NODE_ENV === 'development') {
->      devlogs.init({
->        url: 'https://admin:YourPasswordHere@localhost:9200',
->        index: 'devlogs-<projectname>',
->        application: 'my-app',   // Required: your app name
->        component: 'frontend',   // Required: component name
->      });
->      devlogs.installGlobalHandlers();
->    }
->    ```
-> 3. Use `devlogs.setArea('dashboard')` and `devlogs.setOperationId('op-123')` to add context to logs. Pass a plain object as the last argument to attach custom fields:
->    ```javascript
->    console.log('User action', { userId: 123, action: 'clicked' });
->    ```
-
-## Step 3: Use devlogs
-
-1. Run `devlogs initmcp <agent>` to set up the MCP server.
-2. Then run `devlogs tail` to see the last logs, or `devlogs tail -f` to follow along
-3. Finally, ask your agent to query devlogs for errors. Watch it solve problems on its own!
-
-## If you want to install it by hand
-
-1. **Install devlogs:**
-	```sh
-	pip install devlogs
-	```
-
-2. **Start OpenSearch:**
-	```sh
-	docker-compose up -d opensearch
-	```
-	Or point `DEVLOGS_URL` at an existing cluster.
-
-3. **Configure connection** (choose one):
-
-	Option A — `.env.devlogs` file (auto-discovered):
-	```
-	DEVLOGS_URL=opensearchs://admin:YourPasswordHere@localhost:9200/devlogs-myproject
-	```
-
-	Option B — `--url` flag (no config file needed):
-	```sh
-	devlogs --url 'opensearchs://admin:pass@localhost:9200/devlogs-myproject' init
-	```
-
-	Use `devlogs mkurl` to interactively build a properly URL-encoded connection string (handy for passwords with special characters).
-
-4. **Initialize indices/templates:**
-	```sh
-	devlogs init
-	```
-
-5. **Use in Python code (development only):**
-	```python
-	import os
-	import logging
-
-	# Only enable devlogs in development
-	if os.getenv("ENVIRONMENT") != "production":
-	    from devlogs.handler import DevlogsHandler
-	    from devlogs.opensearch.client import get_opensearch_client
-	    from devlogs.build_info import resolve_build_info
-
-	    build_info = resolve_build_info(write_if_missing=True)
-	    handler = DevlogsHandler(
-	        application="my-app",
-	        component="default",
-	        level=logging.DEBUG,
-	        opensearch_client=get_opensearch_client(),
-	        version=build_info.build_id,
-	    )
-	    logging.getLogger().addHandler(handler)
-	    logging.getLogger().setLevel(logging.DEBUG)
-
-	    logging.info("Hello from devlogs!")
-	```
-
-6. **Use in JavaScript/TypeScript (browser, development only):**
-	```javascript
-	import * as devlogs from 'devlogs-browser';
-
-	if (process.env.NODE_ENV === 'development') {
-	  devlogs.init({
-	    url: 'https://admin:YourPasswordHere@localhost:9200',
-	    index: 'devlogs-myproject',
-	    application: 'my-app',
-	    component: 'frontend',
-	  });
-	}
-
-	// All console methods are now forwarded to OpenSearch
-	console.log('Hello from devlogs!');
-
-	// Add context
-	devlogs.setArea('dashboard');
-	console.log('User action', { userId: 123, action: 'clicked' });
-	```
-
-7. **Tail logs from CLI:**
-	```sh
-	devlogs tail --area web --follow
-	```
-
-8. **Search logs from CLI:**
-	```sh
-	devlogs search --q "error" --area web
-	```
-
-9. **Run the web UI:**
-	```sh
-	uvicorn devlogs.web.server:app --port 8088
-	# Then open http://localhost:8088/ui/
-	```
-
-## MCP Agent Setup
-
-If you want MCP set up, identify your agent type and run the matching command from your project root:
+**4. Connect the agent and let it work:**
 
 ```sh
-devlogs initmcp copilot
-devlogs initmcp claude
-devlogs initmcp codex
-devlogs initmcp all
+devlogs initmcp claude     # or: copilot | codex | all
+devlogs tail -f            # watch logs yourself, or...
 ```
 
-This writes MCP config files in the standard locations:
-- Claude: `.mcp.json`
-- Copilot (VS Code): `.vscode/mcp.json`
-- Codex: `~/.codex/config.toml`
+…then ask your agent to query devlogs for errors and watch it diagnose problems
+from your real logs.
 
-## Features
+Working in the browser? See the [JavaScript / TypeScript setup](#javascript--typescript-browser).
+Prefer wiring it up by hand? See [Manual setup](#manual-setup).
 
-- **DevlogsHandler** - Standard `logging.Handler` for OpenSearch with v2.0 schema
-- **HTTP Collector Service** for centralized log ingestion
-- **Devlogs Record Format v2.0** - Standardized schema with `application`, `component`, top-level `message`/`level`/`area`
-- Context manager for operation_id/area
-- Structured custom fields on log entries (`extra={"features": {...}}` stored as `fields`)
-- CLI and Linux shell wrapper
-- Minimal embeddable web UI
-- Robust tests (pytest)
+---
 
-> **Note:** Version 2.0.0 introduces breaking changes. See [MIGRATION-V2.md](MIGRATION-V2.md) for upgrade instructions.
+## How it works
 
-## HTTP Collector
-
-The devlogs collector is a standalone HTTP service for centralized log ingestion. It supports two modes:
-
-- **Forward mode**: Proxy requests to an upstream collector
-- **Ingest mode**: Write directly to OpenSearch
-
-### Quick Start
-
-```bash
-# Start collector in ingest mode
-DEVLOGS_OPENSEARCH_HOST=localhost DEVLOGS_INDEX=devlogs-myapp devlogs-collector serve
-
-# Start collector in forward mode
-DEVLOGS_FORWARD_URL=https://central-collector.example.com devlogs-collector serve
+```
+your app  ──DevlogsHandler──▶  OpenSearch  ◀──MCP server──  your coding agent
+(dev only)                     (your logs)                  (queries + debugs)
 ```
 
-### Using the Python Client
+devlogs writes structured log records (the [Devlogs Record Format v2.0](HOWTO-DEVLOGS-FORMAT.md):
+`application`, `component`, `area`, `operation_id`, `level`, `message`, plus
+arbitrary `fields`) to OpenSearch. The bundled MCP server lets your agent search,
+tail, and summarize those records — by app, component, area, operation, or error.
 
-```python
-from devlogs.devlogs_client import create_client
+---
 
-client = create_client(
-    collector_url="http://localhost:8080",
-    application="my-app",
-    component="api-server",
-)
+## JavaScript / TypeScript (browser)
 
-client.emit(
-    message="Request processed",
-    level="info",
-    fields={"user_id": "123", "duration_ms": 45}
-)
+```sh
+npm install --save-dev devlogs-browser
 ```
 
-### Docker
+```javascript
+import * as devlogs from 'devlogs-browser';
 
-```bash
-docker build -f Dockerfile.collector -t devlogs-collector .
-docker run -p 8080:8080 -e DEVLOGS_URL=opensearchs://admin:pass@opensearch:9200/devlogs devlogs-collector
-```
-
-See [HOWTO-COLLECTOR.md](HOWTO-COLLECTOR.md) for complete collector documentation.
-
-## Jenkins Integration
-
-### Option 1: Jenkins Plugin (Recommended)
-
-Install the Devlogs Jenkins plugin for native integration:
-
-```groovy
-pipeline {
-    agent any
-    stages {
-        stage('Build') {
-            steps {
-                devlogs(url: credentials('devlogs-url')) {
-                    sh 'make build'
-                }
-            }
-        }
-    }
+if (process.env.NODE_ENV === 'development') {
+  devlogs.init({
+    url: 'https://admin:YourPasswordHere@localhost:9200',
+    index: 'devlogs-<projectname>',
+    application: 'my-app',   // Required: your app name
+    component: 'frontend',   // Required: component name
+  });
+  devlogs.installGlobalHandlers();
 }
+
+// console.* is now forwarded to OpenSearch; add context as needed:
+devlogs.setArea('dashboard');
+console.log('User action', { userId: 123, action: 'clicked' });
 ```
 
-See [jenkins-plugin/README.md](jenkins-plugin/README.md) for installation and usage details.
+See [AGENT_HOWTO_JAVASCRIPT.md](AGENT_HOWTO_JAVASCRIPT.md) for the agent paste-block and details.
 
-### Option 2: Standalone Binary
+---
 
-Stream Jenkins build logs to OpenSearch using a standalone binary:
+## Manual setup
 
-```groovy
-pipeline {
-    agent any
-    environment {
-        DEVLOGS_URL = credentials('devlogs-url')
-        DEVLOGS_BINARY_URL = credentials('devlogs-binary-url')
-    }
-    stages {
-        stage('Build') {
-            steps {
-                sh 'curl -sL $DEVLOGS_BINARY_URL -o /tmp/devlogs && chmod +x /tmp/devlogs'
-                sh '/tmp/devlogs jenkins attach --background'
-                sh 'make build'
-            }
-        }
-    }
-    post {
-        always { sh '/tmp/devlogs jenkins stop || true' }
-    }
-}
-```
+<details>
+<summary>Wire it up by hand (Python)</summary>
 
-Build the binary with `./build-standalone.sh` and host it somewhere accessible. See [HOWTO-JENKINS.md](HOWTO-JENKINS.md) for setup details.
+1. **Install:** `pip install devlogs`
+2. **Start OpenSearch:** `docker compose up -d opensearch` (or point `DEVLOGS_URL` at an existing cluster).
+3. **Configure connection** (choose one):
+   - `.env.devlogs` file (auto-discovered):
+     ```
+     DEVLOGS_URL=opensearchs://admin:YourPasswordHere@localhost:9200/devlogs-myproject
+     ```
+   - `--url` flag (no config file): `devlogs --url 'opensearchs://admin:pass@localhost:9200/devlogs-myproject' init`
+
+   `devlogs mkurl` interactively builds a properly URL-encoded connection string (handy for passwords with special characters).
+4. **Initialize indices/templates:** `devlogs init`
+5. **Use in code (development only):**
+   ```python
+   import os, logging
+   if os.getenv("ENVIRONMENT") != "production":
+       from devlogs.handler import DevlogsHandler
+       from devlogs.opensearch.client import get_opensearch_client
+       from devlogs.build_info import resolve_build_info
+
+       bi = resolve_build_info(write_if_missing=True)
+       handler = DevlogsHandler(
+           application="my-app", component="default",
+           level=logging.DEBUG, opensearch_client=get_opensearch_client(),
+           version=bi.build_id,
+       )
+       logging.getLogger().addHandler(handler)
+       logging.getLogger().setLevel(logging.DEBUG)
+       logging.info("Hello from devlogs!")
+   ```
+6. **Tail / search from the CLI:**
+   ```sh
+   devlogs tail --area web --follow
+   devlogs search --q "error" --area web
+   devlogs applications        # list apps that have logged
+   ```
+7. **Run the web UI:** `uvicorn devlogs.web.server:app --port 8088` → open `http://localhost:8088/ui/`
+
+</details>
+
+---
+
+## Other ways to run it
+
+- **MCP agent setup** — `devlogs initmcp copilot|claude|codex|all` writes the MCP config (`.mcp.json`, `.vscode/mcp.json`, or `~/.codex/config.toml`). See [HOWTO-MCP.md](HOWTO-MCP.md).
+- **HTTP collector** — a standalone ingest/forward service for centralized log collection: `devlogs-collector serve`. See [HOWTO-COLLECTOR.md](HOWTO-COLLECTOR.md).
+- **Jenkins** — stream build logs via the native plugin or a standalone binary. See [HOWTO-JENKINS.md](HOWTO-JENKINS.md) and [jenkins-plugin/README.md](jenkins-plugin/README.md).
+- **Python collector client** — `from devlogs.devlogs_client import create_client`. See [HOWTO-COLLECTOR.md](HOWTO-COLLECTOR.md).
+- **Web UI** — a minimal embeddable log viewer. See [HOWTO-UI.md](HOWTO-UI.md).
+
+---
 
 ## Configuration
 
-### Environment Variables
+Connection (choose one):
 
-**Connection (choose one):**
-- `DEVLOGS_URL` - Standard connection URL with auto-detection. OpenSearch URLs (`opensearchs://`, `opensearch://`) connect directly; collector URLs (`http://`, `https://`) use the collector endpoint.
-- `DEVLOGS_FORWARD_URL` - Forward mode: proxy to this upstream URL
+- `DEVLOGS_URL` — standard connection URL with auto-detection. OpenSearch URLs (`opensearchs://`, `opensearch://`) connect directly; collector URLs (`http://`, `https://`) use the collector endpoint.
+- Individual vars: `DEVLOGS_OPENSEARCH_HOST` / `_PORT` / `_USER` / `_PASS`, plus `DEVLOGS_OPENSEARCH_VERIFY_CERTS`, `DEVLOGS_OPENSEARCH_CA_CERT`.
 
-**OpenSearch (individual variables, alternative to DEVLOGS_URL):**
-- `DEVLOGS_OPENSEARCH_HOST`, `DEVLOGS_OPENSEARCH_PORT`, `DEVLOGS_OPENSEARCH_USER`, `DEVLOGS_OPENSEARCH_PASS`
-- `DEVLOGS_OPENSEARCH_VERIFY_CERTS`, `DEVLOGS_OPENSEARCH_CA_CERT` - SSL/TLS settings
+Index & retention: `DEVLOGS_INDEX`, `DEVLOGS_RETENTION_DEBUG` / `_INFO` / `_WARNING` (e.g. `24h`, `7d`).
 
-**Index & Retention:**
-- `DEVLOGS_INDEX` - Target index name
-- `DEVLOGS_RETENTION_DEBUG`, `DEVLOGS_RETENTION_INFO`, `DEVLOGS_RETENTION_WARNING` - Retention policy (e.g., `24h`, `7d`)
+See [.env.example](.env.example) for the full template and [HOWTO-CLI.md](HOWTO-CLI.md) for the complete CLI reference (`--url`, `--env`, `mkurl`, and more).
 
-**Collector Limits (Future Provisions):**
-- `DEVLOGS_COLLECTOR_RATE_LIMIT` - Max requests/second (0 = unlimited)
-- `DEVLOGS_COLLECTOR_MAX_PAYLOAD_SIZE` - Max payload bytes (0 = unlimited)
+---
 
-See [.env.example](.env.example) for a complete configuration template.
+## Production deployment
 
-### CLI Options
-
-Use `--url` to specify connection details without a `.env` file:
-
-```bash
-devlogs --url 'opensearchs://admin:pass@host:9200/myindex' tail
-```
-
-Use `--env` to load from a specific `.env` file:
-
-```bash
-devlogs --env /path/to/.env diagnose
-```
-
-### URL Builder
-
-Use `devlogs mkurl` to interactively create a properly URL-encoded connection string:
-
-```bash
-devlogs mkurl
-# Outputs the URL in three formats:
-# 1. Bare URL (for --url flag)
-# 2. Single DEVLOGS_URL variable
-# 3. Individual .env variables
-```
-
-This is especially useful for passwords containing special characters like `!`, `@`, `#`, which must be URL-encoded.
-
-See [HOWTO-CLI.md](HOWTO-CLI.md) for complete CLI reference.
-
-## Production Deployment
-
-Devlogs is a development tool. The examples above show how to conditionally enable it using an environment check. You can also make it an optional dependency:
+devlogs is a development tool. The examples above conditionally enable it with an
+environment check; you can also make it an optional dependency:
 
 ```toml
 # pyproject.toml
@@ -366,71 +216,28 @@ dev = ["devlogs>=2.0.0"]
 
 Install with `pip install ".[dev]"` in development, `pip install .` in production.
 
-## Project Structure
+---
 
-- `src/devlogs/` - Python library, CLI, MCP server, and web UI
-- `browser/` - Browser/npm package for frontend logging
-- `jenkins-plugin/` - Native Jenkins plugin for log streaming
-- `devlogs` - Shell wrapper for local development
-- `tests/` - Pytest-based tests
-- `dist/` - Built packages and standalone binary
+## Documentation
 
-## Publishing
+- [HOWTO.md](HOWTO.md) — integration guide
+- [HOWTO-CLI.md](HOWTO-CLI.md) — complete CLI reference
+- [HOWTO-MCP.md](HOWTO-MCP.md) — MCP agent setup
+- [HOWTO-UI.md](HOWTO-UI.md) — web UI guide
+- [HOWTO-COLLECTOR.md](HOWTO-COLLECTOR.md) — HTTP collector setup and deployment
+- [HOWTO-DEVLOGS-FORMAT.md](HOWTO-DEVLOGS-FORMAT.md) — record format reference
+- [HOWTO-JENKINS.md](HOWTO-JENKINS.md) — Jenkins setup
+- [docs/build-info.md](docs/build-info.md) — build-info helper guide
+- [AGENT_HOWTO_PYTHON.md](AGENT_HOWTO_PYTHON.md) / [AGENT_HOWTO_JAVASCRIPT.md](AGENT_HOWTO_JAVASCRIPT.md) — agent setup blocks
+- [MIGRATION.md](MIGRATION.md) — upgrade guide (v2.0 introduced breaking changes)
+- [CHANGELOG.md](CHANGELOG.md) — release history
 
-```bash
-# Release to all platforms (PyPI, npm, GitHub)
-./publish/release.sh
+## Contributing
 
-# Bump version and release
-./publish/release.sh --bump-patch
+Issues and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
+To report a security issue, please follow [SECURITY.md](SECURITY.md) (do not open
+a public issue).
 
-# Preview release
-./publish/release.sh --dry-run
-```
+## License
 
-See [publish/RELEASING.md](publish/RELEASING.md) for detailed publishing instructions.
-
-## Build Info Helper
-
-Tag every log entry with a stable build identifier without requiring git at runtime:
-
-```python
-from devlogs.build_info import resolve_build_info
-
-bi = resolve_build_info(write_if_missing=True)
-# bi.build_id = "main-20260124T153045Z"
-# bi.branch = "main"
-# bi.source = "file" | "env" | "generated"
-
-# Use with DevlogsHandler
-handler = DevlogsHandler(
-    application="my-app",
-    component="api",
-    version=bi.build_id,  # Include build info in handler
-)
-logging.info("Started")
-```
-
-The build info is resolved from (in priority order):
-1. Environment variables (`DEVLOGS_BUILD_ID`, `DEVLOGS_BRANCH`)
-2. Build info file (`.build.json`)
-3. Generated values (branch-timestamp format)
-
-See [docs/build-info.md](docs/build-info.md) for CI integration examples and full API reference.
-
-## See Also
-
-- [AGENT_HOWTO_PYTHON.md](AGENT_HOWTO_PYTHON.md) - Agent setup instructions for Python
-- [AGENT_HOWTO_JAVASCRIPT.md](AGENT_HOWTO_JAVASCRIPT.md) - Agent setup instructions for browser JS/TS
-- [MIGRATION-V2.md](MIGRATION-V2.md) - Migration guide from v1.x to v2.0
-- [HOWTO-COLLECTOR.md](HOWTO-COLLECTOR.md) - HTTP collector setup and deployment
-- [HOWTO-DEVLOGS-FORMAT.md](HOWTO-DEVLOGS-FORMAT.md) - Devlogs record format reference
-- [docs/build-info.md](docs/build-info.md) - Build info helper guide
-- [HOWTO-CLI.md](HOWTO-CLI.md) - Complete CLI reference
-- [HOWTO.md](HOWTO.md) - Integration guide
-- [HOWTO-JENKINS.md](HOWTO-JENKINS.md) - Jenkins setup
-- [jenkins-plugin/README.md](jenkins-plugin/README.md) - Jenkins plugin documentation
-- [HOWTO-MCP.md](HOWTO-MCP.md) - MCP agent setup
-- [HOWTO-UI.md](HOWTO-UI.md) - Web UI guide
-- [publish/RELEASING.md](publish/RELEASING.md) - Publishing guide
-- `PROMPT.md` for full requirements
+[MIT](LICENSE).
